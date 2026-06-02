@@ -67,12 +67,19 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
     .returning();
   const order = inserted[0];
 
-  // Attempt an immediate push; if it fails it stays queued for retry by the
-  // scheduler. The order is always persisted so it's never lost.
+  // Attempt an immediate push. Fail loudly — the order is persisted and the
+  // scheduler will retry, but the client must show an error so the buyer knows.
   try {
     await pushOrder(order);
-  } catch {
-    // Error already recorded on the row; respond with queued status.
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(503).json({
+      error: "No se pudo enviar el pedido al ERP. Intenta de nuevo en unos momentos.",
+      details: msg,
+      folio: order.folio,
+      id: order.id,
+    });
+    return;
   }
 
   const fresh = await db

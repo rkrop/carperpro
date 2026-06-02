@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, notInArray } from "drizzle-orm";
 import {
   db,
   categoriesTable,
@@ -91,6 +91,7 @@ export async function runInboundSync(): Promise<SyncResult> {
     const categories = rawLineas
       .map(mapCategory)
       .filter((c): c is NonNullable<typeof c> => c !== null);
+    const categoryIds = categories.map((c) => c.id);
     for (const c of categories) {
       await db
         .insert(categoriesTable)
@@ -100,6 +101,10 @@ export async function runInboundSync(): Promise<SyncResult> {
           set: { name: c.name },
         });
     }
+    // Remove categories no longer in ERP.
+    if (categoryIds.length > 0) {
+      await db.delete(categoriesTable).where(notInArray(categoriesTable.id, categoryIds));
+    }
     logger.info({ count: categories.length }, "Admintotal: categorías sincronizadas");
 
     // 2) Almacenes -> sucursales
@@ -107,6 +112,7 @@ export async function runInboundSync(): Promise<SyncResult> {
     const sucursales = rawAlmacenes
       .map(mapSucursal)
       .filter((s): s is NonNullable<typeof s> => s !== null);
+    const sucursalIds = sucursales.map((s) => s.id);
     for (const s of sucursales) {
       await db
         .insert(sucursalesTable)
@@ -121,11 +127,16 @@ export async function runInboundSync(): Promise<SyncResult> {
           },
         });
     }
+    // Remove sucursales no longer in ERP.
+    if (sucursalIds.length > 0) {
+      await db.delete(sucursalesTable).where(notInArray(sucursalesTable.id, sucursalIds));
+    }
     logger.info({ count: sucursales.length }, "Admintotal: sucursales sincronizadas");
 
     // 3) Productos -> products + brands + inventory
     const rawProductos = await client.getProductos();
     const brandSet = new Set<string>();
+    const seenProductIds: string[] = [];
     const categoryCounts = new Map<string, number>();
     let productsSynced = 0;
 
@@ -152,6 +163,7 @@ export async function runInboundSync(): Promise<SyncResult> {
             specs: product.specs,
           },
         });
+      seenProductIds.push(product.id);
       productsSynced += 1;
       if (product.brand) brandSet.add(product.brand);
       if (product.categoryId) {
@@ -186,14 +198,32 @@ export async function runInboundSync(): Promise<SyncResult> {
     logger.info({ count: productsSynced }, "Admintotal: productos sincronizados");
 
     // 4) Brands
-    for (const name of brandSet) {
+    const seenBrands = Array.from(brandSet);
+    for (const name of seenBrands) {
       await db
         .insert(brandsTable)
         .values({ name })
         .onConflictDoNothing({ target: brandsTable.name });
     }
+    // Prune stale products and their inventory, then stale brands.
+    if (seenProductIds.length > 0) {
+      await db.delete(inventoryTable).where(notInArray(inventoryTable.productId, seenProductIds));
+      await db.delete(productsTable).where(notInArray(productsTable.id, seenProductIds));
+    }
+    if (seenBrands.length > 0) {
+      await db.delete(brandsTable).where(notInArray(brandsTable.name, seenBrands));
+    }
 
-    // 5) Category counts
+    // 5) Category counts — zero out categories not seen in this sync.
+    if (categoryCounts.size < categories.length) {
+      const seenCategoryIds = Array.from(categoryCounts.keys());
+      if (seenCategoryIds.length > 0) {
+        await db
+          .update(categoriesTable)
+          .set({ count: 0 })
+          .where(notInArray(categoriesTable.id, seenCategoryIds));
+      }
+    }
     for (const [id, count] of categoryCounts) {
       await db
         .update(categoriesTable)

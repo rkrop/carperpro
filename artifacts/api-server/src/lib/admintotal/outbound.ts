@@ -7,6 +7,9 @@ import { isAdmintotalConfigured } from "./config";
 const MAX_ATTEMPTS = 6;
 
 let processing = false;
+// In-process dedup: order IDs currently being pushed (prevents queue racing with
+// the immediate push that happens right after order insertion).
+const pushingIds = new Set<number>();
 
 // Build the Admintotal pedido payload from a queued order. Field names are
 // assumptions (documented) until the real ERP payload is confirmed.
@@ -30,9 +33,14 @@ function buildPedidoPayload(order: OutboundOrder): Record<string, unknown> {
 }
 
 export async function pushOrder(order: OutboundOrder): Promise<void> {
-  const client = new AdmintotalClient();
+  if (pushingIds.has(order.id)) {
+    logger.warn({ orderId: order.id }, "Admintotal: pedido ya en proceso de envío, se omite duplicado");
+    return;
+  }
+  pushingIds.add(order.id);
   const payload = buildPedidoPayload(order);
   try {
+    const client = new AdmintotalClient();
     const res = await client.createPedido(payload);
     const pedidoId =
       (res.id != null ? String(res.id) : undefined) ??
@@ -65,6 +73,8 @@ export async function pushOrder(order: OutboundOrder): Promise<void> {
       "Admintotal: envío de pedido falló",
     );
     throw err;
+  } finally {
+    pushingIds.delete(order.id);
   }
 }
 
