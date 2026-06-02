@@ -17,6 +17,30 @@ const { read: xlsxRead, utils } = require("/tmp/node_modules/xlsx/xlsx.js");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+/**
+ * Repairs UTF-8 text that was double-encoded as Latin-1 (mojibake), e.g.
+ * "Ficha tÃ©cnica" → "Ficha técnica".  Only applies the fix when the string is
+ * provably a Latin-1 view of valid UTF-8 bytes (roundtrip check), so correct
+ * ASCII and correctly-encoded accented strings pass through untouched.
+ */
+function fixEncoding(value) {
+  if (typeof value !== "string" || value.length === 0) return value;
+  let decoded;
+  try {
+    decoded = Buffer.from(value, "latin1").toString("utf8");
+  } catch {
+    return value;
+  }
+  if (
+    decoded !== value &&
+    !decoded.includes("\uFFFD") &&
+    Buffer.from(decoded, "utf8").toString("latin1") === value
+  ) {
+    return decoded;
+  }
+  return value;
+}
+
 function slugify(name) {
   return (
     "cat-" +
@@ -52,8 +76,11 @@ async function main() {
   const catMap = new Map();
   const brandSet = new Set();
   for (const row of rawRows) {
-    if (row.categoria) catMap.set(slugify(row.categoria), row.categoria);
-    if (row.marca) brandSet.add(row.marca);
+    if (row.categoria) {
+      const cat = fixEncoding(String(row.categoria).trim());
+      catMap.set(slugify(cat), cat);
+    }
+    if (row.marca) brandSet.add(fixEncoding(String(row.marca).trim()));
   }
 
   // ── 1. Ensure "matriz" sucursal exists ──────────────────────────────────────
@@ -92,14 +119,14 @@ async function main() {
     if (!row.sku || !row.nombre) { skipped++; continue; }
 
     const id = String(row.sku).trim();
-    const name = String(row.nombre).trim();
-    const brand = row.marca ? String(row.marca).trim() : "SIN MARCA";
-    const categoryId = row.categoria ? slugify(row.categoria) : null;
+    const name = fixEncoding(String(row.nombre).trim());
+    const brand = row.marca ? fixEncoding(String(row.marca).trim()) : "SIN MARCA";
+    const categoryId = row.categoria ? slugify(fixEncoding(String(row.categoria).trim())) : null;
     const price = typeof row.precio_venta === "number" ? row.precio_venta : 0;
     const costo = typeof row.costo === "number" ? row.costo : null;
     const stock = typeof row.stock === "number" ? Math.max(0, Math.round(row.stock)) : 0;
-    const descripcion = row.descripcion ? String(row.descripcion).trim() : null;
-    const proveedor = row.proveedor ? String(row.proveedor).trim() : null;
+    const descripcion = row.descripcion ? fixEncoding(String(row.descripcion).trim()) : null;
+    const proveedor = row.proveedor ? fixEncoding(String(row.proveedor).trim()) : null;
     const skuProveedor = row.sku_proveedor ? String(row.sku_proveedor).trim() : null;
     const imagen_url = row.imagen_url ? String(row.imagen_url).trim() : null;
 
