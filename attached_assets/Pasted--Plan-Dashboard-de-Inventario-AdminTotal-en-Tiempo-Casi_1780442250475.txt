@@ -1,0 +1,787 @@
+# Plan: Dashboard de Inventario AdminTotal en Tiempo Casi Real
+
+> Documento de implementación standalone para un proyecto Replit independiente.
+> Basado en la integración real de Carper Pro — puedes reutilizar el API server existente o construir el tuyo.
+
+---
+
+## Índice
+
+1. [Contexto y arquitectura](#1-contexto-y-arquitectura)
+2. [Cómo funciona AdminTotal hoy](#2-cómo-funciona-admintotal-hoy)
+3. [Qué vas a construir](#3-qué-vas-a-construir)
+4. [Fase 1 — Dashboard con Polling (latencia ~20 seg)](#4-fase-1--dashboard-con-polling)
+5. [Fase 2 — Tiempo real con SSE (latencia ~1 seg)](#5-fase-2--tiempo-real-con-sse)
+6. [Variables de entorno necesarias](#6-variables-de-entorno-necesarias)
+7. [Formato exacto del webhook de AdminTotal](#7-formato-exacto-del-webhook-de-admintotal)
+8. [Esquema de base de datos](#8-esquema-de-base-de-datos)
+9. [Endpoints del API a implementar](#9-endpoints-del-api-a-implementar)
+10. [Configuración en Replit](#10-configuración-en-replit)
+11. [Errores comunes y cómo resolverlos](#11-errores-comunes-y-cómo-resolverlos)
+
+---
+
+## 1. Contexto y arquitectura
+
+AdminTotal es un ERP mexicano que **no ofrece webhooks nativos por sí solo** — la integración se hace configurando AdminTotal para que llame a un endpoint externo cada vez que cambia el inventario. Tú controlas ese endpoint.
+
+### Diagrama completo del sistema objetivo
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                        ADMINTOTAL ERP                        ║
+║   (configuras un "webhook" en su panel de integraciones)     ║
+╚══════════════════════════════════════╦═══════════════════════╝
+                                       │ POST /webhook/inventory
+                                       │ (lote de hasta 50 SKUs)
+                                       │ Headers: Api-key: <secret>
+                                       ▼
+╔══════════════════════════════════════════════════════════════╗
+║                     API SERVER (Express/Node)                ║
+║                                                              ║
+║  POST /webhook/inventory  → valida → escribe en PostgreSQL   ║
+║                                   → emite evento SSE         ║
+║  GET  /inventory          → lee de PostgreSQL               ║
+║  GET  /inventory/stream   → Server-Sent Events              ║
+╚══════════════════════════════════════╦═══════════════════════╝
+                                       │
+                    ┌──────────────────┴──────────────────┐
+                    │                                     │
+                    ▼                                     ▼
+         ╔══════════════════╗               ╔═════════════════════╗
+         ║   PostgreSQL DB  ║               ║  Dashboard Web App   ║
+         ║                  ║               ║  (React + Vite)      ║
+         ║  products        ║               ║                      ║
+         ║  sync_logs       ║               ║  • Tabla inventario  ║
+         ║  sync_errors     ║               ║  • Filtros           ║
+         ╚══════════════════╝               ║  • Alertas stock     ║
+                                            ║  • Live updates SSE  ║
+                                            ╚═════════════════════╝
+```
+
+---
+
+## 2. Cómo funciona AdminTotal hoy
+
+AdminTotal puede configurarse para llamar a tu webhook en estos eventos:
+- Cambio de precio de un producto
+- Cambio de existencias (stock)
+- Creación de un nuevo artículo
+
+El payload que manda es un **arreglo JSON de artículos**:
+
+```json
+[
+  { "sku": "INJ-4501", "precio": "1250.00", "stock": 14, "costo": "890.00" },
+  { "sku": "ALT-7823", "precio": "3400.00", "stock": 2, "costo": "2100.00" },
+  { "sku": "BMB-0012", "precio": "890.00",  "stock": 0, "costo": "540.00" }
+]
+```
+
+**Notas importantes sobre el payload:**
+- `precio` y `stock` pueden llegar como string o como número — valida ambos
+- `costo` es opcional (no siempre lo manda)
+- El lote puede tener de 1 a 50 artículos por llamada
+- AdminTotal autentifica con el header `Api-key: <tu_secret>` o con `Authorization: Basic base64(usuario:password)`
+
+---
+
+## 3. Qué vas a construir
+
+### Estructura de archivos del nuevo proyecto Replit
+
+```
+mi-dashboard-inventario/
+├── api-server/                 ← Backend Express (Node/TypeScript)
+│   ├── src/
+│   │   ├── index.ts            ← Entry point, SSE emitter global
+│   │   ├── routes/
+│   │   │   ├── webhook.ts      ← Recibe datos de AdminTotal
+│   │   │   ├── inventory.ts    ← CRUD + SSE stream
+│   │   │   └── health.ts       ← Healthcheck
+│   │   ├── services/
+│   │   │   └── inventorySync.ts ← Lógica de upsert en DB
+│   │   └── db/
+│   │       └── schema.ts       ← Tablas Drizzle ORM
+│   └── package.json
+│
+├── dashboard/                  ← Frontend React + Vite
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── components/
+│   │   │   ├── InventoryTable.tsx
+│   │   │   ├── StockBadge.tsx
+│   │   │   ├── SyncStatusBar.tsx
+│   │   │   └── FiltersBar.tsx
+│   │   └── hooks/
+│   │       ├── useInventory.ts  ← Polling (Fase 1)
+│   │       └── useInventorySSE.ts ← SSE (Fase 2)
+│   └── package.json
+│
+└── package.json                ← pnpm workspace root
+```
+
+---
+
+## 4. Fase 1 — Dashboard con Polling
+
+Latencia máxima: **20–30 segundos** (tiempo webhook + intervalo de polling)
+
+### 4.1 Backend — Endpoint de inventario
+
+```typescript
+// api-server/src/routes/inventory.ts
+import { Router } from "express";
+import { db } from "../db";
+import { productsTable } from "../db/schema";
+import { ilike, or, sql, gt, eq } from "drizzle-orm";
+
+const router = Router();
+
+router.get("/inventory", async (req, res) => {
+  const {
+    search,
+    category,
+    brand,
+    onlyLow,        // stock < 5
+    onlyZero,       // stock = 0
+    limit = 100,
+    offset = 0,
+  } = req.query;
+
+  const conditions = [];
+
+  if (search) {
+    const pat = `%${search}%`;
+    conditions.push(
+      or(
+        ilike(productsTable.sku, pat),
+        ilike(productsTable.name, pat),
+        ilike(productsTable.brand, pat),
+      )
+    );
+  }
+  if (category) conditions.push(eq(productsTable.category, String(category)));
+  if (brand)    conditions.push(eq(productsTable.brand, String(brand)));
+  if (onlyZero === "true") {
+    conditions.push(eq(productsTable.erpStockQty, 0));
+  } else if (onlyLow === "true") {
+    conditions.push(
+      sql`${productsTable.erpStockQty} > 0 AND ${productsTable.erpStockQty} < 5`
+    );
+  }
+
+  const where = conditions.length ? and(...conditions) : undefined;
+
+  const items = await db
+    .select()
+    .from(productsTable)
+    .where(where)
+    .orderBy(productsTable.lastSyncedAt)
+    .limit(Number(limit))
+    .offset(Number(offset));
+
+  res.json({ items, total: items.length });
+});
+
+export default router;
+```
+
+### 4.2 Frontend — Hook de polling
+
+```typescript
+// dashboard/src/hooks/useInventory.ts
+import { useEffect, useRef, useState } from "react";
+
+export type InventoryItem = {
+  id: number;
+  sku: string;
+  name: string;
+  brand: string;
+  category: string;
+  price: string;
+  erpStockQty: number;
+  reservedStockQty: number;
+  lastSyncedAt: string | null;
+  syncState: string | null;
+};
+
+export function useInventory(filters: Record<string, string>, intervalMs = 20_000) {
+  const [items, setItems]     = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastFetch, setLastFetch] = useState<Date | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const fetchData = async () => {
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    const params = new URLSearchParams(
+      Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
+    );
+
+    try {
+      const res  = await fetch(`/api/inventory?${params}`, {
+        signal: abortRef.current.signal,
+      });
+      const data = await res.json();
+      setItems(data.items);
+      setLastFetch(new Date());
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+    const id = setInterval(fetchData, intervalMs);
+    return () => {
+      clearInterval(id);
+      abortRef.current?.abort();
+    };
+  }, [JSON.stringify(filters), intervalMs]);
+
+  return { items, loading, lastFetch, refresh: fetchData };
+}
+```
+
+### 4.3 Frontend — Componente principal de tabla
+
+```tsx
+// dashboard/src/components/InventoryTable.tsx
+import { useInventory } from "../hooks/useInventory";
+
+const STALE_MS = 4 * 60 * 60 * 1000; // 4 horas
+
+function stockColor(qty: number) {
+  if (qty === 0) return "#ef4444";   // rojo
+  if (qty < 5)   return "#f59e0b";   // amarillo
+  return "#22c55e";                   // verde
+}
+
+function isStale(lastSyncedAt: string | null) {
+  if (!lastSyncedAt) return true;
+  return Date.now() - new Date(lastSyncedAt).getTime() > STALE_MS;
+}
+
+export function InventoryTable() {
+  const [filters, setFilters] = useState({ search: "", category: "", onlyZero: "" });
+  const { items, loading, lastFetch } = useInventory(filters);
+
+  return (
+    <div>
+      {/* Barra de estado */}
+      <div style={{ marginBottom: 12, color: "#888", fontSize: 13 }}>
+        {loading ? "Actualizando..." : `Última actualización: ${lastFetch?.toLocaleTimeString()}`}
+        {" · "}{items.length} productos
+      </div>
+
+      {/* Filtros */}
+      <input
+        placeholder="Buscar SKU, nombre o marca..."
+        onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+      />
+      <label>
+        <input
+          type="checkbox"
+          onChange={e => setFilters(f => ({ ...f, onlyZero: e.target.checked ? "true" : "" }))}
+        />
+        Solo sin stock
+      </label>
+
+      {/* Tabla */}
+      <table>
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Nombre</th>
+            <th>Marca</th>
+            <th>Categoría</th>
+            <th>Precio</th>
+            <th>Stock</th>
+            <th>Última sync</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map(item => (
+            <tr
+              key={item.sku}
+              style={{
+                opacity: isStale(item.lastSyncedAt) ? 0.5 : 1,
+                backgroundColor: item.erpStockQty === 0 ? "#1a0a0a" : undefined,
+              }}
+            >
+              <td><code>{item.sku}</code></td>
+              <td>{item.name}</td>
+              <td>{item.brand}</td>
+              <td>{item.category}</td>
+              <td>${parseFloat(item.price).toLocaleString("es-MX")}</td>
+              <td style={{ color: stockColor(item.erpStockQty), fontWeight: 700 }}>
+                {item.erpStockQty}
+              </td>
+              <td style={{ fontSize: 12, color: isStale(item.lastSyncedAt) ? "#ef4444" : "#888" }}>
+                {item.lastSyncedAt
+                  ? new Date(item.lastSyncedAt).toLocaleString("es-MX")
+                  : "Nunca"}
+                {isStale(item.lastSyncedAt) && " ⚠ Dato viejo"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+---
+
+## 5. Fase 2 — Tiempo real con SSE
+
+Latencia: **1–3 segundos** desde que AdminTotal manda el webhook.
+
+### 5.1 Backend — EventEmitter global y endpoint SSE
+
+```typescript
+// api-server/src/index.ts
+import EventEmitter from "events";
+export const inventoryBus = new EventEmitter();
+inventoryBus.setMaxListeners(200); // hasta 200 dashboards conectados simultáneamente
+```
+
+```typescript
+// api-server/src/routes/inventory.ts (agregar a lo que ya tienes)
+import { inventoryBus } from "../index";
+
+// GET /inventory/stream  →  Server-Sent Events
+router.get("/inventory/stream", (req, res) => {
+  res.setHeader("Content-Type",  "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection",    "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*"); // ajusta en prod
+  res.flushHeaders();
+
+  // Heartbeat cada 30s para mantener la conexión viva
+  const heartbeat = setInterval(() => {
+    res.write(": heartbeat\n\n");
+  }, 30_000);
+
+  // Listener de cambios
+  const onUpdate = (payload: object) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+  inventoryBus.on("inventory:updated", onUpdate);
+
+  // Limpiar al desconectar el cliente
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    inventoryBus.off("inventory:updated", onUpdate);
+  });
+});
+```
+
+### 5.2 Backend — Emitir cuando llega el webhook
+
+```typescript
+// api-server/src/routes/webhook.ts
+import { inventoryBus } from "../index";
+import { syncInventoryBatch } from "../services/inventorySync";
+
+router.post("/webhook/inventory", async (req, res) => {
+  // ... validar Api-key ...
+  // ... validar payload con Zod ...
+
+  const result = await syncInventoryBatch(items);
+
+  // Emitir evento a todos los dashboards conectados por SSE
+  inventoryBus.emit("inventory:updated", {
+    updatedSkus: items.map(i => i.sku),
+    updatedCount: result.updatedCount,
+    createdCount: result.createdCount,
+    receivedAt: new Date().toISOString(),
+  });
+
+  res.json({ ok: true, ...result });
+});
+```
+
+### 5.3 Frontend — Hook de SSE
+
+```typescript
+// dashboard/src/hooks/useInventorySSE.ts
+import { useEffect, useRef, useState } from "react";
+import { InventoryItem } from "./useInventory";
+
+export function useInventorySSE(onUpdate: (skus: string[]) => void) {
+  const [connected, setConnected] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    const es = new EventSource("/api/inventory/stream");
+    esRef.current = es;
+
+    es.onopen = () => setConnected(true);
+
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data) as { updatedSkus: string[] };
+        onUpdate(data.updatedSkus);
+      } catch {}
+    };
+
+    es.onerror = () => {
+      setConnected(false);
+      // El browser reconecta automáticamente con backoff
+    };
+
+    return () => {
+      es.close();
+      setConnected(false);
+    };
+  }, []);
+
+  return { connected };
+}
+```
+
+### 5.4 Frontend — Combinar polling inicial + SSE para actualizaciones
+
+```tsx
+// dashboard/src/App.tsx
+import { useState, useCallback } from "react";
+import { useInventory } from "./hooks/useInventory";
+import { useInventorySSE } from "./hooks/useInventorySSE";
+
+export default function App() {
+  const [filters, setFilters] = useState({});
+  const { items, loading, lastFetch, refresh } = useInventory(filters, 120_000); // refresco cada 2min como respaldo
+
+  // Cuando SSE avisa de cambios → solo re-fetch los SKUs afectados
+  const handleSSEUpdate = useCallback((skus: string[]) => {
+    refresh(); // puedes optimizar esto para solo actualizar filas afectadas
+  }, [refresh]);
+
+  const { connected } = useInventorySSE(handleSSEUpdate);
+
+  return (
+    <div>
+      <div style={{ color: connected ? "#22c55e" : "#f59e0b" }}>
+        {connected ? "🟢 Conectado en tiempo real" : "🟡 Reconectando..."}
+      </div>
+      {/* ... InventoryTable ... */}
+    </div>
+  );
+}
+```
+
+---
+
+## 6. Variables de entorno necesarias
+
+Configúralas en Replit → Secrets (nunca en el código):
+
+| Secret | Descripción | Ejemplo |
+|---|---|---|
+| `ADMINTOTAL_WEBHOOK_SECRET` | El api-key que AdminTotal manda en el header | `at_wh_prod_abc123xyz` |
+| `ADMINTOTAL_URL` | URL base del API de AdminTotal (para consultas activas) | `https://tuempresa.admintotal.com` |
+| `ADMINTOTAL_API_KEY` | API key para llamar a AdminTotal desde tu servidor | `at_api_prod_xyz789` |
+| `DATABASE_URL` | Connection string de PostgreSQL | `postgresql://user:pass@host:5432/db` |
+| `STALE_DATA_THRESHOLD_HOURS` | Horas antes de marcar un dato como viejo | `4` |
+
+---
+
+## 7. Formato exacto del webhook de AdminTotal
+
+### Request que manda AdminTotal
+
+```
+POST /webhook/inventory
+Api-key: <ADMINTOTAL_WEBHOOK_SECRET>
+Content-Type: application/json
+
+[
+  {
+    "sku":    "INJ-4501",
+    "precio": "1250.00",
+    "stock":  14,
+    "costo":  "890.00"
+  }
+]
+```
+
+**AdminTotal también puede usar autenticación Basic:**
+```
+Authorization: Basic base64(username:password)
+```
+En ese caso extrae la contraseña del header (la parte después del `:` antes del base64).
+
+### Validación del payload (Zod)
+
+```typescript
+import { z } from "zod";
+
+const InventoryItem = z.object({
+  sku:    z.string().min(1),
+  precio: z.union([z.string(), z.number()]).transform(String),
+  stock:  z.union([z.string(), z.number()]).transform(v => parseInt(String(v), 10)),
+  costo:  z.union([z.string(), z.number()]).transform(String).optional(),
+});
+
+const InventoryPayload = z.array(InventoryItem).min(1).max(50);
+```
+
+### Response esperado por AdminTotal
+
+```json
+{ "ok": true, "updatedCount": 3, "createdCount": 0, "failedCount": 0 }
+```
+
+AdminTotal considera exitoso cualquier `2xx`. Si mandas `4xx` o `5xx` puede reintentar.
+
+---
+
+## 8. Esquema de base de datos
+
+### Tablas necesarias (Drizzle ORM + PostgreSQL)
+
+```typescript
+// api-server/src/db/schema.ts
+import { pgTable, serial, text, integer, numeric, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+
+export const productsTable = pgTable("products", {
+  id:               serial("id").primaryKey(),
+  sku:              text("sku").notNull().unique(),
+  name:             text("name").notNull().default(""),
+  brand:            text("brand").notNull().default("Sin marca"),
+  category:         text("category").notNull().default("Sin categoría"),
+  description:      text("description"),
+  price:            numeric("price", { precision: 12, scale: 2 }).notNull().default("0"),
+  cost:             numeric("cost",  { precision: 12, scale: 2 }),
+  imageUrl:         text("image_url"),
+
+  // Campos de inventario ERP
+  erpStockQty:      integer("erp_stock_qty").notNull().default(0),
+  reservedStockQty: integer("reserved_stock_qty").notNull().default(0),
+
+  // Metadatos de sync
+  isSyncManaged:    boolean("is_sync_managed").notNull().default(false),
+  syncSource:       text("sync_source"),          // "admintotal"
+  syncState:        text("sync_state"),            // "ok" | "incomplete"
+  lastSyncedAt:     timestamp("last_synced_at"),
+
+  createdAt:        timestamp("created_at").notNull().defaultNow(),
+  updatedAt:        timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Log de cada webhook recibido
+export const syncLogsTable = pgTable("inventory_sync_logs", {
+  id:             serial("id").primaryKey(),
+  source:         text("source").notNull(),          // "admintotal"
+  rawPayload:     jsonb("raw_payload"),
+  receivedAt:     timestamp("received_at").notNull(),
+  processedAt:    timestamp("processed_at"),
+  processedCount: integer("processed_count").default(0),
+  failedCount:    integer("failed_count").default(0),
+  status:         text("status"),                    // "success" | "partial" | "failed"
+  errorsSummary:  text("errors_summary"),
+  createdAt:      timestamp("created_at").notNull().defaultNow(),
+});
+
+// Errores individuales por SKU
+export const syncErrorsTable = pgTable("inventory_sync_errors", {
+  id:           serial("id").primaryKey(),
+  source:       text("source").notNull(),
+  sku:          text("sku").notNull(),
+  errorType:    text("error_type").notNull(),   // "sku_not_found" | "db_error"
+  errorMessage: text("error_message"),
+  payloadJson:  jsonb("payload_json"),
+  status:       text("status").notNull().default("open"), // "open" | "resolved"
+  resolvedAt:   timestamp("resolved_at"),
+  createdAt:    timestamp("created_at").notNull().defaultNow(),
+});
+```
+
+### Función de stock disponible
+
+```typescript
+// Stock disponible = ERP stock - reservas de pedidos en proceso
+export function getAvailableStock(product: {
+  erpStockQty: number;
+  reservedStockQty: number;
+}): number {
+  return Math.max(0, product.erpStockQty - product.reservedStockQty);
+}
+```
+
+---
+
+## 9. Endpoints del API a implementar
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/webhook/inventory` | Recibe batches de AdminTotal (sin JWT, solo Api-key) |
+| `GET`  | `/inventory` | Lista productos con filtros y paginación |
+| `GET`  | `/inventory/stream` | SSE stream de cambios en tiempo real |
+| `GET`  | `/inventory/logs` | Historial de webhooks recibidos |
+| `GET`  | `/inventory/errors` | Errores de sync sin resolver |
+| `GET`  | `/health` | Healthcheck (para Replit) |
+
+---
+
+## 10. Configuración en Replit
+
+### .replit (para workspace con dos servicios)
+
+```toml
+[[workflows]]
+name = "API Server"
+mode = "sequential"
+
+[[workflows.tasks]]
+task = "shell.exec"
+args = "cd api-server && pnpm dev"
+waitForPort = 3001
+
+[[workflows]]
+name = "Dashboard"
+mode = "sequential"
+
+[[workflows.tasks]]
+task = "shell.exec"
+args = "cd dashboard && pnpm dev"
+waitForPort = 5173
+```
+
+### Vite config — exponer en Replit (imprescindible)
+
+```typescript
+// dashboard/vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: "0.0.0.0",
+    port: parseInt(process.env.PORT ?? "5173"),
+    allowedHosts: true,   // necesario para el proxy de Replit
+    proxy: {
+      "/api": {
+        target: `http://localhost:${process.env.API_PORT ?? 3001}`,
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api/, ""),
+      },
+    },
+  },
+});
+```
+
+### CORS en Express (imprescindible para Replit)
+
+```typescript
+// api-server/src/index.ts
+import cors from "cors";
+
+app.use(cors({
+  origin: process.env.DASHBOARD_ORIGIN ?? "*",
+  methods: ["GET", "POST"],
+}));
+```
+
+---
+
+## 11. Errores comunes y cómo resolverlos
+
+### ❌ AdminTotal manda el webhook pero el endpoint responde 401
+
+**Causa:** El header de autenticación llega de forma diferente según la versión de AdminTotal.
+**Solución:** Soportar las 3 variantes:
+```typescript
+function extractApiKey(headers: Record<string, string | undefined>): string | undefined {
+  // Variante 1: Api-key header
+  if (headers["api-key"]) return headers["api-key"];
+  // Variante 2: X-AdminTotal-Api-Key (tooling local)
+  if (headers["x-admintotal-api-key"]) return headers["x-admintotal-api-key"];
+  // Variante 3: Basic Auth (usa la contraseña del par usuario:contraseña)
+  if (headers["authorization"]?.startsWith("Basic ")) {
+    const decoded = Buffer.from(headers["authorization"].slice(6), "base64").toString();
+    return decoded.split(":").slice(1).join(":");
+  }
+  return undefined;
+}
+```
+
+### ❌ El SSE se desconecta cada 30 segundos
+
+**Causa:** Replit cierra conexiones idle.
+**Solución:** Mantener el heartbeat:
+```typescript
+const heartbeat = setInterval(() => res.write(": ping\n\n"), 25_000);
+```
+
+### ❌ `precio` llega como `"1,250.00"` (con coma) y `parseFloat` da NaN
+
+**Causa:** AdminTotal puede formatear números con separador de miles.
+**Solución:**
+```typescript
+const price = parseFloat(String(item.precio).replace(/,/g, ""));
+```
+
+### ❌ El EventEmitter consume mucha memoria con muchos dashboards
+
+**Causa:** Cada conexión SSE registra un listener.
+**Solución:** Limitar conexiones y limpiar correctamente en `req.on("close")`:
+```typescript
+inventoryBus.setMaxListeners(500);
+// Y siempre:
+req.on("close", () => inventoryBus.off("inventory:updated", onUpdate));
+```
+
+### ❌ En Fase 2 (SSE), si el API server se reinicia los dashboards no reconectan
+
+**Causa:** El browser hace reconnect automático, pero puede tardar 3–5 segundos.
+**Solución:** Mostrar un indicador visual y re-fetch el inventario completo al reconectar:
+```typescript
+es.onopen = () => {
+  setConnected(true);
+  refresh(); // re-fetch completo al reconectar para no perder cambios ocurridos offline
+};
+```
+
+### ❌ Datos stale (dato viejo en pantalla aunque el webhook ya llegó)
+
+**Causa:** El polling del dashboard no coincide con el momento del webhook.
+**Solución:** Combinar SSE (Fase 2) con un polling de respaldo largo (120s). Si SSE falla, el polling garantiza datos frescos.
+
+---
+
+## Checklist de implementación
+
+```
+Fase 1 — Polling
+[ ] PostgreSQL creada con las 3 tablas (products, sync_logs, sync_errors)
+[ ] POST /webhook/inventory implementado y validado con Zod
+[ ] Verificación de Api-key con timingSafeEqual (timing-safe, no ===)
+[ ] GET /inventory con filtros implementado
+[ ] Dashboard React con useInventory (polling 20s)
+[ ] Indicador de "dato stale" (> 4h sin sync)
+[ ] Colores de stock (rojo 0, amarillo <5, verde ≥5)
+[ ] CORS configurado en Express
+[ ] allowedHosts: true en Vite (para Replit)
+[ ] Secrets configurados en Replit (no en código)
+
+Fase 2 — SSE
+[ ] inventoryBus (EventEmitter) exportado desde index.ts
+[ ] inventoryBus.emit("inventory:updated") en el webhook handler
+[ ] GET /inventory/stream con heartbeat cada 25s
+[ ] Limpieza de listeners en req.on("close")
+[ ] useInventorySSE en el frontend
+[ ] Re-fetch completo al reconectar (es.onopen)
+[ ] Indicador visual de estado de conexión (🟢/🟡)
+```
+
+---
+
+*Generado desde la implementación real de Carper Pro — Junio 2026*
