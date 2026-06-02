@@ -1,12 +1,14 @@
 ---
-name: Carper demo/test catalog data
-description: Leftover demo rows from early backend verification that were removed.
+name: Carper catalog test/placeholder data
+description: How test rows enter the catalog and how they are kept out of the app.
 ---
 
-Early backend verification inserted demo/test rows via executeSql that polluted the real Excel-seeded catalog:
-- Products: 1001/1002/1003 (Batería/Alternador demos), LOCALTEST001, FINALTEST001
-- Categories with numeric ids: "10" (Baterías), "20" (Alternadores), "30" (Marchas)
+The catalog is a **live mirror of the Admintotal ERP** (sync writes products/categories/brands/sucursales; `sync_state` row key `catalog` tracks progress). IDs are the ERP's own **numeric** ids — numeric ids are LEGIT, not test data. (The older "all category ids are `cat-*`" Excel-seed rule is obsolete; that only held before the ERP sync existed.)
 
-These were deleted. **Rule:** the products/categories/inventory tables should contain ONLY Excel-seeded data (category ids all start with `cat-`). If numeric category ids or LOCALTEST/FINALTEST product ids reappear, they are stray test data — safe to remove.
+Because rows come from the ERP, **deleting test rows from the DB does not stick** — the next sync re-inserts them.
 
-**Why:** real seed uses slugify → all category ids are `cat-*`; any other id is demo/test residue.
+**Rule:** filter test/placeholder rows at the API query layer, never by DELETE. `notTestProduct()` in `artifacts/api-server/src/routes/catalog.ts` excludes them from every product-serving endpoint (list, by-id, deals); `/brands` has a matching brand-name exclusion.
+
+**Why:** test placeholders like name `ARTICULO PRUEBA` and brand `REPTIL TEST BRAND` live in the ERP itself, so only a query-layer filter keeps them out of production permanently.
+
+**How to apply:** match narrowly — generic placeholders only (exact `articulo prueba`, `%producto de prueba%`, `%test brand%`, `%reptil test%`). Do NOT match real diagnostic tools that legitimately contain "prueba" (e.g. "PINZA PRUEBA", "FOCO DE PRUEBA", injector/coil testers).

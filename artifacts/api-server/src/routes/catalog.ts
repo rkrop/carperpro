@@ -33,6 +33,20 @@ function stockExpr(sucursalId?: string): SQL<number> {
   return sql<number>`coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), 0)`;
 }
 
+// Test/placeholder rows that leak in from the Admintotal ERP sync (e.g.
+// "ARTICULO PRUEBA", "REPTIL TEST BRAND"). Excluded at the query layer so they
+// never surface in the app, even after a re-sync re-inserts them. Real
+// diagnostic tools ("pinza de prueba", "foco de prueba") are intentionally NOT
+// matched — only generic test placeholders and test brands.
+function notTestProduct(): SQL {
+  return sql`not (
+    unaccent(lower(${productsTable.name})) = 'articulo prueba'
+    or unaccent(lower(${productsTable.name})) like '%producto de prueba%'
+    or lower(${productsTable.brand}) like '%test brand%'
+    or lower(${productsTable.brand}) like '%reptil test%'
+  )`;
+}
+
 function serializeProduct(
   row: DbProduct & { stock: number },
 ): Record<string, unknown> {
@@ -64,7 +78,11 @@ router.get("/categories", async (_req: Request, res: Response): Promise<void> =>
 });
 
 router.get("/brands", async (_req: Request, res: Response): Promise<void> => {
-  const rows = await db.select().from(brandsTable).orderBy(brandsTable.name);
+  const rows = await db
+    .select()
+    .from(brandsTable)
+    .where(sql`not (lower(${brandsTable.name}) like '%test brand%' or lower(${brandsTable.name}) like '%reptil test%')`)
+    .orderBy(brandsTable.name);
   const data = ListBrandsResponse.parse(rows.map((r) => r.name));
   res.json(data);
 });
@@ -93,7 +111,7 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const offset = Number(req.query.offset) || 0;
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [notTestProduct()];
   if (q) {
     // Full-text prefix search on the tsvector column (covers name, descripcion,
     // sku, brand, oem codes).  Each word in the query gets a :* prefix so it
@@ -122,7 +140,7 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   }
   if (categoryId) conditions.push(eq(productsTable.categoryId, categoryId));
   if (brand) conditions.push(eq(productsTable.brand, brand));
-  const where = conditions.length ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const stock = stockExpr(sucursalId);
 
@@ -155,7 +173,7 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
   const rows = await db
     .select({ product: productsTable, stock })
     .from(productsTable)
-    .where(eq(productsTable.id, id))
+    .where(and(eq(productsTable.id, id), notTestProduct()))
     .limit(1);
   const row = rows[0];
   if (!row) {
@@ -177,6 +195,7 @@ router.get("/deals", async (req: Request, res: Response): Promise<void> => {
     .from(productsTable)
     .where(
       and(
+        notTestProduct(),
         sql`${productsTable.originalPrice} is not null`,
         sql`${productsTable.originalPrice} > ${productsTable.price}`,
       ),
