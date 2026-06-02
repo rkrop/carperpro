@@ -165,12 +165,17 @@ export class AdmintotalClient {
     return (await res.json()) as T;
   }
 
-  // Fetch every page of a paginated endpoint, following `next`.
-  async fetchAll<T>(
+  // Fetch every page of a paginated endpoint, following `next`. Also reports the
+  // total `count` advertised by the API and whether pagination ended naturally
+  // (the `next` link became null) versus being cut short — callers that prune
+  // local data use this to avoid wiping rows on an incomplete pull.
+  async fetchAllWithMeta<T>(
     path: string,
     params?: Record<string, string | number>,
-  ): Promise<T[]> {
+  ): Promise<{ results: T[]; expectedCount: number | null; complete: boolean }> {
     const results: T[] = [];
+    let expectedCount: number | null = null;
+    let complete = false;
     let url: string | null = this.buildUrl(path, {
       limit: PAGE_LIMIT,
       ...(params ?? {}),
@@ -181,20 +186,59 @@ export class AdmintotalClient {
       const page: PaginatedResponse<T> = await this.request<
         PaginatedResponse<T>
       >("GET", url);
+      if (expectedCount === null && typeof page.count === "number") {
+        expectedCount = page.count;
+      }
       if (Array.isArray(page.results)) {
         results.push(...page.results);
       } else if (Array.isArray(page as unknown as T[])) {
         // Some endpoints may return a bare array.
         results.push(...(page as unknown as T[]));
+        complete = true;
         break;
       }
       url = page.next ?? null;
+      if (!url) complete = true;
     }
-    return results;
+    return { results, expectedCount, complete };
+  }
+
+  async fetchAll<T>(
+    path: string,
+    params?: Record<string, string | number>,
+  ): Promise<T[]> {
+    return (await this.fetchAllWithMeta<T>(path, params)).results;
   }
 
   async getProductos(): Promise<Record<string, unknown>[]> {
     return this.fetchAll<Record<string, unknown>>("productos/");
+  }
+
+  async getProductosWithMeta(): Promise<{
+    results: Record<string, unknown>[];
+    expectedCount: number | null;
+    complete: boolean;
+  }> {
+    return this.fetchAllWithMeta<Record<string, unknown>>("productos/");
+  }
+
+  /**
+   * Fetch a single product by its ERP id via the detail endpoint
+   * (`productos/{id}/`). Returns null on 404. NOTE: list-style filters like
+   * `?id=`, `?id__in=`, `?clave=` are silently ignored by this API and return
+   * the full catalog, so targeted lookups MUST use this detail route (or the
+   * exact-match `?codigo=` filter) — never a guessed query param.
+   */
+  async getProductoById(
+    id: string,
+  ): Promise<Record<string, unknown> | null> {
+    const url = this.buildUrl(`productos/${encodeURIComponent(id)}/`);
+    try {
+      return await this.request<Record<string, unknown>>("GET", url);
+    } catch (err) {
+      if (err instanceof AdmintotalError && err.status === 404) return null;
+      throw err;
+    }
   }
 
   async getAlmacenes(): Promise<Record<string, unknown>[]> {

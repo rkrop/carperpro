@@ -24,9 +24,15 @@ export type OutboundOrderStatus =
   | "failed"
   // Card orders awaiting Stripe payment. Excluded from the Admintotal queue
   // (which only picks up "pending") until payment is confirmed.
-  | "awaiting_payment";
+  | "awaiting_payment"
+  // Paid card order being processed (live stock re-check before ERP push).
+  // Also excluded from the queue so it is never pushed mid-verification.
+  | "fulfilling"
+  // Order voided after payment (e.g. sold out during the payment window). The
+  // buyer is refunded; never pushed to the ERP.
+  | "cancelled";
 
-export type PaymentStatus = "unpaid" | "paid" | "failed";
+export type PaymentStatus = "unpaid" | "paid" | "failed" | "refunded";
 
 // Queue of app orders to push to Admintotal as pedidos. Retried automatically.
 export const outboundOrdersTable = pgTable("outbound_orders", {

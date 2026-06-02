@@ -122,6 +122,12 @@ export default function Checkout() {
           addOrder(verifiedToOrder(order));
           cart.clear();
           router.replace(`/confirmacion?folio=${order.folio}`);
+        } else if (order && order.paymentStatus === "refunded") {
+          cart.clear();
+          Alert.alert(
+            "Producto agotado",
+            "Uno o más productos se agotaron justo antes de completar tu compra. Tu pago fue reembolsado automáticamente a tu tarjeta.",
+          );
         } else {
           Alert.alert("Pago pendiente", "Aún no confirmamos tu pago. Si ya pagaste, espera unos minutos.");
         }
@@ -176,6 +182,13 @@ export default function Checkout() {
             cart.clear();
             if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             router.replace(`/confirmacion?folio=${order.folio}`);
+          } else if (order && order.paymentStatus === "refunded") {
+            cart.clear();
+            if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            Alert.alert(
+              "Producto agotado",
+              "Uno o más productos se agotaron justo antes de completar tu compra. Tu pago fue reembolsado automáticamente a tu tarjeta.",
+            );
           } else {
             if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
             Alert.alert("Pago no completado", "No confirmamos tu pago con tarjeta. Si ya pagaste, espera unos minutos o intenta de nuevo.");

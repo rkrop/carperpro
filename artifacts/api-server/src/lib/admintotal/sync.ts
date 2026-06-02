@@ -134,7 +134,19 @@ export async function runInboundSync(): Promise<SyncResult> {
     logger.info({ count: sucursales.length }, "Admintotal: sucursales sincronizadas");
 
     // 3) Productos -> products + brands + inventory
-    const rawProductos = await client.getProductos();
+    const {
+      results: rawProductos,
+      expectedCount,
+      complete,
+    } = await client.getProductosWithMeta();
+    // A pull is only "complete" when pagination ended naturally AND we got at
+    // least ~90% of the count the API advertised. A partial/cut-short pull must
+    // NEVER trigger the destructive prune below, or it would wipe live stock.
+    const pullComplete =
+      complete &&
+      rawProductos.length > 0 &&
+      (expectedCount === null ||
+        rawProductos.length >= Math.floor(expectedCount * 0.9));
     const brandSet = new Set<string>();
     const seenProductIds: string[] = [];
     const categoryCounts = new Map<string, number>();
@@ -221,13 +233,24 @@ export async function runInboundSync(): Promise<SyncResult> {
         .values({ name })
         .onConflictDoNothing({ target: brandsTable.name });
     }
-    // Prune stale products and their inventory, then stale brands.
-    if (seenProductIds.length > 0) {
-      await db.delete(inventoryTable).where(notInArray(inventoryTable.productId, seenProductIds));
-      await db.delete(productsTable).where(notInArray(productsTable.id, seenProductIds));
-    }
-    if (seenBrands.length > 0) {
-      await db.delete(brandsTable).where(notInArray(brandsTable.name, seenBrands));
+    // Prune stale products and their inventory, then stale brands — but ONLY
+    // when the product pull looked complete. A partial/failed pull must never
+    // delete products or zero out inventory (that would empty the catalog/stock
+    // on a transient ERP hiccup); we keep the existing rows and try again next
+    // sync.
+    if (pullComplete) {
+      if (seenProductIds.length > 0) {
+        await db.delete(inventoryTable).where(notInArray(inventoryTable.productId, seenProductIds));
+        await db.delete(productsTable).where(notInArray(productsTable.id, seenProductIds));
+      }
+      if (seenBrands.length > 0) {
+        await db.delete(brandsTable).where(notInArray(brandsTable.name, seenBrands));
+      }
+    } else {
+      logger.warn(
+        { fetched: rawProductos.length, expectedCount },
+        "Admintotal: pull de productos incompleto; se omite la limpieza para no borrar productos/inventario",
+      );
     }
 
     // 5) Category counts — zero out categories not seen in this sync.
