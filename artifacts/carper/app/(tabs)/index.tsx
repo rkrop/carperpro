@@ -1,40 +1,31 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
-import { Hairline, SectionLabel } from "@/components/CarperUI";
+import { SectionLabel } from "@/components/CarperUI";
 import { ProductCardMini } from "@/components/ProductRow";
 import { SearchHeader } from "@/components/SearchHeader";
+import { Colecciones } from "@/components/home/Colecciones";
+import { Confianza } from "@/components/home/Confianza";
+import { ConsejosTaller } from "@/components/home/ConsejosTaller";
+import { DealOfDay } from "@/components/home/DealOfDay";
+import { DiagnosticoRapido } from "@/components/home/DiagnosticoRapido";
+import { HomeFaq } from "@/components/home/HomeFaq";
+import { MasBuscados } from "@/components/home/MasBuscados";
 import { Fonts, TAB_BAR_HEIGHT } from "@/constants/fonts";
 import { useCategories, useDeals } from "@/data/catalog";
 import { useApp, vehicleLabel, vehicleSub } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
-import { discountPct } from "@/lib/format";
-
-function useCountdown(targetMs: number) {
-  const [remaining, setRemaining] = useState(targetMs);
-  useEffect(() => {
-    const id = setInterval(() => setRemaining((r) => (r <= 1000 ? targetMs : r - 1000)), 1000);
-    return () => clearInterval(id);
-  }, [targetMs]);
-  const h = Math.floor(remaining / 3_600_000);
-  const m = Math.floor((remaining % 3_600_000) / 60_000);
-  const s = Math.floor((remaining % 60_000) / 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
 
 export default function Inicio() {
   const c = useColors();
   const router = useRouter();
   const { vehicle, recent, sucursal } = useApp();
-  const countdown = useCountdown(4 * 3_600_000 + 12 * 60_000 + 59 * 1000);
   const sucursalId = sucursal.id || undefined;
   const { data: categories } = useCategories();
   const { data: deals } = useDeals(sucursalId);
   const dealOfDay = deals?.dealOfDay ?? null;
-  const dealOff = dealOfDay?.originalPrice ? discountPct(dealOfDay.price, dealOfDay.originalPrice) : 0;
   const recentProducts = recent.slice(0, 6);
   const popularCats = categories?.slice(0, 9) ?? [];
 
@@ -97,27 +88,14 @@ export default function Inicio() {
           </View>
         </View>
 
+        {/* Diagnóstico rápido — symptom shortcuts */}
+        <DiagnosticoRapido />
+
         {/* Deal of day */}
-        {dealOfDay ? (
-          <Pressable
-            onPress={() => router.push(`/producto/${dealOfDay.id}`)}
-            style={{ backgroundColor: c.background, borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.border, paddingHorizontal: 24, paddingVertical: 24, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
-          >
-            <View style={{ flex: 1, paddingRight: 16 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                <Feather name="zap" size={12} color={c.primary} />
-                <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.primary }}>Oferta del Día</Text>
-              </View>
-              <Text style={{ fontFamily: Fonts.black, fontSize: 18, letterSpacing: -0.6, textTransform: "uppercase", color: c.foreground }} numberOfLines={2}>
-                {dealOfDay.name}{dealOff > 0 ? ` -${dealOff}%` : ""}
-              </Text>
-            </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 4 }}>Termina en</Text>
-              <Text style={{ fontFamily: Fonts.mono, fontSize: 15, letterSpacing: -0.5, color: c.foreground }}>{countdown}</Text>
-            </View>
-          </Pressable>
-        ) : null}
+        {dealOfDay ? <DealOfDay product={dealOfDay} /> : null}
+
+        {/* Más buscados — real catalog products */}
+        <MasBuscados />
 
         {/* Categories */}
         <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 32, borderBottomWidth: 1, borderBottomColor: c.border }}>
@@ -138,6 +116,9 @@ export default function Inicio() {
           </View>
         </View>
 
+        {/* Colecciones destacadas — curated campaigns */}
+        <Colecciones />
+
         {/* Recently viewed */}
         {recentProducts.length > 0 ? (
           <View style={{ paddingVertical: 32 }}>
@@ -148,9 +129,16 @@ export default function Inicio() {
               ))}
             </ScrollView>
           </View>
-        ) : (
-          <Hairline />
-        )}
+        ) : null}
+
+        {/* Consejos del taller — editorial tips */}
+        <ConsejosTaller />
+
+        {/* Preguntas frecuentes */}
+        <HomeFaq />
+
+        {/* Confianza / Sobre Carper — trust strip */}
+        <Confianza />
       </ScrollView>
     </View>
   );

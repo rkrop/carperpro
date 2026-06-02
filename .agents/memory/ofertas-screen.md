@@ -25,3 +25,13 @@ The `02-deldia.png` asset is reused as the deal-of-day hero's faint `ImageBackgr
 **How to apply:** To add/edit a campaign, edit `CAMPAIGNS` in `lib/campaigns.ts` (image
 `require` paths must be static literals for RN/Metro). To make the live deal hero appear,
 some product needs `originalPrice > price`.
+
+## Home (Inicio) curation
+Home content beyond live catalog/deals lives in `lib/homeContent.ts` (symptom shortcuts,
+tips, short FAQ, trust stats) and `components/home/*`. Curated cards link into
+`/resultados?q=...` catalog search rather than hard-linking products.
+
+**Inventory caveat:** the `inventory` table (column `quantity`, not `qty`) is EMPTY in dev
+— stock is populated only by the ERP sync. So any home/list filter on `stock > 0` shows
+nothing in dev. Filter on `price > 0` and sort in-stock first instead, so it works in
+both dev and prod.

@@ -78,3 +78,21 @@ id = "gQo4Fk-IbUUcMzITloJ9H"
 uri = "file://artifacts/carper/assets/images/ofertas/10-restock.png"
 type = "image"
 title = "generated_image"
+
+[[generated]]
+id = "2gPIBO8GHpgV-jSd7NQFX"
+uri = "file://artifacts/carper/assets/images/tips/alternador.png"
+type = "image"
+title = "alternator tip"
+
+[[generated]]
+id = "x3TUPaV8H5PmHCHuEzmwV"
+uri = "file://artifacts/carper/assets/images/tips/bomba.png"
+type = "image"
+title = "fuel pump tip"
+
+[[generated]]
+id = "eXkGMumLrk1CyBeKOHrAf"
+uri = "file://artifacts/carper/assets/images/tips/afinacion.png"
+type = "image"
+title = "tune up tip"
