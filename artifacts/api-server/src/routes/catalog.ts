@@ -22,13 +22,31 @@ import {
 
 const router: IRouter = Router();
 
+// Stock reported when a product's inventory is UNKNOWN — i.e. it has no rows in
+// the `inventory` mirror. The Admintotal sync only ever reports a handful of
+// inventory rows (frequently none at all), so the overwhelming majority of the
+// catalog has no stock data. Those products are intentionally kept VISIBLE by
+// sellableProduct(), and they must ALSO be reported as available: returning 0
+// for "unknown" made every such product render as "Agotado" in the app even
+// though we have no evidence it's out of stock. We surface a small positive
+// sentinel (above the app's "últimas piezas" threshold of 3) so unknown items
+// read as "En existencia" and stay orderable. Checkout still performs a live
+// stock check, so an unknown-stock item can never let a customer over-buy.
+//
+// Confirmed-out-of-stock products (those that DO have inventory rows, summing to
+// 0) are removed entirely by sellableProduct() and never reach serialization, so
+// a real 0 is never reported as available here — only the genuine "no data" case
+// gets the sentinel.
+const UNKNOWN_STOCK = 10;
+
 // Stock for a product: summed across all sucursales, or for one sucursal when
-// `sucursalId` is provided.
+// `sucursalId` is provided. When no inventory data exists the result falls back
+// to UNKNOWN_STOCK so the catalog treats the item as available (see above).
 function stockExpr(sucursalId?: string): SQL<number> {
   if (sucursalId) {
-    return sql<number>`coalesce((select ${inventoryTable.quantity} from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id} and ${inventoryTable.sucursalId} = ${sucursalId}), 0)`;
+    return sql<number>`coalesce((select ${inventoryTable.quantity} from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id} and ${inventoryTable.sucursalId} = ${sucursalId}), ${UNKNOWN_STOCK})`;
   }
-  return sql<number>`coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), 0)`;
+  return sql<number>`coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), ${UNKNOWN_STOCK})`;
 }
 
 // Test/placeholder rows that leak in from the Admintotal ERP sync (e.g.

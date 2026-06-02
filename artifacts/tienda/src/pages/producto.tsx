@@ -1,0 +1,190 @@
+import { useRoute } from "wouter";
+import { useGetProduct } from "@workspace/api-client-react";
+import { getGetProductQueryKey } from "@workspace/api-client-react";
+import { ProductPlaceholder } from "@/components/product/ProductPlaceholder";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { whatsappUrl } from "@/lib/store";
+import { MessageCircle, Check, Info } from "lucide-react";
+import NotFound from "./not-found";
+
+export default function Producto() {
+  const [, params] = useRoute("/producto/:id");
+  const id = params?.id;
+
+  const { data: product, isLoading, error } = useGetProduct(id!, undefined, {
+    query: {
+      enabled: !!id,
+      queryKey: getGetProductQueryKey(id!)
+    }
+  });
+
+  if (isLoading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-12">
+        <div className="flex flex-col md:flex-row gap-12">
+          <Skeleton className="w-full md:w-1/2 aspect-square" />
+          <div className="w-full md:w-1/2 space-y-6">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-16 w-3/4" />
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !product) {
+    return <NotFound />;
+  }
+
+  const isDisponible = product.stock > 0;
+  const priceFormatter = new Intl.NumberFormat('es-MX', { 
+    style: 'currency', 
+    currency: 'MXN' 
+  });
+
+  return (
+    <div className="bg-background">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-8 md:py-16">
+        <div className="flex flex-col md:flex-row gap-12 lg:gap-24">
+          
+          {/* Image Section */}
+          <div className="w-full md:w-1/2">
+            <div className="aspect-square border border-border bg-card relative">
+              {product.image ? (
+                <img 
+                  src={product.image} 
+                  alt={product.name} 
+                  className="w-full h-full object-contain p-8"
+                />
+              ) : (
+                <ProductPlaceholder name={product.name} />
+              )}
+              
+              {product.brand && (
+                <div className="absolute top-6 left-6 bg-foreground text-white text-xs font-mono font-bold uppercase tracking-widest px-3 py-1">
+                  {product.brand}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Details Section */}
+          <div className="w-full md:w-1/2 flex flex-col">
+            <div className="mb-4">
+              <span className="font-mono text-sm text-muted-foreground uppercase tracking-widest">
+                SKU: {product.sku}
+              </span>
+            </div>
+            
+            <h1 className="font-display text-3xl md:text-5xl tracking-tighter uppercase mb-6 leading-tight">
+              {product.name}
+            </h1>
+
+            <div className="flex items-center gap-4 mb-8">
+              {isDisponible ? (
+                <div className="flex items-center text-success font-mono font-bold text-sm uppercase tracking-widest">
+                  <Check className="w-4 h-4 mr-2" /> Disponible en tienda
+                </div>
+              ) : (
+                <div className="flex items-center text-muted-foreground font-mono font-bold text-sm uppercase tracking-widest">
+                  <Info className="w-4 h-4 mr-2" /> Agotado temporalmente
+                </div>
+              )}
+            </div>
+
+            <div className="mb-10">
+              <div className="flex items-baseline gap-4">
+                <span className="font-mono text-4xl font-bold text-foreground">
+                  {priceFormatter.format(product.price)}
+                </span>
+                {product.originalPrice && product.originalPrice > product.price && (
+                  <span className="font-mono text-xl text-muted-foreground line-through">
+                    {priceFormatter.format(product.originalPrice)}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 font-mono uppercase tracking-widest">Precios con IVA incluido. Sujetos a cambio.</p>
+            </div>
+
+            <div className="bg-card border border-border p-6 mb-10">
+              <h3 className="font-display text-lg mb-4 uppercase">¿Necesitas esta pieza?</h3>
+              <p className="text-muted-foreground text-sm mb-6 leading-relaxed">
+                Contacta a un asesor de ventas por WhatsApp para confirmar compatibilidad exacta con tu vehículo, revisar métodos de pago y coordinar la entrega o recolección.
+              </p>
+              <Button size="lg" className="w-full rounded-none font-bold uppercase tracking-widest gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white border-transparent" asChild>
+                <a href={whatsappUrl({ name: product.name, sku: product.sku })} target="_blank" rel="noopener noreferrer">
+                  <MessageCircle className="w-5 h-5" />
+                  Pedir por WhatsApp
+                </a>
+              </Button>
+            </div>
+
+            {/* Technical Specs & Details Tabs-like structure, simplified for editorial look */}
+            <div className="space-y-8 border-t border-border pt-8 mt-auto">
+              
+              {product.descripcion && (
+                <div>
+                  <h3 className="font-display text-lg mb-4 uppercase border-l-4 border-primary pl-3">Descripción</h3>
+                  <div className="text-muted-foreground text-sm leading-relaxed prose prose-sm max-w-none">
+                    {product.descripcion}
+                  </div>
+                </div>
+              )}
+
+              {product.specs && product.specs.length > 0 && (
+                <div>
+                  <h3 className="font-display text-lg mb-4 uppercase border-l-4 border-primary pl-3">Especificaciones</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                    {product.specs.map((spec, i) => (
+                      <div key={i} className="flex justify-between border-b border-border py-2">
+                        <span className="text-muted-foreground text-sm">{spec.label}</span>
+                        <span className="font-mono text-sm font-bold text-foreground text-right">{spec.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {product.vehicles && product.vehicles.length > 0 && (
+                <div>
+                  <h3 className="font-display text-lg mb-4 uppercase border-l-4 border-primary pl-3">Vehículos Compatibles</h3>
+                  <div className="bg-card border border-border p-4 max-h-48 overflow-y-auto custom-scrollbar">
+                    <ul className="space-y-2">
+                      {product.vehicles.map((v, i) => (
+                        <li key={i} className="text-sm font-mono text-muted-foreground before:content-['>'] before:mr-2 before:text-primary">
+                          {v}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {(product.oem?.length || product.equivalents?.length) ? (
+                <div>
+                  <h3 className="font-display text-lg mb-4 uppercase border-l-4 border-primary pl-3">Referencias Cruzadas</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {product.oem?.map((oem, i) => (
+                      <span key={`oem-${i}`} className="inline-flex border border-border bg-card px-2 py-1 text-xs font-mono text-muted-foreground">
+                        OEM: {oem}
+                      </span>
+                    ))}
+                    {product.equivalents?.map((eq, i) => (
+                      <span key={`eq-${i}`} className="inline-flex border border-border bg-card px-2 py-1 text-xs font-mono text-muted-foreground">
+                        REF: {eq}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
