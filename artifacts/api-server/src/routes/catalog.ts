@@ -1,7 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
-// search_vector is a raw tsvector column managed by a DB trigger; we reference
-// it with a sql`` template since Drizzle doesn't have a first-class tsvector type.
+import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import {
   db,
   productsTable,
@@ -48,17 +46,20 @@ function notTestProduct(): SQL {
 }
 
 // Unsellable / junk rows hidden from the catalog:
-//  - 0 stock (summed across all sucursales) → nothing on the shelf to sell
+//  - CONFIRMED 0 stock → hidden. A product is only hidden for stock when it has
+//    inventory rows that sum to 0 (i.e. we know it's off the shelf). Products
+//    with NO inventory rows are treated as "stock unknown" and stay VISIBLE —
+//    the `inventory` mirror is sparsely populated (Admintotal sync only reports
+//    a handful of rows), so treating "no data" as "out of stock" would hide the
+//    entire catalog. Checkout performs a live stock check, so showing an
+//    unknown-stock item never lets a customer over-buy.
 //  - no price AND no cost (price=0 and costo=0/null) → nothing to sell
 //  - no name AND no description → empty junk row
 // Like notTestProduct(), enforced at the query layer so a re-sync from
 // Admintotal can't resurface them.
-// NOTE: stock lives in the `inventory` mirror, which is populated in
-// production (Admintotal webhooks/sync) but EMPTY in the dev DB — so this
-// filter makes the dev preview catalog appear empty by design.
 function sellableProduct(): SQL {
   return sql`(
-    coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), 0) > 0
+    coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), 1) > 0
     and (coalesce(${productsTable.price}, 0) > 0 or coalesce(${productsTable.costo}, 0) > 0)
     and (
       btrim(coalesce(${productsTable.name}, '')) <> ''
@@ -133,29 +134,24 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
 
   const conditions: SQL[] = [notTestProduct(), sellableProduct()];
   if (q) {
-    // Full-text prefix search on the tsvector column (covers name, descripcion,
-    // sku, brand, oem codes).  Each word in the query gets a :* prefix so it
-    // matches while the user is still typing.  Fall back to ILIKE on sku so
-    // exact part-number lookups still work even for very short strings.
-    const words = q
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((w) => w.replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "") + ":*")
-      .filter((w) => w.length > 1);
-
-    if (words.length > 0) {
-      const tsq = words.join(" & ");
-      const cond = or(
-        sql`${productsTable}.search_vector @@ to_tsquery('simple', unaccent(${tsq}))`,
-        ilike(productsTable.sku, `%${q}%`),
-      );
-      if (cond) conditions.push(cond);
-    } else {
-      // Single char — just do ILIKE on sku/name
-      const like = `%${q}%`;
-      const cond = or(ilike(productsTable.name, like), ilike(productsTable.sku, like));
-      if (cond) conditions.push(cond);
+    // Accent-insensitive substring search over name, descripcion, sku, brand
+    // and OEM codes. We use unaccent()+ILIKE rather than the tsvector column:
+    // search_vector is populated lazily by a DB trigger (NULL for any row not
+    // re-written since the column was recreated), so ILIKE is the only thing
+    // guaranteed to match every existing catalog row. Each whitespace-separated
+    // word must match somewhere (AND), so extra words narrow results.
+    const haystack = sql`unaccent(lower(
+      coalesce(${productsTable.name}, '') || ' ' ||
+      coalesce(${productsTable.descripcion}, '') || ' ' ||
+      coalesce(${productsTable.sku}, '') || ' ' ||
+      coalesce(${productsTable.brand}, '') || ' ' ||
+      coalesce(array_to_string(${productsTable.oem}, ' '), '')
+    ))`;
+    const words = q.split(/\s+/).filter((w) => w.length > 0);
+    for (const w of words) {
+      // Escape ILIKE wildcards so user-typed % / _ match literally.
+      const term = `%${w.replace(/([%_\\])/g, "\\$1")}%`;
+      conditions.push(sql`${haystack} like unaccent(lower(${term}))`);
     }
   }
   if (categoryId) conditions.push(eq(productsTable.categoryId, categoryId));

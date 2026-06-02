@@ -5,6 +5,7 @@ import {
   boolean,
   jsonb,
   timestamp,
+  customType,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -13,6 +14,17 @@ export interface ProductSpec {
   label: string;
   value: string;
 }
+
+// Postgres `tsvector` has no first-class Drizzle type. We declare it as a
+// custom type so it lives in the schema source of truth — otherwise
+// `drizzle-kit push` / the publish-time schema diff treats the out-of-band
+// column as "extra" and DROPS it, which leaves the search trigger assigning to
+// a missing field and breaks every write to `products`.
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 // Products mirror Admintotal "productos". `id` is the Admintotal producto id
 // (stringified) so upserts are idempotent. Catalog is a read-only mirror.
@@ -38,6 +50,11 @@ export const productsTable = pgTable("products", {
   vehicles: text("vehicles").array().notNull().default([]),
   oem: text("oem").array(),
   equivalents: text("equivalents").array(),
+  // Full-text search vector, populated by the `products_search_trigger` DB
+  // trigger on every insert/update. The app never writes this directly (hence
+  // omitted from the insert schema below); it exists here only so the schema
+  // diff keeps it in sync across dev/prod instead of dropping it.
+  searchVector: tsvector("search_vector"),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
@@ -46,6 +63,7 @@ export const productsTable = pgTable("products", {
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({
   updatedAt: true,
+  searchVector: true,
 });
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof productsTable.$inferSelect;

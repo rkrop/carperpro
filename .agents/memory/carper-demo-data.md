@@ -9,10 +9,10 @@ Because rows come from the ERP, **deleting rows from the DB does not stick** —
 
 **Rule:** filter unwanted rows at the API query layer, never by DELETE. Two helpers in `artifacts/api-server/src/routes/catalog.ts` are applied to every product-serving endpoint (list + its count, by-id, deals):
 - `notTestProduct()` — excludes ERP test placeholders (name `ARTICULO PRUEBA`, `%producto de prueba%`, brand `%test brand%`/`%reptil test%`). `/brands` has a matching brand-name exclusion.
-- `sellableProduct()` — hides unsellable/junk rows: **0 stock** (summed `inventory.quantity` across sucursales) **OR** (price=0 AND costo=0/null) **OR** (blank name AND blank descripcion). Keep = `stock>0 AND (price>0 OR costo>0) AND (name<>'' OR descripcion<>'')`.
+- `sellableProduct()` — hides unsellable/junk rows. Keep = `coalesce(sum(inventory.quantity), 1) > 0 AND (price>0 OR costo>0) AND (name<>'' OR descripcion<>'')`.
+
+**Stock semantics (IMPORTANT, corrected):** `inventory` is **sparsely populated in BOTH dev and prod** — only a handful of rows (prod had ~8 distinct in-stock products against 32k catalog). An earlier assumption that prod had full stock data was WRONG. So the stock rule is: hide a product only when it has inventory rows that **sum to 0** (confirmed off-shelf); products with **no inventory rows are "unknown" and stay VISIBLE** (`coalesce(sum, 1) > 0`). Treating "no data" as 0 would hide essentially the whole catalog. Over-buying is prevented by the **live stock check at checkout**, so showing unknown-stock items is safe. With this rule the catalog shows ~4,121 products (price/cost + name/desc filters do the real junk removal).
 
 **Why:** placeholders and junk live in the ERP itself, so only a query-layer filter keeps them out of production permanently. by-id intentionally 404s for filtered SKUs ("remove the SKU entirely").
-
-**Stock caveat (IMPORTANT):** the `inventory` table is **EMPTY in the dev DB** (populated only in prod via Admintotal sync/webhooks). Since `sellableProduct()` requires `stock>0`, **the dev catalog returns 0 products by design** — `/products`, `/deals`, etc. are empty in dev. This is expected, NOT a bug. The live app is correct because prod has real inventory. (Store owner explicitly chose to hide out-of-stock everywhere over keeping the dev preview populated.)
 
 **How to apply (test matching):** match narrowly — generic placeholders only. Do NOT match real diagnostic tools that legitimately contain "prueba" (e.g. "PINZA PRUEBA", "FOCO DE PRUEBA", injector/coil testers).
