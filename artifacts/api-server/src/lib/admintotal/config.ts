@@ -35,11 +35,30 @@ export function missingConfigMessage(): string {
   return `Faltan credenciales de Admintotal: ${missing.join(", ")}. Configúralas para habilitar la sincronización.`;
 }
 
+/**
+ * Normalize ADMINTOTAL_CLAVE to the bare account subdomain.
+ * Accepts any of: "carper", "carper.admintotal.com",
+ * "https://carper.admintotal.com", "https://carper.admintotal.com/api/v2".
+ */
+export function normalizeClave(raw: string): string {
+  let clave = raw.trim();
+  clave = clave.replace(/^https?:\/\//i, ""); // strip protocol
+  clave = clave.split("/")[0] ?? clave; // drop any path
+  clave = clave.replace(/\.admintotal\.com.*$/i, ""); // drop the domain suffix
+  clave = clave.replace(/^\.+|\.+$/g, ""); // trim stray dots
+  return clave;
+}
+
 export function getAdmintotalConfig(): AdmintotalConfig {
   if (!isAdmintotalConfigured()) {
     throw new AdmintotalConfigError(missingConfigMessage());
   }
-  const clave = process.env.ADMINTOTAL_CLAVE!;
+  const clave = normalizeClave(process.env.ADMINTOTAL_CLAVE!);
+  if (!/^[a-z0-9-]+$/i.test(clave)) {
+    throw new AdmintotalConfigError(
+      `ADMINTOTAL_CLAVE inválida. Usa solo la clave de la cuenta (p. ej. "carper"), no la URL completa.`,
+    );
+  }
   return {
     clave,
     username: process.env.ADMINTOTAL_USERNAME ?? "",
