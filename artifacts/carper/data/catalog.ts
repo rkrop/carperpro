@@ -30,6 +30,8 @@ export interface Product {
   compatible: boolean;
   specs: Spec[];
   vehicles: string[];
+  oem?: string[];
+  equivalents?: string[];
 }
 
 export interface Sucursal {
@@ -99,6 +101,7 @@ export const PRODUCTS: Product[] = [
       { label: "Potencia", value: "1.0 kW" },
     ],
     vehicles: TSURU_VEHICLES,
+    equivalents: ["LRS00118", "SR4216X", "0986021230"],
   },
   {
     id: "3120",
@@ -169,6 +172,8 @@ export const PRODUCTS: Product[] = [
       { label: "Amperaje", value: "90A" },
     ],
     vehicles: ["VW JETTA A4 1.8 1999-2007", "VW GOLF A4 1.8 1999-2006"],
+    oem: ["028903028D", "06B903016AB"],
+    equivalents: ["TG9S017", "439558"],
   },
   {
     id: "1622",

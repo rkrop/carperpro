@@ -8,6 +8,7 @@ import { Hairline, SectionLabel } from "@/components/CarperUI";
 import { Fonts, isWeb, TAB_BAR_HEIGHT, WEB_TOP_INSET } from "@/constants/fonts";
 import { getProduct } from "@/data/catalog";
 import { useApp, vehicleLabel, vehicleSub } from "@/context/AppContext";
+import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { formatMXN } from "@/lib/format";
 
@@ -31,7 +32,13 @@ export default function Cuenta() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { vehicle, favorites, orders, sucursal } = useApp();
+  const cart = useCart();
   const topPad = (isWeb ? WEB_TOP_INSET : insets.top) + 16;
+
+  const reorder = (lines: { id: string; qty: number }[]) => {
+    lines.forEach((l) => cart.add(l.id, l.qty));
+    router.push("/carrito");
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: c.neutral50 }}>
@@ -96,6 +103,13 @@ export default function Cuenta() {
                       {o.date} · {o.lines.length} {o.lines.length === 1 ? "artículo" : "artículos"}
                       {first ? ` · ${first.name}` : ""}
                     </Text>
+                    <Pressable
+                      onPress={() => reorder(o.lines)}
+                      style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start", marginTop: 12, borderWidth: 1, borderColor: c.primary, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: pressed ? c.neutral50 : c.background })}
+                    >
+                      <Feather name="rotate-ccw" size={13} color={c.primary} />
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.primary }}>Volver a pedir</Text>
+                    </Pressable>
                   </View>
                 );
               })}

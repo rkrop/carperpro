@@ -139,6 +139,37 @@ export default function Producto() {
           </View>
         </View>
 
+        {/* OEM / equivalents (optional — disappears when absent) */}
+        {product.oem?.length || product.equivalents?.length ? (
+          <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 14 }}>Equivalencias</Text>
+            {product.oem?.length ? (
+              <View style={{ marginBottom: product.equivalents?.length ? 16 : 0 }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.mutedForeground, marginBottom: 8 }}>Códigos OEM</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {product.oem.map((code) => (
+                    <View key={code} style={{ borderWidth: 1, borderColor: c.border, paddingHorizontal: 10, paddingVertical: 6 }}>
+                      <Text style={{ fontFamily: Fonts.mono, fontSize: 12, color: c.foreground }}>{code}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+            {product.equivalents?.length ? (
+              <View>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.mutedForeground, marginBottom: 8 }}>Números equivalentes</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {product.equivalents.map((code) => (
+                    <View key={code} style={{ borderWidth: 1, borderColor: c.border, paddingHorizontal: 10, paddingVertical: 6 }}>
+                      <Text style={{ fontFamily: Fonts.mono, fontSize: 12, color: c.foreground }}>{code}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         {/* Specs */}
         <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 28 }}>
           <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 16 }}>Especificaciones Técnicas</Text>

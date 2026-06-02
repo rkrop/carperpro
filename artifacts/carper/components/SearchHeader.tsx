@@ -16,12 +16,14 @@ export function SearchHeader({
   value,
   onChangeText,
   onSubmit,
+  onVoice,
   editable = true,
   autoFocus = false,
 }: {
   value?: string;
   onChangeText?: (t: string) => void;
   onSubmit?: () => void;
+  onVoice?: () => void;
   editable?: boolean;
   autoFocus?: boolean;
 }) {
@@ -65,6 +67,19 @@ export function SearchHeader({
               Buscar refacción...
             </Text>
           )}
+        </Pressable>
+        <Pressable
+          onPress={onVoice ?? (() => router.push("/(tabs)/buscar"))}
+          style={({ pressed }) => ({
+            width: 50,
+            alignItems: "center",
+            justifyContent: "center",
+            borderLeftWidth: 1,
+            borderLeftColor: c.border,
+            backgroundColor: pressed ? c.neutral200 : c.background,
+          })}
+        >
+          <Feather name="mic" size={16} color={c.foreground} />
         </Pressable>
         <Pressable
           onPress={() => router.push("/escanear")}

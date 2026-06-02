@@ -25,6 +25,8 @@ export default function Resultados() {
   const params = useLocalSearchParams<{ q?: string; category?: string; compat?: string }>();
   const [loading, setLoading] = useState(!isWeb);
   const [brand, setBrand] = useState<string | null>(null);
+  const [availOnly, setAvailOnly] = useState(false);
+  const [priceSort, setPriceSort] = useState<"asc" | "desc" | null>(null);
 
   useEffect(() => {
     if (isWeb) return;
@@ -43,7 +45,12 @@ export default function Resultados() {
     return list;
   }, [params.q, params.category, params.compat]);
 
-  const filtered = brand ? base.filter((p) => p.brand === brand) : base;
+  const filtered = useMemo(() => {
+    let list = brand ? base.filter((p) => p.brand === brand) : base;
+    if (availOnly) list = list.filter((p) => p.stock > 0);
+    if (priceSort) list = [...list].sort((a, b) => (priceSort === "asc" ? a.price - b.price : b.price - a.price));
+    return list;
+  }, [base, brand, availOnly, priceSort]);
   const availableBrands = useMemo(() => BRANDS.filter((b) => base.some((p) => p.brand === b)), [base]);
 
   const title = category ? category.name : params.compat === "1" ? "Compatibles" : "Resultados";
@@ -62,7 +69,7 @@ export default function Resultados() {
       </View>
 
       {/* Filters */}
-      {availableBrands.length > 1 ? (
+      {base.length > 0 ? (
         <View style={{ borderBottomWidth: 1, borderBottomColor: c.border }}>
           <ScrollView
             horizontal
@@ -72,6 +79,9 @@ export default function Resultados() {
             <IconBox size={34}>
               <Feather name="sliders" size={15} color={c.foreground} />
             </IconBox>
+            <Chip label="En existencia" active={availOnly} onPress={() => setAvailOnly((v) => !v)} />
+            <Chip label="Precio: menor" active={priceSort === "asc"} onPress={() => setPriceSort(priceSort === "asc" ? null : "asc")} />
+            <Chip label="Precio: mayor" active={priceSort === "desc"} onPress={() => setPriceSort(priceSort === "desc" ? null : "desc")} />
             {availableBrands.map((b) => (
               <Chip key={b} label={b} active={brand === b} onPress={() => setBrand(brand === b ? null : b)} />
             ))}
