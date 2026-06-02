@@ -75,7 +75,7 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
           </Link>
         </h3>
         
-        <div className="mt-auto pt-4 border-t border-border flex items-end justify-between gap-4">
+        <div className="mt-auto pt-4 border-t border-border flex flex-wrap items-end justify-between gap-3">
           <div className="space-y-1">
             {product.originalPrice && product.originalPrice > product.price && (
               <div className="text-xs font-mono text-muted-foreground line-through">
@@ -87,12 +87,12 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
             </div>
           </div>
           
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             {consultable && (
               <Button 
                 variant="outline" 
                 size="icon" 
-                className="rounded-none border-border hover:border-green-500 hover:text-green-600 hover:bg-green-50"
+                className="rounded-none border-border hover:border-green-500 hover:text-green-600 hover:bg-green-50 shrink-0"
                 asChild
                 title="Pedir por WhatsApp"
               >
@@ -101,7 +101,7 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
                 </a>
               </Button>
             )}
-            <Button className="rounded-none font-bold uppercase tracking-wider text-xs px-4" asChild>
+            <Button className="rounded-none font-bold uppercase tracking-wider text-xs px-4 shrink-0" asChild>
               <Link href={`/producto/${product.id}`}>
                 Ver Detalles
               </Link>
