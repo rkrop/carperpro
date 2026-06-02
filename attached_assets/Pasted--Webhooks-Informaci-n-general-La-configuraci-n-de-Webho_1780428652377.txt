@@ -1,0 +1,109 @@
+# Webhooks
+
+### Información general
+
+La configuración de Webhooks nos ayuda a enviar notificaciones de diferentes eventos que ocurren en su cuenta de admintotal, estas notificaciones son enviadas mediante una petición POST a la URL que se especifica al momento de su configuración. Los eventos que pueden ser notificados son:
+
+* Creación de productos
+* Creación de clientes
+* Creación de cotización
+* Timbrar factura
+* Actualización de precios y existencias de productos
+
+### Configuración básica de un webhook
+
+La configuración de webhooks podemos encontrarla entrando en su cuenta de admintotal a la ruta **Configuración / Webhooks** ó directamente `https://{clave}.admintotal.com/admin/integraciones/configuracion_webhooks/`
+
+{% hint style="info" %}
+Todos los webhooks que se configuren tendrán las siguientes propiedades, dependiendo el tipo de evento que se notificará puede que se agreguen propiedades adicionales a su configuración.
+{% endhint %}
+
+* **URL:** Admintotal tomará el valor especificado para enviar una petición POST con la información de la notificación.
+* **La autenticación de las notificaciones enviadas es opcional pero recomendada, pueden ser de las siguientes maneras:**
+  * **Token**: Token de autenticación que será utilizado en cada petición enviada, se enviará en el header *"Api-key"*
+  * [**Autenticación de acceso básica**](https://es.wikipedia.org/wiki/Autenticaci%C3%B3n_de_acceso_b%C3%A1sica):
+    * Username
+    * Password
+
+### Creación de productos
+
+Ejemplo del body de la petición:
+
+```javascript
+{
+    "id": 15111,
+    "codigo": "PRODUCTO DE EJEMPLO",
+    "medio_distribucion": 3,
+    "descripcion": "Lorem ipsum dolor...",
+    "descripcion_adicional": "",
+    "ce_fraccion_arancelaria": "",
+    "descripcion_ingles": "",
+    "descripcion_ecommerce": "",
+    "tipo": 0,
+    "tipo_producto_sistema_cardonal": null,
+    "composiciones": [],
+    "unidad_aduana": "",
+    "imagen_url": "",
+    "costo_ensamble": 0,
+    "costo": 0.0,
+    "precio": 160.0,
+    "unidad": {
+        "id": 13393,
+        "factor": "1.000000",
+        "seleccionado": true,
+        "seleccionado_compra": true,
+        "codigo_barras": null,
+        "base": "70.0000",
+        "altura": "35.0000",
+        "profundidad": "60.0000",
+        "peso": "200.0000",
+        "nombre": "PIEZA"
+    },
+    "unidades": [
+        {
+            "id": 13393,
+            "factor": "1.000000",
+            "seleccionado": true,
+            "seleccionado_compra": true,
+            "codigo_barras": null,
+            "base": "70.0000",
+            "altura": "35.0000",
+            "profundidad": "60.0000",
+            "peso": "200.0000",
+            "nombre": "PIEZA"
+        }
+    ]
+}
+```
+
+### Cambios de precios y existencias
+
+{% hint style="info" %}
+El envío de los cambios de precios y existencias se realiza cada 4 minutos y no en tiempo real, se envían un máximo de 50 productos por petición.
+{% endhint %}
+
+Para recibir notificaciones sobre cambios de precios y existencias en su catálogo de productos será necesario especificar las siguientes configuraciones, esto podemos hacerlo entrando en su cuenta de admintotal a la ruta **Configuración / Webhooks** ó directamente `https://{clave}.admintotal.com/admin/integraciones/configuracion_webhooks/`&#x20;
+
+* **Almacén de precios:** Almacén que será usado para calcular los precios notificados.
+* **Almacén(es)**: Se especifica uno o varios almacenes de los cuales se tomarán en cuenta las existencias.
+* **Cliente**: Se puede seleccionar un cliente del catálogo para poder asignar listas de precios.
+
+Ejemplo del body de la petición:
+
+```javascript
+[
+    {
+        "sku": "0001",
+        "precio": "99.00",
+        "costo": "0.00",
+        "stock": "10"
+    },
+    {
+        "sku": "0002",
+        "precio": "239.00",
+        "costo": "0.00",
+        "stock": "2"
+    },
+    ...
+]
+```
