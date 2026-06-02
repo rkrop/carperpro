@@ -2,8 +2,22 @@ import { STORE, APP_URL, whatsappUrl } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { QRCodeSVG } from "qrcode.react";
 import { MapPin, Phone, Clock, Mail, MessageCircle, Instagram } from "lucide-react";
+import { useSeo, organizationJsonLd, breadcrumbJsonLd } from "@/lib/seo";
 
 export default function Contacto() {
+  useSeo({
+    title: "Contacto y Sucursal | Carper Autopartes, Ciudad Obregón",
+    description: `Visita Carper Autopartes en ${STORE.address}. Teléfono ${STORE.phoneDisplay}, horario ${STORE.hours}. Asesoría técnica y pedidos por WhatsApp.`,
+    path: "/contacto",
+    jsonLd: [
+      organizationJsonLd(),
+      breadcrumbJsonLd([
+        { name: "Inicio", path: "/" },
+        { name: "Contacto", path: "/contacto" },
+      ]),
+    ],
+  });
+
   return (
     <div className="bg-background min-h-screen">
       {/* Header Banner */}

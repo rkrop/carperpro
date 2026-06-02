@@ -6,6 +6,7 @@ import { ArrowRight, Wrench, Clock, ShieldCheck, Truck } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { APP_URL, STORE } from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import { useSeo, organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 
 function HeroSection() {
   return (
@@ -216,6 +217,14 @@ function AppPromoSection() {
 }
 
 export default function Home() {
+  useSeo({
+    title: "Carper Autopartes | Refacciones y Autopartes en Ciudad Obregón",
+    description:
+      "Catálogo en línea de Carper Autopartes en Ciudad Obregón. Miles de refacciones y autopartes con precio y disponibilidad al instante. Pide por WhatsApp.",
+    path: "/",
+    jsonLd: [organizationJsonLd(), websiteJsonLd()],
+  });
+
   return (
     <div className="flex flex-col">
       <HeroSection />

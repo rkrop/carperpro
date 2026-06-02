@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { whatsappUrl } from "@/lib/store";
 import { MessageCircle, Check, Info } from "lucide-react";
 import NotFound from "./not-found";
+import { useSeo, productJsonLd, breadcrumbJsonLd } from "@/lib/seo";
 
 export default function Producto() {
   const [, params] = useRoute("/producto/:id");
@@ -18,6 +19,51 @@ export default function Producto() {
       queryKey: getGetProductQueryKey(id!)
     }
   });
+
+  const productPath = `/producto/${id ?? ""}`;
+  const seoPriceFormatter = new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+  });
+
+  useSeo(
+    product
+      ? {
+          title: `${product.name} | Carper Autopartes`,
+          description:
+            (product.descripcion?.trim() ||
+              `${product.name}${product.brand && product.brand !== "SIN MARCA" ? ` ${product.brand}` : ""}. SKU ${product.sku}. ${seoPriceFormatter.format(product.price)}. Disponible en Carper Autopartes, Ciudad Obregón. Consulta disponibilidad y pide por WhatsApp.`).slice(
+              0,
+              300,
+            ),
+          path: productPath,
+          image: product.image ?? undefined,
+          type: "product",
+          jsonLd: [
+            productJsonLd({
+              name: product.name,
+              sku: product.sku,
+              brand: product.brand,
+              price: product.price,
+              image: product.image,
+              description: product.descripcion,
+              inStock: product.stock > 0,
+              oem: product.oem,
+              path: productPath,
+            }),
+            breadcrumbJsonLd([
+              { name: "Inicio", path: "/" },
+              { name: "Catálogo", path: "/catalogo" },
+              { name: product.name, path: productPath },
+            ]),
+          ],
+        }
+      : {
+          title: "Producto | Carper Autopartes",
+          path: productPath,
+          noindex: true,
+        },
+  );
 
   if (isLoading) {
     return (

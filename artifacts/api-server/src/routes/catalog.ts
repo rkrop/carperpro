@@ -54,7 +54,7 @@ function stockExpr(sucursalId?: string): SQL<number> {
 // never surface in the app, even after a re-sync re-inserts them. Real
 // diagnostic tools ("pinza de prueba", "foco de prueba") are intentionally NOT
 // matched — only generic test placeholders and test brands.
-function notTestProduct(): SQL {
+export function notTestProduct(): SQL {
   return sql`not (
     unaccent(lower(${productsTable.name})) = 'articulo prueba'
     or unaccent(lower(${productsTable.name})) like '%producto de prueba%'
@@ -75,7 +75,7 @@ function notTestProduct(): SQL {
 //  - no name AND no description → empty junk row
 // Like notTestProduct(), enforced at the query layer so a re-sync from
 // Admintotal can't resurface them.
-function sellableProduct(): SQL {
+export function sellableProduct(): SQL {
   return sql`(
     coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), 1) > 0
     and (coalesce(${productsTable.price}, 0) > 0 or coalesce(${productsTable.costo}, 0) > 0)

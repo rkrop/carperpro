@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Filter, X } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { useSeo, breadcrumbJsonLd } from "@/lib/seo";
 
 export default function Catalogo() {
   const [location] = useLocation();
@@ -44,6 +45,43 @@ export default function Catalogo() {
   const { data: brands } = useListBrands();
 
   const totalPages = productsData ? Math.ceil(productsData.total / limit) : 0;
+
+  const activeCategory = categories?.find((c) => c.id === categoryId);
+
+  // Build a unique, descriptive title/description per filter state. Plain
+  // category views stay indexable with a clean canonical; free-text searches
+  // are marked noindex (thin/duplicate result pages).
+  let seoTitle: string;
+  let seoDescription: string;
+  let canonicalPath = "/catalogo";
+  if (q) {
+    seoTitle = `Resultados para "${q}" | Carper Autopartes`;
+    seoDescription = `Refacciones y autopartes que coinciden con "${q}" en el catálogo de Carper Autopartes, Ciudad Obregón. Consulta precio y disponibilidad.`;
+  } else if (activeCategory) {
+    seoTitle = `${activeCategory.name} | Refacciones | Carper Autopartes`;
+    seoDescription = `Explora ${activeCategory.count} refacciones de la línea ${activeCategory.name} en Carper Autopartes, Ciudad Obregón. Precio y disponibilidad al instante.`;
+    canonicalPath = `/catalogo?categoryId=${categoryId}`;
+  } else if (brand) {
+    seoTitle = `${brand} | Refacciones | Carper Autopartes`;
+    seoDescription = `Refacciones y autopartes de la marca ${brand} disponibles en Carper Autopartes, Ciudad Obregón. Consulta precio y disponibilidad.`;
+  } else {
+    seoTitle = "Catálogo de Refacciones y Autopartes | Carper Autopartes";
+    seoDescription =
+      "Explora miles de refacciones y autopartes en el catálogo de Carper Autopartes, Ciudad Obregón. Busca por número de parte, línea o marca y pide por WhatsApp.";
+  }
+
+  useSeo({
+    title: seoTitle,
+    description: seoDescription,
+    path: canonicalPath,
+    noindex: !!q,
+    jsonLd: breadcrumbJsonLd([
+      { name: "Inicio", path: "/" },
+      activeCategory
+        ? { name: activeCategory.name, path: `/catalogo?categoryId=${categoryId}` }
+        : { name: "Catálogo", path: "/catalogo" },
+    ]),
+  });
 
   const FilterContent = () => (
     <div className="space-y-8">

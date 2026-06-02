@@ -9,3 +9,4 @@
 - [TS project references vs typecheck](ts-project-references.md) — after editing lib/db schema types, run `npx tsc -b lib/db` before api-server typecheck; it reads dist .d.ts, not source.
 - [Stripe integration](stripe-integration.md) — card-only Checkout Sessions w/ dynamic price_data; awaiting_payment status skips ERP queue; MUST externalize stripe-replit-sync in esbuild or migrations silently no-op.
 - [Carper Tienda web showcase](carper-tienda-web.md) — react-vite catalog showcase (artifact slug tienda, /tienda/); reuses api-server via generated hooks, same-origin /api (no setBaseUrl); WhatsApp-only, NO cart/checkout.
+- [Carper Tienda SEO](tienda-seo.md) — per-route meta+JSON-LD via useSeo hook (lib/seo.ts); sitemap served dynamically from api-server /api/sitemap.xml; Vite double-prefixes root-relative index.html URLs.
