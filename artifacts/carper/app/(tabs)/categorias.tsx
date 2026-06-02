@@ -2,11 +2,11 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState, SectionLabel, Skeleton } from "@/components/CarperUI";
+import { SearchHeader } from "@/components/SearchHeader";
 import { MasBuscados } from "@/components/home/MasBuscados";
-import { Fonts, isWeb, TAB_BAR_HEIGHT, WEB_TOP_INSET } from "@/constants/fonts";
+import { Fonts, TAB_BAR_HEIGHT } from "@/constants/fonts";
 import { useCategories } from "@/data/catalog";
 import { categoryIconAsset, FEATURED_CATEGORIES } from "@/lib/categoryAssets";
 import { useColors } from "@/hooks/useColors";
@@ -14,14 +14,13 @@ import { useColors } from "@/hooks/useColors";
 export default function Categorias() {
   const c = useColors();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const topPad = (isWeb ? WEB_TOP_INSET : insets.top) + 16;
   const { data: categories, isLoading, isError, error } = useCategories();
   const popularCats = categories ? [...categories].sort((a, b) => b.count - a.count).slice(0, 9) : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
-      <View style={{ paddingTop: topPad, paddingBottom: 20, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: c.border }}>
+      <SearchHeader editable={false} />
+      <View style={{ paddingTop: 24, paddingBottom: 20, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: c.border }}>
         <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 8 }}>
           Catálogo completo
         </Text>
