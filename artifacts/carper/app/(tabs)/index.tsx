@@ -15,13 +15,13 @@ import { HomeFaq } from "@/components/home/HomeFaq";
 import { MasBuscados } from "@/components/home/MasBuscados";
 import { Fonts, TAB_BAR_HEIGHT } from "@/constants/fonts";
 import { useCategories, useDeals } from "@/data/catalog";
-import { useApp, vehicleLabel, vehicleSub } from "@/context/AppContext";
+import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 
 export default function Inicio() {
   const c = useColors();
   const router = useRouter();
-  const { vehicle, recent, sucursal } = useApp();
+  const { recent, sucursal } = useApp();
   const sucursalId = sucursal.id || undefined;
   const { data: categories } = useCategories();
   const { data: deals } = useDeals(sucursalId);
@@ -38,29 +38,6 @@ export default function Inicio() {
           <Text style={{ fontFamily: Fonts.black, fontSize: 40, lineHeight: 38, letterSpacing: -2, textTransform: "uppercase", color: c.foreground }}>
             Rápido.{"\n"}Simple.{"\n"}Eficiente.
           </Text>
-
-          <Pressable
-            onPress={() => router.push("/buscar-vehiculo")}
-            style={{ borderWidth: 1, borderColor: c.border, padding: 20, marginTop: 28 }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
-              <Feather name="truck" size={16} color={c.neutral400} />
-              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.mutedForeground }}>
-                Mi Vehículo
-              </Text>
-            </View>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
-              <View>
-                <Text style={{ fontFamily: Fonts.bold, fontSize: 15, letterSpacing: -0.2, textTransform: "uppercase", color: c.foreground }}>
-                  {vehicleLabel(vehicle)}
-                </Text>
-                <Text style={{ fontFamily: Fonts.medium, fontSize: 11, textTransform: "uppercase", color: c.mutedForeground, marginTop: 2 }}>
-                  {vehicleSub(vehicle)}
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={c.neutral400} />
-            </View>
-          </Pressable>
         </View>
 
         {/* Quick actions */}
