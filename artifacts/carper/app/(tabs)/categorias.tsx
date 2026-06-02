@@ -1,12 +1,13 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { EmptyState, Skeleton } from "@/components/CarperUI";
+import { EmptyState, SectionLabel, Skeleton } from "@/components/CarperUI";
 import { Fonts, isWeb, TAB_BAR_HEIGHT, WEB_TOP_INSET } from "@/constants/fonts";
 import { useCategories } from "@/data/catalog";
+import { categoryIconAsset, FEATURED_CATEGORIES } from "@/lib/categoryAssets";
 import { useColors } from "@/hooks/useColors";
 
 export default function Categorias() {
@@ -43,33 +44,63 @@ export default function Categorias() {
         <EmptyState icon="grid" title="Sin categorías" message="Aún no hay categorías en el catálogo." />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + 24 }}>
-          {categories.map((cat) => (
-            <Pressable
-              key={cat.id}
-              onPress={() => router.push(`/resultados?category=${cat.id}`)}
-              style={({ pressed }) => ({
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 16,
-                paddingHorizontal: 24,
-                paddingVertical: 20,
-                borderBottomWidth: 1,
-                borderBottomColor: c.border,
-                backgroundColor: pressed ? c.neutral50 : c.background,
-              })}
-            >
-              <View style={{ width: 44, height: 44, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" }}>
-                <MaterialCommunityIcons name={cat.icon as any} size={22} color={c.foreground} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.2, textTransform: "uppercase", color: c.foreground }}>{cat.name}</Text>
-                <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.mutedForeground, marginTop: 3 }}>
-                  {cat.count.toLocaleString("en-US")} refacciones
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={c.neutral400} />
-            </Pressable>
-          ))}
+          {/* Destacadas — visual entry points */}
+          <View style={{ paddingTop: 24, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <SectionLabel style={{ paddingHorizontal: 24, marginBottom: 16 }}>Destacadas</SectionLabel>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, gap: 14, paddingBottom: 16 }}>
+              {FEATURED_CATEGORIES.map((f) => (
+                <Pressable
+                  key={f.label}
+                  onPress={() => router.push(f.href as never)}
+                  style={({ pressed }) => ({ width: 240, borderWidth: 1, borderColor: pressed ? c.borderStrong : c.border, backgroundColor: c.background })}
+                >
+                  <Image source={f.image} style={{ width: "100%", aspectRatio: 16 / 9 }} resizeMode="cover" />
+                  <View style={{ paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.border }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: c.foreground }} numberOfLines={1}>
+                      {f.label}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Full list */}
+          <SectionLabel style={{ paddingHorizontal: 24, marginTop: 24, marginBottom: 8 }}>Todas las categorías</SectionLabel>
+          {categories.map((cat) => {
+            const iconAsset = categoryIconAsset(cat.name);
+            return (
+              <Pressable
+                key={cat.id}
+                onPress={() => router.push(`/resultados?category=${cat.id}`)}
+                style={({ pressed }) => ({
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 16,
+                  paddingHorizontal: 24,
+                  paddingVertical: 20,
+                  borderBottomWidth: 1,
+                  borderBottomColor: c.border,
+                  backgroundColor: pressed ? c.neutral50 : c.background,
+                })}
+              >
+                <View style={{ width: 44, height: 44, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" }}>
+                  {iconAsset ? (
+                    <Image source={iconAsset} style={{ width: 34, height: 34 }} resizeMode="contain" />
+                  ) : (
+                    <MaterialCommunityIcons name={cat.icon as any} size={22} color={c.foreground} />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.2, textTransform: "uppercase", color: c.foreground }}>{cat.name}</Text>
+                  <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.mutedForeground, marginTop: 3 }}>
+                    {cat.count.toLocaleString("en-US")} refacciones
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={c.neutral400} />
+              </Pressable>
+            );
+          })}
         </ScrollView>
       )}
     </View>

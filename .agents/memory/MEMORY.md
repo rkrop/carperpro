@@ -4,3 +4,4 @@
 - [Carper demo data](carper-demo-data.md) — catalog should only hold Excel-seeded rows (category ids all cat-*); numeric ids / LOCALTEST/FINALTEST = stray test data.
 - [Admintotal ERP sync](admintotal-sync.md) — ADMINTOTAL_CLAVE is the bare account subdomain (config normalizes URLs); productos endpoint is heavily 429-rate-limited so full sync takes many minutes.
 - [Ofertas & Home curation](ofertas-screen.md) — live "Oferta del día" from /deals + curated cards in lib/campaigns.ts / lib/homeContent.ts; inventory table EMPTY in dev so filter price>0 not stock>0.
+- [Carper asset strategy](carper-asset-strategy.md) — brand logos = non-tappable credibility wall (catalog mostly SIN MARCA); deep links via ?q=/?category=, never ?brand=; icons match accent-insensitive.
