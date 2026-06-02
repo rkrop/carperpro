@@ -18,3 +18,63 @@ id = "ct5Opmf58rbnp8oM7lQL3"
 uri = "file://artifacts/carper/assets/images/icon.png"
 type = "image"
 title = "generated_image"
+
+[[generated]]
+id = "hcKFrEIC88yIeT4fUIKw0"
+uri = "file://artifacts/carper/assets/images/ofertas/01-joyas.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "crWV0snVPXIzDtB1fJdFl"
+uri = "file://artifacts/carper/assets/images/ofertas/02-deldia.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "dMMtGb6OTE7Bj-_nBlhby"
+uri = "file://artifacts/carper/assets/images/ofertas/03-noarranca.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ZRXS1KjlTioSxZhm1360q"
+uri = "file://artifacts/carper/assets/images/ofertas/04-despiece.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "mQ4Ksx-_kjoTeJod_y795"
+uri = "file://artifacts/carper/assets/images/ofertas/05-checkengine.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "FBnbDnT3PlMUGUtbW__Hw"
+uri = "file://artifacts/carper/assets/images/ofertas/06-bombas.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "SPxx6OgNHv_2Zy2cDSahH"
+uri = "file://artifacts/carper/assets/images/ofertas/07-carbuclean.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Re9FUi-Gw6FIzGfhv9e0J"
+uri = "file://artifacts/carper/assets/images/ofertas/08-sensores.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "eaAGroSLFRT81bQ7njJ2T"
+uri = "file://artifacts/carper/assets/images/ofertas/09-bobinas.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "gQo4Fk-IbUUcMzITloJ9H"
+uri = "file://artifacts/carper/assets/images/ofertas/10-restock.png"
+type = "image"
+title = "generated_image"

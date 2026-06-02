@@ -3,3 +3,4 @@
 - [Full-text search setup](fts-setup.md) — search_vector tsvector + GIN index + unaccent trigger; prefix search via to_tsquery('simple', unaccent(word:*)).
 - [Carper demo data](carper-demo-data.md) — catalog should only hold Excel-seeded rows (category ids all cat-*); numeric ids / LOCALTEST/FINALTEST = stray test data.
 - [Admintotal ERP sync](admintotal-sync.md) — ADMINTOTAL_CLAVE is the bare account subdomain (config normalizes URLs); productos endpoint is heavily 429-rate-limited so full sync takes many minutes.
+- [Ofertas screen](ofertas-screen.md) — live "Oferta del día" from /deals (hidden when no discounted products; seed has none) + 9 curated campaign cards in lib/campaigns.ts.

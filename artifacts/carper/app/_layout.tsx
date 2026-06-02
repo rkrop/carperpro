@@ -44,6 +44,10 @@ function RootLayoutNav() {
       <Stack.Screen name="checkout" />
       <Stack.Screen name="confirmacion" />
       <Stack.Screen name="favoritos" />
+      <Stack.Screen name="pedidos" />
+      <Stack.Screen name="notificaciones" />
+      <Stack.Screen name="ayuda" />
+      <Stack.Screen name="acerca" />
       <Stack.Screen name="escanear" options={{ presentation: "modal" }} />
       <Stack.Screen name="sucursal" options={{ presentation: "modal" }} />
     </Stack>

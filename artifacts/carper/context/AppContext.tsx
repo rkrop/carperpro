@@ -29,6 +29,21 @@ export interface Order {
   pago: string;
 }
 
+/** Local notification preferences (no backend yet — stored on the device). */
+export interface NotifPrefs {
+  ofertas: boolean;
+  pedidos: boolean;
+  reabasto: boolean;
+  novedades: boolean;
+}
+
+export const DEFAULT_NOTIF_PREFS: NotifPrefs = {
+  ofertas: true,
+  pedidos: true,
+  reabasto: true,
+  novedades: false,
+};
+
 interface AppState {
   /** The single Carper store. Named `sucursal` for app-wide consistency. */
   sucursal: Store;
@@ -45,6 +60,12 @@ interface AppState {
 
   orders: Order[];
   addOrder: (o: Order) => void;
+
+  notifPrefs: NotifPrefs;
+  setNotifPref: (key: keyof NotifPrefs, value: boolean) => void;
+
+  /** Wipes local profile data (vehicle, favorites, recent, orders). */
+  clearData: () => void;
 
   hydrated: boolean;
 }
@@ -65,6 +86,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [favorites, setFavorites] = useState<Product[]>([]);
   const [recent, setRecent] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [notifPrefs, setNotifPrefs] = useState<NotifPrefs>(DEFAULT_NOTIF_PREFS);
   const [hydrated, setHydrated] = useState<boolean>(false);
 
   useEffect(() => {
@@ -77,6 +99,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(data.favorites)) setFavorites(data.favorites);
           if (Array.isArray(data.recent)) setRecent(data.recent);
           if (Array.isArray(data.orders)) setOrders(data.orders);
+          if (data.notifPrefs && typeof data.notifPrefs === "object") {
+            setNotifPrefs({ ...DEFAULT_NOTIF_PREFS, ...data.notifPrefs });
+          }
         }
       } catch {
         // ignore corrupt storage
@@ -87,13 +112,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const persist = (
-    next: Partial<{ vehicle: SavedVehicle | null; favorites: Product[]; recent: Product[]; orders: Order[] }>,
+    next: Partial<{
+      vehicle: SavedVehicle | null;
+      favorites: Product[];
+      recent: Product[];
+      orders: Order[];
+      notifPrefs: NotifPrefs;
+    }>,
   ) => {
     const snapshot = {
       vehicle: next.vehicle !== undefined ? next.vehicle : vehicle,
       favorites: next.favorites ?? favorites,
       recent: next.recent ?? recent,
       orders: next.orders ?? orders,
+      notifPrefs: next.notifPrefs ?? notifPrefs,
     };
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot)).catch(() => {});
   };
@@ -129,6 +161,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const setNotifPref = (key: keyof NotifPrefs, value: boolean) => {
+    setNotifPrefs((prev) => {
+      const next = { ...prev, [key]: value };
+      persist({ notifPrefs: next });
+      return next;
+    });
+  };
+
+  const clearData = () => {
+    setVehicleState(null);
+    setFavorites([]);
+    setRecent([]);
+    setOrders([]);
+    persist({ vehicle: null, favorites: [], recent: [], orders: [] });
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -142,6 +190,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addRecent,
         orders,
         addOrder,
+        notifPrefs,
+        setNotifPref,
+        clearData,
         hydrated,
       }}
     >

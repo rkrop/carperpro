@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Hairline, SectionLabel } from "@/components/CarperUI";
@@ -30,13 +30,24 @@ export default function Cuenta() {
   const c = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { vehicle, favorites, orders, sucursal } = useApp();
+  const { vehicle, favorites, orders, sucursal, clearData } = useApp();
   const cart = useCart();
   const topPad = (isWeb ? WEB_TOP_INSET : insets.top) + 16;
 
   const reorder = (lines: OrderLine[]) => {
     lines.forEach((l) => cart.add({ id: l.id, sku: l.sku, name: l.name, brand: "", price: l.price, image: null, categoryId: null }, l.qty));
     router.push("/carrito");
+  };
+
+  const confirmClear = () => {
+    Alert.alert(
+      "Cerrar sesión",
+      "Se borrarán tu vehículo, favoritos e historial de pedidos guardados en este dispositivo. ¿Continuar?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Cerrar sesión", style: "destructive", onPress: () => clearData() },
+      ],
+    );
   };
 
   return (
@@ -82,7 +93,7 @@ export default function Cuenta() {
           <Hairline />
           <Row icon="heart" label="Favoritos" value={`${favorites.length}`} onPress={() => router.push("/favoritos")} />
           <Row icon="map-pin" label="Nuestra tienda" value={sucursal.name} onPress={() => router.push("/sucursal")} />
-          <Row icon="package" label="Mis pedidos" value={`${orders.length}`} />
+          <Row icon="package" label="Mis pedidos" value={`${orders.length}`} onPress={() => router.push("/pedidos")} />
         </View>
 
         {/* Order history */}
@@ -120,10 +131,10 @@ export default function Cuenta() {
         <View style={{ marginTop: 24 }}>
           <SectionLabel style={{ paddingHorizontal: 24, marginBottom: 12 }}>Ajustes</SectionLabel>
           <Hairline />
-          <Row icon="bell" label="Notificaciones" />
-          <Row icon="help-circle" label="Ayuda y soporte" />
-          <Row icon="info" label="Acerca de Carper" value="v1.0.0" />
-          <Row icon="log-out" label="Cerrar sesión" tint={c.destructive} />
+          <Row icon="bell" label="Notificaciones" onPress={() => router.push("/notificaciones")} />
+          <Row icon="help-circle" label="Ayuda y soporte" onPress={() => router.push("/ayuda")} />
+          <Row icon="info" label="Acerca de Carper" value="v1.0.0" onPress={() => router.push("/acerca")} />
+          <Row icon="log-out" label="Cerrar sesión" tint={c.destructive} onPress={confirmClear} />
         </View>
       </ScrollView>
     </View>
