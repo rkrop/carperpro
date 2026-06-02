@@ -79,7 +79,8 @@ export const ListProductsResponse = zod.object({
 })),
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
-  "equivalents": zod.array(zod.string()).nullish()
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
 })),
   "total": zod.number()
 })
@@ -113,7 +114,8 @@ export const GetProductResponse = zod.object({
 })),
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
-  "equivalents": zod.array(zod.string()).nullish()
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
 })
 
 
@@ -142,7 +144,8 @@ export const GetDealsResponse = zod.object({
 })),
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
-  "equivalents": zod.array(zod.string()).nullish()
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
 }),zod.null()]).optional(),
   "ofertas": zod.array(zod.object({
   "id": zod.string(),
@@ -161,7 +164,8 @@ export const GetDealsResponse = zod.object({
 })),
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
-  "equivalents": zod.array(zod.string()).nullish()
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
 }))
 })
 

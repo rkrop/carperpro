@@ -1,5 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+// search_vector is a raw tsvector column managed by a DB trigger; we reference
+// it with a sql`` template since Drizzle doesn't have a first-class tsvector type.
 import {
   db,
   productsTable,
@@ -49,6 +51,7 @@ function serializeProduct(
     vehicles: row.vehicles ?? [],
     oem: row.oem ?? null,
     equivalents: row.equivalents ?? null,
+    descripcion: row.descripcion ?? null,
   };
 }
 
@@ -92,13 +95,30 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
 
   const conditions: SQL[] = [];
   if (q) {
-    const like = `%${q}%`;
-    const cond = or(
-      ilike(productsTable.name, like),
-      ilike(productsTable.sku, like),
-      ilike(productsTable.brand, like),
-    );
-    if (cond) conditions.push(cond);
+    // Full-text prefix search on the tsvector column (covers name, descripcion,
+    // sku, brand, oem codes).  Each word in the query gets a :* prefix so it
+    // matches while the user is still typing.  Fall back to ILIKE on sku so
+    // exact part-number lookups still work even for very short strings.
+    const words = q
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w.replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "") + ":*")
+      .filter((w) => w.length > 1);
+
+    if (words.length > 0) {
+      const tsq = words.join(" & ");
+      const cond = or(
+        sql`${productsTable}.search_vector @@ to_tsquery('simple', unaccent(${tsq}))`,
+        ilike(productsTable.sku, `%${q}%`),
+      );
+      if (cond) conditions.push(cond);
+    } else {
+      // Single char — just do ILIKE on sku/name
+      const like = `%${q}%`;
+      const cond = or(ilike(productsTable.name, like), ilike(productsTable.sku, like));
+      if (cond) conditions.push(cond);
+    }
   }
   if (categoryId) conditions.push(eq(productsTable.categoryId, categoryId));
   if (brand) conditions.push(eq(productsTable.brand, brand));

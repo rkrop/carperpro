@@ -275,6 +275,7 @@ components:
           type: ["array", "null"]
           items:
             type: string
+        descripcion: { type: ["string", "null"] }
     ProductPage:
       type: object
       required: [items, total]

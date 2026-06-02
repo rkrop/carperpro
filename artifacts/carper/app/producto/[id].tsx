@@ -201,6 +201,15 @@ export default function Producto() {
               <Text style={{ fontFamily: Fonts.medium, fontSize: 11, textTransform: "uppercase", color: c.mutedForeground }}>{s.value}</Text>
             </View>
           ))}
+          {/* Rich description from ERP (applications, OEM codes, notes) */}
+          {product.descripcion ? (
+            <View style={{ marginTop: product.specs.length ? 20 : 0 }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 10 }}>Descripción</Text>
+              <Text style={{ fontFamily: Fonts.medium, fontSize: 12, lineHeight: 18, color: c.mutedForeground }}>
+                {product.descripcion}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
 

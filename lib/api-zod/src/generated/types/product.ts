@@ -27,4 +27,6 @@ export interface Product {
   oem?: string[] | null;
   /** @nullable */
   equivalents?: string[] | null;
+  /** @nullable */
+  descripcion?: string | null;
 }

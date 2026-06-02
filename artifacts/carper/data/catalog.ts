@@ -43,6 +43,8 @@ export interface Product {
   vehicles: string[];
   oem: string[];
   equivalents: string[];
+  /** Rich description: vehicle applications, OEM codes, specs from ERP/Excel. */
+  descripcion: string | null;
 }
 
 /**
@@ -101,6 +103,7 @@ export function mapProduct(p: ApiProduct): Product {
     vehicles: p.vehicles ?? [],
     oem: p.oem ?? [],
     equivalents: p.equivalents ?? [],
+    descripcion: p.descripcion ?? null,
   };
 }
 

@@ -1,1 +1,3 @@
-- [RN-web Inter blank text](rnweb-inter-blank-text.md) — custom-font Text can paint blank on react-native-web after a loading/Animated subtree swap; gate the swap to native.
+- [Excel seed script](excel-seed.md) — plain .mjs using pg from lib/db/node_modules + xlsx from /tmp/node_modules; tsx unavailable.
+- [Carper API routes](carper-api-routes.md) — routes mount at /api/* (not /api/catalog/*); port from PORT env, defaults to 8080 in dev.
+- [Full-text search setup](fts-setup.md) — search_vector tsvector + GIN index + unaccent trigger; prefix search via to_tsquery('simple', unaccent(word:*)).

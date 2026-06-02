@@ -24,6 +24,13 @@ export const productsTable = pgTable("products", {
   categoryId: text("category_id"),
   price: doublePrecision("price").notNull().default(0),
   originalPrice: doublePrecision("original_price"),
+  // Rich product description: vehicle applications, OEM codes, specs, etc.
+  // Used for full-text search (tsvector index maintained via DB trigger).
+  descripcion: text("descripcion"),
+  // Cost and supplier info (from Excel / Admintotal)
+  costo: doublePrecision("costo"),
+  proveedor: text("proveedor"),
+  skuProveedor: text("sku_proveedor"),
   image: text("image"),
   specs: jsonb("specs").$type<ProductSpec[]>().notNull().default([]),
   // Vehicle-compatibility data is not provided by Admintotal; kept optional.
