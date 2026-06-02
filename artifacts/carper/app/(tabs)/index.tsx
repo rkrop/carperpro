@@ -1,7 +1,7 @@
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { SectionLabel } from "@/components/CarperUI";
 import { ProductCardMini } from "@/components/ProductRow";
@@ -12,11 +12,9 @@ import { ConsejosTaller } from "@/components/home/ConsejosTaller";
 import { DealOfDay } from "@/components/home/DealOfDay";
 import { DiagnosticoRapido } from "@/components/home/DiagnosticoRapido";
 import { HomeFaq } from "@/components/home/HomeFaq";
-import { MasBuscados } from "@/components/home/MasBuscados";
 import { NuestrasMarcas } from "@/components/home/NuestrasMarcas";
 import { Fonts, TAB_BAR_HEIGHT } from "@/constants/fonts";
-import { useCategories, useDeals } from "@/data/catalog";
-import { categoryIconAsset } from "@/lib/categoryAssets";
+import { useDeals } from "@/data/catalog";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -25,11 +23,9 @@ export default function Inicio() {
   const router = useRouter();
   const { recent, sucursal } = useApp();
   const sucursalId = sucursal.id || undefined;
-  const { data: categories } = useCategories();
   const { data: deals } = useDeals(sucursalId);
   const dealOfDay = deals?.dealOfDay ?? null;
   const recentProducts = recent.slice(0, 6);
-  const popularCats = categories ? [...categories].sort((a, b) => b.count - a.count).slice(0, 9) : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: c.neutral50 }}>
@@ -72,35 +68,6 @@ export default function Inicio() {
 
         {/* Deal of day */}
         {dealOfDay ? <DealOfDay product={dealOfDay} /> : null}
-
-        {/* Más buscados — real catalog products */}
-        <MasBuscados />
-
-        {/* Categories */}
-        <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 32, borderBottomWidth: 1, borderBottomColor: c.border }}>
-          <SectionLabel style={{ marginBottom: 20 }}>Categorías Populares</SectionLabel>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", borderTopWidth: 1, borderLeftWidth: 1, borderColor: c.border }}>
-            {popularCats.map((cat) => {
-              const iconAsset = categoryIconAsset(cat.name);
-              return (
-                <Pressable
-                  key={cat.id}
-                  onPress={() => router.push(`/resultados?category=${cat.id}`)}
-                  style={({ pressed }) => ({ width: "33.333%", aspectRatio: 1, borderRightWidth: 1, borderBottomWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", gap: 8, padding: 8, backgroundColor: pressed ? c.neutral50 : c.background })}
-                >
-                  {iconAsset ? (
-                    <Image source={iconAsset} style={{ width: 40, height: 40 }} resizeMode="contain" />
-                  ) : (
-                    <MaterialCommunityIcons name={cat.icon as any} size={22} color={c.foreground} />
-                  )}
-                  <Text style={{ fontFamily: Fonts.bold, fontSize: 8, letterSpacing: 1, textTransform: "uppercase", color: c.foreground, textAlign: "center" }} numberOfLines={2}>
-                    {cat.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
 
         {/* Colecciones destacadas — curated campaigns */}
         <Colecciones />

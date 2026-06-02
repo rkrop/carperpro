@@ -5,6 +5,7 @@ import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState, SectionLabel, Skeleton } from "@/components/CarperUI";
+import { MasBuscados } from "@/components/home/MasBuscados";
 import { Fonts, isWeb, TAB_BAR_HEIGHT, WEB_TOP_INSET } from "@/constants/fonts";
 import { useCategories } from "@/data/catalog";
 import { categoryIconAsset, FEATURED_CATEGORIES } from "@/lib/categoryAssets";
@@ -16,6 +17,7 @@ export default function Categorias() {
   const insets = useSafeAreaInsets();
   const topPad = (isWeb ? WEB_TOP_INSET : insets.top) + 16;
   const { data: categories, isLoading, isError, error } = useCategories();
+  const popularCats = categories ? [...categories].sort((a, b) => b.count - a.count).slice(0, 9) : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
@@ -66,6 +68,37 @@ export default function Categorias() {
               ))}
             </ScrollView>
           </View>
+
+          {/* Categorías populares — top categories by count */}
+          {popularCats.length > 0 ? (
+            <View style={{ paddingHorizontal: 24, paddingTop: 32, paddingBottom: 8 }}>
+              <SectionLabel style={{ marginBottom: 20 }}>Categorías Populares</SectionLabel>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", borderTopWidth: 1, borderLeftWidth: 1, borderColor: c.border }}>
+                {popularCats.map((cat) => {
+                  const iconAsset = categoryIconAsset(cat.name);
+                  return (
+                    <Pressable
+                      key={cat.id}
+                      onPress={() => router.push(`/resultados?category=${cat.id}`)}
+                      style={({ pressed }) => ({ width: "33.333%", aspectRatio: 1, borderRightWidth: 1, borderBottomWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", gap: 8, padding: 8, backgroundColor: pressed ? c.neutral50 : c.background })}
+                    >
+                      {iconAsset ? (
+                        <Image source={iconAsset} style={{ width: 40, height: 40 }} resizeMode="contain" />
+                      ) : (
+                        <MaterialCommunityIcons name={cat.icon as any} size={22} color={c.foreground} />
+                      )}
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 8, letterSpacing: 1, textTransform: "uppercase", color: c.foreground, textAlign: "center" }} numberOfLines={2}>
+                        {cat.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
+          {/* Más buscados — real catalog products */}
+          <MasBuscados />
 
           {/* Full list */}
           <SectionLabel style={{ paddingHorizontal: 24, marginTop: 24, marginBottom: 8 }}>Todas las categorías</SectionLabel>
