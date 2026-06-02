@@ -1,0 +1,22 @@
+1. Store identity & contact (shows on the store screen, checkout, receipts)
+* Official business name: Carper Autopartes
+* Full address: street + number, colonia, city, state, postal code: Blvd. Ignacio Ramirez 290, Ciudad Obregón, Sonora, Mexico. Codigo Postal: 85160
+* Phone number and WhatsApp number: 6441225597
+* Email: facturacion@puntorefaccionario.com
+* Business hours: Lun-Vie 8:00-18:00, Sab 8:00-14:00
+* RFC: CDI960919J54
+* Logo file: 
+* Social media links: instagram @carperautopartes 
+2. How orders work (so checkout actually does something real)
+* Do you offer home delivery (envío), pickup only, or both? If delivery: coverage area, cost, and rough delivery time. both. Delivery: entrega en toda la ciudad. Gratis. Entrega de 30 a 60 min.
+* Which payment methods do you really accept? (cash on pickup, card, bank transfer/SPEI, OXXO, etc.) cash on pickup, card, bank transfer/SPEI.
+* When a customer places an order, how do you want to receive it? Options: a WhatsApp message to your number, an email, or pushed into your Admintotal system. This is the most important one — it decides what the "Pagar/Ordenar" button does. WhatsApp message to my number.
+3. Pricing
+* Are the prices in the Excel your current, final retail prices? yes. That’s the only retail price.
+* Do those prices already include IVA (16%), or should IVA be added at checkout? Yes, must include IVA (16%) at checkout.
+4. Product catalog richness (what makes an auto-parts app genuinely useful)
+* Images: only some SKUs in the Excel have photos. Do you have an images folder/source for the rest, or is partial coverage OK for now? is only a partial coverage ok for now, as we continue to work in the ERP (Admintotal) other images will update.
+* Vehicle compatibility: the app can show "fits your car" (make / model / year). Do you have data on which parts fit which vehicles? (If not, we can skip this feature for now — but it's a big selling point.) Vehicle compatibility is only shown in ‘’Descripcion’’ in some products right now. Can we say that ‘’just type your model car in search bar for results..’’ Is enough for now? As we continue to build more data in the ERP (admintotal). 
+* OEM / equivalent part numbers: do you have cross-reference numbers for parts? Also ‘’Descripcion’’ shows OEM / equivalent part numbers, can we also try to ‘’just type your model car in search bar for results..’’ for now?
+5. Keeping stock & prices up to date
+* Going forward, will inventory/prices be updated by re-uploading an Excel file periodically, or do you want live sync with Admintotal (your ERP)? Live sync needs your Admintotal login credentials — I see placeholders for them but no values yet. sync with Admintotal. I will provide the values now.

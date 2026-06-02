@@ -2,44 +2,82 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AccentButton } from "@/components/CarperUI";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts, isWeb, WEB_BOTTOM_INSET } from "@/constants/fonts";
-import { useCreateOrder } from "@/data/catalog";
 import { Order, useApp } from "@/context/AppContext";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { formatMXN } from "@/lib/format";
+import { STORE } from "@/lib/store";
 
 type Entrega = "tienda" | "envio";
-type Pago = "tarjeta" | "oxxo" | "spei" | "recoleccion";
+type Pago = "efectivo" | "tarjeta" | "spei";
 
 const PAGOS: { id: Pago; label: string; sub: string; icon: keyof typeof Feather.glyphMap }[] = [
+  { id: "efectivo", label: "Efectivo", sub: "Paga al recoger o al recibir", icon: "dollar-sign" },
   { id: "tarjeta", label: "Tarjeta", sub: "Crédito o débito", icon: "credit-card" },
-  { id: "oxxo", label: "OXXO / Efectivo", sub: "Paga en tienda de conveniencia", icon: "dollar-sign" },
   { id: "spei", label: "Transferencia SPEI", sub: "Depósito interbancario", icon: "repeat" },
-  { id: "recoleccion", label: "Pago en recolección", sub: "Paga al recoger en sucursal", icon: "shopping-bag" },
 ];
+
+function buildWhatsAppMessage(opts: {
+  folio: string;
+  items: { name: string; sku: string; qty: number; price: number }[];
+  total: number;
+  entrega: Entrega;
+  address: string;
+  pagoLabel: string;
+  name: string;
+  phone: string;
+}): string {
+  const lines: string[] = [];
+  lines.push(`*Nuevo pedido — ${STORE.name}*`);
+  lines.push(`Folio: ${opts.folio}`);
+  lines.push("");
+  lines.push("*Productos:*");
+  for (const it of opts.items) {
+    lines.push(`• ${it.qty} × ${it.name} (${it.sku}) — ${formatMXN(it.price * it.qty)}`);
+  }
+  lines.push("");
+  lines.push(`*Total: ${formatMXN(opts.total)}* (IVA incluido)`);
+  lines.push("");
+  lines.push(
+    opts.entrega === "tienda"
+      ? "*Entrega:* Recoger en tienda"
+      : `*Entrega:* Envío a domicilio\nDirección: ${opts.address}`,
+  );
+  lines.push(`*Pago:* ${opts.pagoLabel}`);
+  lines.push("");
+  lines.push(`*Cliente:* ${opts.name}`);
+  lines.push(`*Teléfono:* ${opts.phone}`);
+  return lines.join("\n");
+}
 
 export default function Checkout() {
   const c = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const cart = useCart();
-  const { sucursal, addOrder } = useApp();
-  const createOrder = useCreateOrder();
+  const { addOrder } = useApp();
   const [step, setStep] = useState(0);
   const [entrega, setEntrega] = useState<Entrega>("tienda");
   const [pago, setPago] = useState<Pago | null>(null);
   const [address, setAddress] = useState("");
-  const submitting = createOrder.isPending;
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 16;
 
   const steps = ["Entrega", "Pago", "Resumen"];
-  const canNext = step === 0 ? entrega === "tienda" || address.trim().length > 5 : step === 1 ? pago !== null : true;
+  const canNext =
+    step === 0
+      ? entrega === "tienda" || address.trim().length > 5
+      : step === 1
+        ? pago !== null
+        : name.trim().length > 1 && phone.trim().length >= 10 && cart.items.length > 0;
 
   const next = () => {
     if (!canNext) return;
@@ -49,25 +87,49 @@ export default function Checkout() {
   };
 
   const confirm = async () => {
+    if (submitting) return;
+    if (cart.items.length === 0) {
+      Alert.alert("Carrito vacío", "Agrega productos antes de enviar tu pedido.", [
+        { text: "Ver carrito", onPress: () => router.replace("/carrito") },
+      ]);
+      return;
+    }
+    setSubmitting(true);
     const pagoLabel = PAGOS.find((x) => x.id === pago)?.label ?? "";
+    const folio = `CAR-${Date.now().toString(36).toUpperCase().slice(-6)}`;
     try {
-      const result = await createOrder.mutateAsync({
-        data: {
-          lines: cart.items.map((i) => ({ productId: i.id, sku: i.sku, name: i.name, qty: i.qty, price: i.price })),
-          sucursalId: sucursal.id,
-          entrega,
-          pago: pagoLabel,
-          total: cart.total,
-        },
+      const text = buildWhatsAppMessage({
+        folio,
+        items: cart.items.map((i) => ({ name: i.name, sku: i.sku, qty: i.qty, price: i.price })),
+        total: cart.total,
+        entrega,
+        address: address.trim(),
+        pagoLabel,
+        name: name.trim(),
+        phone: phone.trim(),
       });
+      const encoded = encodeURIComponent(text);
+      // Prefer the native WhatsApp app; fall back to the wa.me web link.
+      const nativeUrl = `whatsapp://send?phone=${STORE.whatsapp}&text=${encoded}`;
+      const webUrl = `https://wa.me/${STORE.whatsapp}?text=${encoded}`;
+      let opened = false;
+      try {
+        if (await Linking.canOpenURL(nativeUrl)) {
+          await Linking.openURL(nativeUrl);
+          opened = true;
+        }
+      } catch {
+        // fall through to the web link
+      }
+      if (!opened) await Linking.openURL(webUrl);
+
       const order: Order = {
-        id: String(result.id),
-        folio: result.folio,
+        id: folio,
+        folio,
         date: new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }),
         total: cart.total,
         lines: cart.items.map((i) => ({ id: i.id, name: i.name, sku: i.sku, qty: i.qty, price: i.price })),
         entrega,
-        sucursalId: sucursal.id,
         pago: pagoLabel,
       };
       addOrder(order);
@@ -77,7 +139,9 @@ export default function Checkout() {
     } catch (err) {
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       const message = err instanceof Error ? err.message : "No se pudo enviar el pedido. Intenta de nuevo.";
-      Alert.alert("Error al confirmar", message);
+      Alert.alert("Error al enviar", message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -99,9 +163,9 @@ export default function Checkout() {
         {step === 0 ? (
           <>
             <Text style={{ fontFamily: Fonts.black, fontSize: 22, letterSpacing: -0.8, textTransform: "uppercase", color: c.foreground, marginBottom: 20 }}>Método de Entrega</Text>
-            <SelectCard active={entrega === "tienda"} icon="map-pin" title="Recoger en Sucursal" sub={`${sucursal.name} · ${sucursal.hours}`} onPress={() => setEntrega("tienda")} />
+            <SelectCard active={entrega === "tienda"} icon="map-pin" title="Recoger en Tienda" sub={`${STORE.name} · ${STORE.hours}`} onPress={() => setEntrega("tienda")} />
             <View style={{ height: 12 }} />
-            <SelectCard active={entrega === "envio"} icon="truck" title="Envío a Domicilio" sub="2 a 4 días hábiles" onPress={() => setEntrega("envio")} />
+            <SelectCard active={entrega === "envio"} icon="truck" title="Envío a Domicilio" sub={`Gratis · ${STORE.delivery.eta} · ${STORE.delivery.zona}`} onPress={() => setEntrega("envio")} />
             {entrega === "envio" ? (
               <View style={{ marginTop: 20 }}>
                 <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 10 }}>Dirección de Envío</Text>
@@ -142,8 +206,28 @@ export default function Checkout() {
               })}
             </View>
 
+            {/* Customer contact */}
+            <View style={{ marginTop: 24 }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 10 }}>Tus Datos</Text>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Nombre completo"
+                placeholderTextColor={c.neutral400}
+                style={{ borderWidth: 1, borderColor: c.border, padding: 16, fontFamily: Fonts.medium, fontSize: 14, color: c.foreground, marginBottom: 12 }}
+              />
+              <TextInput
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Teléfono / WhatsApp"
+                placeholderTextColor={c.neutral400}
+                keyboardType="phone-pad"
+                style={{ borderWidth: 1, borderColor: c.border, padding: 16, fontFamily: Fonts.medium, fontSize: 14, color: c.foreground }}
+              />
+            </View>
+
             <View style={{ marginTop: 20, gap: 8 }}>
-              <Line label="Entrega" value={entrega === "tienda" ? sucursal.name : "Envío a domicilio"} c={c} />
+              <Line label="Entrega" value={entrega === "tienda" ? "Recoger en tienda" : "Envío a domicilio"} c={c} />
               <Line label="Pago" value={PAGOS.find((x) => x.id === pago)?.label ?? "—"} c={c} />
               <Line label="Subtotal" value={formatMXN(cart.base)} c={c} />
               <Line label="IVA (16%)" value={formatMXN(cart.iva)} c={c} />
@@ -152,14 +236,21 @@ export default function Checkout() {
               <Text style={{ fontFamily: Fonts.black, fontSize: 16, letterSpacing: -0.3, textTransform: "uppercase", color: c.foreground }}>Total</Text>
               <Text style={{ fontFamily: Fonts.monoBold, fontSize: 20, letterSpacing: -0.8, color: c.foreground }}>{formatMXN(cart.total)}</Text>
             </View>
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 20, borderWidth: 1, borderColor: c.border, padding: 14 }}>
+              <Feather name="message-circle" size={16} color={c.primary} />
+              <Text style={{ flex: 1, fontFamily: Fonts.medium, fontSize: 11, letterSpacing: 0.3, color: c.mutedForeground }}>
+                Tu pedido se enviará por WhatsApp a Carper Autopartes para confirmar disponibilidad y entrega.
+              </Text>
+            </View>
           </>
         )}
       </ScrollView>
 
       <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: c.background, borderTopWidth: 1, borderTopColor: c.border, padding: 20, paddingBottom: bottomPad }}>
         <AccentButton
-          label={step < 2 ? "Continuar" : "Confirmar Compra"}
-          icon={step < 2 ? "arrow-right" : "check"}
+          label={step < 2 ? "Continuar" : "Enviar Pedido por WhatsApp"}
+          icon={step < 2 ? "arrow-right" : "message-circle"}
           onPress={next}
           disabled={!canNext}
           loading={submitting}

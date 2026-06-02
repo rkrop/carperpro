@@ -81,7 +81,7 @@ export default function Cuenta() {
           <SectionLabel style={{ paddingHorizontal: 24, marginBottom: 12 }}>Mi Actividad</SectionLabel>
           <Hairline />
           <Row icon="heart" label="Favoritos" value={`${favorites.length}`} onPress={() => router.push("/favoritos")} />
-          <Row icon="map-pin" label="Sucursal preferida" value={sucursal.name.replace("Sucursal ", "")} onPress={() => router.push("/sucursal")} />
+          <Row icon="map-pin" label="Nuestra tienda" value={sucursal.name} onPress={() => router.push("/sucursal")} />
           <Row icon="package" label="Mis pedidos" value={`${orders.length}`} />
         </View>
 

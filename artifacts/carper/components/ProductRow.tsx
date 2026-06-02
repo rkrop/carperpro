@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 
-import { CompatibilityBadge } from "@/components/CompatibilityBadge";
 import { ProductImage } from "@/components/ProductImage";
 import { Fonts } from "@/constants/fonts";
 import { Product } from "@/data/catalog";
@@ -93,12 +92,6 @@ export function ProductRow({ product }: { product: Product }) {
         >
           {product.name}
         </Text>
-
-        {product.compatible ? (
-          <View style={{ marginTop: 8 }}>
-            <CompatibilityBadge vehicle="Tsuru 1.6" subtle />
-          </View>
-        ) : null}
 
         <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: "auto", paddingTop: 10 }}>
           <View>

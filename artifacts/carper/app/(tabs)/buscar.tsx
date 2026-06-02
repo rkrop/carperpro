@@ -136,6 +136,12 @@ export default function Buscar() {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + 24 }}>
           <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: c.border, padding: 14, marginBottom: 24 }}>
+              <Feather name="info" size={14} color={c.primary} />
+              <Text style={{ flex: 1, fontFamily: Fonts.medium, fontSize: 11, lineHeight: 16, color: c.mutedForeground }}>
+                Escribe la marca y modelo de tu auto, el número de parte o el nombre de la refacción para ver resultados.
+              </Text>
+            </View>
             <SectionLabel style={{ marginBottom: 16 }}>Cómo Buscar</SectionLabel>
             <View style={{ borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: c.border }}>
               {entries.map((e) => (

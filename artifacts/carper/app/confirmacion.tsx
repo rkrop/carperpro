@@ -27,7 +27,7 @@ export default function Confirmacion() {
           <View style={{ width: 72, height: 72, backgroundColor: c.primary, alignItems: "center", justifyContent: "center", marginBottom: 28 }}>
             <Feather name="check" size={36} color={c.primaryForeground} />
           </View>
-          <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.primary, marginBottom: 10 }}>Pedido Confirmado</Text>
+          <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.primary, marginBottom: 10 }}>Pedido Enviado</Text>
           <Text style={{ fontFamily: Fonts.black, fontSize: 30, letterSpacing: -1.5, textTransform: "uppercase", color: c.foreground, textAlign: "center", lineHeight: 32 }}>
             ¡Gracias por{"\n"}tu compra!
           </Text>
@@ -40,7 +40,7 @@ export default function Confirmacion() {
               <Text style={{ fontFamily: Fonts.monoBold, fontSize: 14, color: c.foreground }}>{order.folio}</Text>
             </View>
             <Detail label="Fecha" value={order.date} c={c} />
-            <Detail label="Entrega" value={order.entrega === "tienda" ? sucursal.name : "Envío a domicilio"} c={c} />
+            <Detail label="Entrega" value={order.entrega === "tienda" ? "Recoger en tienda" : "Envío a domicilio"} c={c} />
             <Detail label="Pago" value={order.pago} c={c} />
             <Detail label="Artículos" value={`${order.lines.reduce((s, l) => s + l.qty, 0)}`} c={c} />
             <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 18, backgroundColor: c.neutral50 }}>
@@ -51,9 +51,11 @@ export default function Confirmacion() {
         ) : null}
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 24, borderWidth: 1, borderColor: c.border, padding: 16 }}>
-          <Feather name="clock" size={16} color={c.primary} />
+          <Feather name="message-circle" size={16} color={c.primary} />
           <Text style={{ flex: 1, fontFamily: Fonts.medium, fontSize: 11, letterSpacing: 0.3, textTransform: "uppercase", color: c.mutedForeground }}>
-            {order?.entrega === "tienda" ? `Listo para recoger hoy en ${sucursal.name}` : "Recibirás tu pedido en 2 a 4 días hábiles"}
+            {order?.entrega === "tienda"
+              ? `Te confirmaremos por WhatsApp cuando esté listo para recoger en ${sucursal.name}`
+              : `Te contactaremos por WhatsApp para coordinar tu envío (${sucursal.delivery.eta})`}
           </Text>
         </View>
 

@@ -6,7 +6,6 @@ import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AccentButton, EmptyState, Hairline, Skeleton } from "@/components/CarperUI";
-import { CompatibilityBadge } from "@/components/CompatibilityBadge";
 import { ProductImage } from "@/components/ProductImage";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts, isWeb, WEB_BOTTOM_INSET } from "@/constants/fonts";
@@ -25,7 +24,6 @@ export default function Producto() {
   const { data: product, isLoading, isError, error } = useProduct(id, sucursal.id || undefined);
   const cart = useCart();
   const { addRecent, toggleFavorite, isFavorite } = useApp();
-  const [showAll, setShowAll] = useState(false);
   const [added, setAdded] = useState(false);
 
   useEffect(() => {
@@ -123,43 +121,6 @@ export default function Producto() {
           <Text style={{ fontFamily: Fonts.medium, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: c.mutedForeground, marginTop: 6 }}>IVA incluido</Text>
         </View>
 
-        {/* Compatibility */}
-        <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: c.border, gap: 16 }}>
-          {product.compatible ? (
-            <CompatibilityBadge vehicle="Nissan Tsuru 1.6 1992" />
-          ) : (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: c.border, paddingHorizontal: 16, paddingVertical: 14 }}>
-              <Feather name="alert-triangle" size={16} color={c.neutral400} />
-              <Text style={{ flex: 1, fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: c.mutedForeground }}>
-                Verifica compatibilidad con tu vehículo
-              </Text>
-            </View>
-          )}
-
-          <Pressable onPress={() => setShowAll((v) => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border }}>
-            <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.foreground }}>
-              Ver {product.vehicles.length} vehículos compatibles
-            </Text>
-            <Feather name={showAll ? "chevron-up" : "chevron-down"} size={16} color={c.neutral400} />
-          </Pressable>
-
-          {showAll
-            ? product.vehicles.map((v) => (
-                <View key={v} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <Feather name="check" size={12} color={c.neutral400} />
-                  <Text style={{ fontFamily: Fonts.medium, fontSize: 12, textTransform: "uppercase", color: c.mutedForeground }}>{v}</Text>
-                </View>
-              ))
-            : null}
-
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Feather name="info" size={14} color={c.neutral400} />
-            <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground, textDecorationLine: "underline" }}>
-              Confirmar con un asesor
-            </Text>
-          </View>
-        </View>
-
         {/* OEM / equivalents (optional — disappears when absent) */}
         {product.oem?.length || product.equivalents?.length ? (
           <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: c.border }}>
@@ -191,25 +152,38 @@ export default function Producto() {
           </View>
         ) : null}
 
-        {/* Specs */}
+        {/* Specs (only when the ERP provides them) */}
+        {product.specs.length ? (
+          <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 28, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 16 }}>Especificaciones Técnicas</Text>
+            <Hairline />
+            {product.specs.map((s) => (
+              <View key={s.label} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: c.border }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.foreground }}>{s.label}</Text>
+                <Text style={{ fontFamily: Fonts.medium, fontSize: 11, textTransform: "uppercase", color: c.mutedForeground }}>{s.value}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Description from ERP — vehicle applications, OEM codes and notes live here */}
         <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 28 }}>
-          <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 16 }}>Especificaciones Técnicas</Text>
-          <Hairline />
-          {product.specs.map((s) => (
-            <View key={s.label} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: c.border }}>
-              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.foreground }}>{s.label}</Text>
-              <Text style={{ fontFamily: Fonts.medium, fontSize: 11, textTransform: "uppercase", color: c.mutedForeground }}>{s.value}</Text>
-            </View>
-          ))}
-          {/* Rich description from ERP (applications, OEM codes, notes) */}
+          <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 12 }}>Descripción</Text>
           {product.descripcion ? (
-            <View style={{ marginTop: product.specs.length ? 20 : 0 }}>
-              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 10 }}>Descripción</Text>
-              <Text style={{ fontFamily: Fonts.medium, fontSize: 12, lineHeight: 18, color: c.mutedForeground }}>
-                {product.descripcion}
-              </Text>
-            </View>
-          ) : null}
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 13, lineHeight: 20, color: c.foreground }}>
+              {product.descripcion}
+            </Text>
+          ) : (
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 12, lineHeight: 18, color: c.mutedForeground }}>
+              Sin descripción adicional para esta refacción.
+            </Text>
+          )}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18, borderWidth: 1, borderColor: c.border, padding: 14 }}>
+            <Feather name="search" size={14} color={c.neutral400} />
+            <Text style={{ flex: 1, fontFamily: Fonts.medium, fontSize: 11, lineHeight: 16, color: c.mutedForeground }}>
+              ¿Buscas para tu auto? Escribe la marca y modelo en el buscador para ver más opciones.
+            </Text>
+          </View>
         </View>
       </ScrollView>
 
