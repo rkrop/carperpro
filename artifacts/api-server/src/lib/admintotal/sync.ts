@@ -205,10 +205,11 @@ export async function runInboundSync(): Promise<SyncResult> {
               notInArray(inventoryTable.sucursalId, activeSucursalIds),
             ),
           );
-      } else {
-        // No inventory data from ERP — clear all rows for this product.
-        await db.delete(inventoryTable).where(drizzleEq(inventoryTable.productId, product.id));
       }
+      // NOTE: when the ERP payload carries no existencias for a product we
+      // deliberately leave existing inventory rows untouched. The price/stock
+      // webhook (/webhooks/admintotal/precios-existencias) is the authoritative
+      // near-real-time stock source; wiping it here would zero stock every sync.
     }
     logger.info({ count: productsSynced }, "Admintotal: productos sincronizados");
 

@@ -75,3 +75,22 @@ export function getSyncIntervalMs(): number {
   if (!Number.isNaN(parsed) && parsed >= 60_000) return parsed;
   return 15 * 60 * 1000;
 }
+
+// Shared secret used to authenticate inbound Admintotal webhook requests.
+// Admintotal sends it in the "Api-key" header (or as the HTTP Basic password).
+// Optional but strongly recommended — when unset the webhook accepts anonymous
+// requests and logs a warning.
+export function getWebhookToken(): string | undefined {
+  const t = process.env.ADMINTOTAL_WEBHOOK_TOKEN;
+  return t && t.trim() ? t.trim() : undefined;
+}
+
+// Sucursal (almacen) under which webhook stock is recorded. Admintotal's
+// price/stock webhook sends a single aggregate `stock` per SKU (summed across
+// the almacenes configured in the webhook), so we store it on one sucursal.
+// The app sums stock across all sucursales, so a single row == the aggregate.
+// Defaults to "9" (Matriz, the main store).
+export function getWebhookSucursalId(): string {
+  const raw = process.env.ADMINTOTAL_WEBHOOK_SUCURSAL_ID;
+  return raw && raw.trim() ? raw.trim() : "9";
+}
