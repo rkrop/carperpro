@@ -1,13 +1,15 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   db,
   outboundOrdersTable,
   sucursalesTable,
+  productsTable,
   type OutboundOrderLine,
 } from "@workspace/db";
 import { CreateOrderBody } from "@workspace/api-zod";
 import { pushOrder } from "../lib/admintotal/outbound";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -42,13 +44,32 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const lines: OutboundOrderLine[] = input.lines.map((l) => ({
-    productId: l.productId,
-    sku: l.sku,
-    name: l.name,
-    qty: l.qty,
-    price: l.price,
-  }));
+  // Recompute prices from DB — never trust client-supplied economic values.
+  const requestedIds = input.lines.map((l) => l.productId);
+  const dbProducts = await db
+    .select({ id: productsTable.id, sku: productsTable.sku, name: productsTable.name, price: productsTable.price })
+    .from(productsTable)
+    .where(inArray(productsTable.id, requestedIds));
+
+  const priceMap = new Map(dbProducts.map((p) => [p.id, p]));
+  const unknownIds = requestedIds.filter((id) => !priceMap.has(id));
+  if (unknownIds.length > 0) {
+    res.status(400).json({ error: "Productos no encontrados en catálogo", ids: unknownIds });
+    return;
+  }
+
+  const lines: OutboundOrderLine[] = input.lines.map((l) => {
+    const dbP = priceMap.get(l.productId)!;
+    return {
+      productId: dbP.id,
+      sku: dbP.sku,
+      name: dbP.name,
+      qty: l.qty,
+      price: dbP.price, // authoritative ERP-mirrored price
+    };
+  });
+
+  const total = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
 
   const folio = makeFolio();
   const inserted = await db
@@ -62,7 +83,7 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
       buyerName: input.buyerName ?? null,
       buyerPhone: input.buyerPhone ?? null,
       lines,
-      total: input.total,
+      total,
     })
     .returning();
   const order = inserted[0];
