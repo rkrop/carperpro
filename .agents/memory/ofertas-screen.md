@@ -32,6 +32,6 @@ tips, short FAQ, trust stats) and `components/home/*`. Curated cards link into
 `/resultados?q=...` catalog search rather than hard-linking products.
 
 **Inventory caveat:** the `inventory` table (column `quantity`, not `qty`) is EMPTY in dev
-— stock is populated only by the ERP sync. So any home/list filter on `stock > 0` shows
-nothing in dev. Filter on `price > 0` and sort in-stock first instead, so it works in
-both dev and prod.
+— stock is populated only by the ERP sync. The catalog endpoints now filter on `stock > 0`
+(via `sellableProduct()` — see carper-demo-data.md), so the **dev catalog is empty by
+design**; it only shows products in prod. This was a deliberate store-owner choice.

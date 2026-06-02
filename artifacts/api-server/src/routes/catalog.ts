@@ -48,13 +48,18 @@ function notTestProduct(): SQL {
 }
 
 // Unsellable / junk rows hidden from the catalog:
+//  - 0 stock (summed across all sucursales) → nothing on the shelf to sell
 //  - no price AND no cost (price=0 and costo=0/null) → nothing to sell
 //  - no name AND no description → empty junk row
 // Like notTestProduct(), enforced at the query layer so a re-sync from
 // Admintotal can't resurface them.
+// NOTE: stock lives in the `inventory` mirror, which is populated in
+// production (Admintotal webhooks/sync) but EMPTY in the dev DB — so this
+// filter makes the dev preview catalog appear empty by design.
 function sellableProduct(): SQL {
   return sql`(
-    (coalesce(${productsTable.price}, 0) > 0 or coalesce(${productsTable.costo}, 0) > 0)
+    coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), 0) > 0
+    and (coalesce(${productsTable.price}, 0) > 0 or coalesce(${productsTable.costo}, 0) > 0)
     and (
       btrim(coalesce(${productsTable.name}, '')) <> ''
       or btrim(coalesce(${productsTable.descripcion}, '')) <> ''

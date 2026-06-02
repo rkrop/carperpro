@@ -1,10 +1,10 @@
 - [Excel seed script](excel-seed.md) — canonical seed-excel.mjs (pg from lib/db, xlsx via require("xlsx")); enforces single store "matriz", deletes stray branches/orphan inventory on re-run.
 - [Carper API routes](carper-api-routes.md) — routes mount at /api/* (not /api/catalog/*); port from PORT env, defaults to 8080 in dev.
 - [Full-text search setup](fts-setup.md) — search_vector tsvector + GIN index + unaccent trigger; prefix search via to_tsquery('simple', unaccent(word:*)).
-- [Carper catalog test data](carper-demo-data.md) — catalog is a live ERP mirror (numeric ids LEGIT); kill test rows via query-layer notTestProduct() filter, not DELETE (sync re-adds them).
+- [Carper catalog test data](carper-demo-data.md) — live ERP mirror (numeric ids LEGIT); query-layer filters notTestProduct()+sellableProduct() (not DELETE); sellableProduct requires stock>0 so DEV catalog is EMPTY by design (dev inventory empty).
 - [Admintotal ERP sync](admintotal-sync.md) — bare-subdomain CLAVE; productos 429-rate-limited (full sync = minutes); stock lives in info_almacenes[].disponible (not existencias) — mapper must read those names or all shows Agotado.
 - [Admintotal webhooks](admintotal-webhooks.md) — /api/webhooks/admintotal/* push price/stock (by sku) + product creation; aggregate stock → 1 sucursal (Matriz 9); sync no longer wipes inventory.
-- [Ofertas & Home curation](ofertas-screen.md) — live "Oferta del día" from /deals + curated cards in lib/campaigns.ts / lib/homeContent.ts; inventory table EMPTY in dev so filter price>0 not stock>0.
+- [Ofertas & Home curation](ofertas-screen.md) — live "Oferta del día" from /deals + curated cards in lib/campaigns.ts / lib/homeContent.ts; dev inventory EMPTY so stock>0 filter makes dev catalog empty by design.
 - [Carper asset strategy](carper-asset-strategy.md) — brand logos = non-tappable credibility wall (catalog mostly SIN MARCA); deep links via ?q=/?category=, never ?brand=; icons match accent-insensitive.
 - [TS project references vs typecheck](ts-project-references.md) — after editing lib/db schema types, run `npx tsc -b lib/db` before api-server typecheck; it reads dist .d.ts, not source.
 - [Stripe integration](stripe-integration.md) — card-only Checkout Sessions w/ dynamic price_data; awaiting_payment status skips ERP queue; MUST externalize stripe-replit-sync in esbuild or migrations silently no-op.
