@@ -1,4 +1,4 @@
-import { sql, notInArray } from "drizzle-orm";
+import { sql, notInArray, and, eq as drizzleEq } from "drizzle-orm";
 import {
   db,
   categoriesTable,
@@ -193,6 +193,21 @@ export async function runInboundSync(): Promise<SyncResult> {
             target: [inventoryTable.productId, inventoryTable.sucursalId],
             set: { quantity: inv.quantity },
           });
+      }
+      // Prune stale per-sucursal rows for this product (ERP is source of truth).
+      const activeSucursalIds = rows.map((r) => r.sucursalId);
+      if (activeSucursalIds.length > 0) {
+        await db
+          .delete(inventoryTable)
+          .where(
+            and(
+              drizzleEq(inventoryTable.productId, product.id),
+              notInArray(inventoryTable.sucursalId, activeSucursalIds),
+            ),
+          );
+      } else {
+        // No inventory data from ERP — clear all rows for this product.
+        await db.delete(inventoryTable).where(drizzleEq(inventoryTable.productId, product.id));
       }
     }
     logger.info({ count: productsSynced }, "Admintotal: productos sincronizados");
