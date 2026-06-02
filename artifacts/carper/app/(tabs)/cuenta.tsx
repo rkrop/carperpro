@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Hairline, SectionLabel } from "@/components/CarperUI";
 import { Fonts, isWeb, TAB_BAR_HEIGHT, WEB_TOP_INSET } from "@/constants/fonts";
-import { useApp, vehicleLabel, vehicleSub, type OrderLine } from "@/context/AppContext";
+import { useApp, type OrderLine } from "@/context/AppContext";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { formatMXN } from "@/lib/format";
@@ -30,7 +30,7 @@ export default function Cuenta() {
   const c = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { vehicle, favorites, orders, sucursal, clearData } = useApp();
+  const { favorites, orders, sucursal, clearData } = useApp();
   const cart = useCart();
   const topPad = (isWeb ? WEB_TOP_INSET : insets.top) + 16;
 
@@ -67,24 +67,6 @@ export default function Cuenta() {
             <Text style={{ fontFamily: Fonts.bold, fontSize: 16, letterSpacing: -0.3, textTransform: "uppercase", color: c.foreground }}>Taller Mecánico</Text>
             <Text style={{ fontFamily: Fonts.mono, fontSize: 11, color: c.mutedForeground, marginTop: 3 }}>cliente@carper.mx</Text>
           </View>
-        </View>
-
-        {/* Vehicle */}
-        <View style={{ marginTop: 12 }}>
-          <SectionLabel style={{ paddingHorizontal: 24, marginBottom: 12, marginTop: 12 }}>Mi Vehículo</SectionLabel>
-          <Pressable
-            onPress={() => router.push("/buscar-vehiculo")}
-            style={({ pressed }) => ({ backgroundColor: pressed ? c.neutral50 : c.background, borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.border, paddingHorizontal: 24, paddingVertical: 18, flexDirection: "row", alignItems: "center", gap: 16 })}
-          >
-            <View style={{ width: 40, height: 40, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" }}>
-              <Feather name="truck" size={18} color={c.foreground} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.2, textTransform: "uppercase", color: c.foreground }}>{vehicleLabel(vehicle)}</Text>
-              <Text style={{ fontFamily: Fonts.medium, fontSize: 11, textTransform: "uppercase", color: c.mutedForeground, marginTop: 2 }}>{vehicleSub(vehicle)}</Text>
-            </View>
-            <Feather name="edit-2" size={15} color={c.neutral400} />
-          </Pressable>
         </View>
 
         {/* Quick links */}

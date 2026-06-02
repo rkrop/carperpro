@@ -18,6 +18,13 @@ import { useDeals } from "@/data/catalog";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 
+const QUICK_ACTIONS: { label: string; icon: keyof typeof Feather.glyphMap; href: string }[] = [
+  { label: "Mis\nPedidos", icon: "package", href: "/pedidos" },
+  { label: "Favoritos", icon: "heart", href: "/favoritos" },
+  { label: "Escanear\nRefacción", icon: "maximize", href: "/escanear" },
+  { label: "Buscar por\nVehículo", icon: "truck", href: "/buscar-vehiculo" },
+];
+
 export default function Inicio() {
   const c = useColors();
   const router = useRouter();
@@ -38,28 +45,31 @@ export default function Inicio() {
           </Text>
         </View>
 
-        {/* Quick actions */}
+        {/* Quick actions — 2x2 grid */}
         <View style={{ paddingHorizontal: 24, paddingVertical: 28 }}>
-          <View style={{ flexDirection: "row", borderWidth: 1, borderColor: c.border }}>
-            <Pressable
-              onPress={() => router.push("/escanear")}
-              style={({ pressed }) => ({ flex: 1, alignItems: "center", paddingVertical: 22, gap: 12, backgroundColor: pressed ? c.neutral50 : c.background })}
-            >
-              <Feather name="maximize" size={24} color={c.foreground} />
-              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.foreground, textAlign: "center" }}>
-                Escanear{"\n"}Refacción
-              </Text>
-            </Pressable>
-            <View style={{ width: 1, backgroundColor: c.border }} />
-            <Pressable
-              onPress={() => router.push("/buscar-vehiculo")}
-              style={({ pressed }) => ({ flex: 1, alignItems: "center", paddingVertical: 22, gap: 12, backgroundColor: pressed ? c.neutral50 : c.background })}
-            >
-              <Feather name="truck" size={24} color={c.foreground} />
-              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.foreground, textAlign: "center" }}>
-                Buscar por{"\n"}Vehículo
-              </Text>
-            </Pressable>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", borderTopWidth: 1, borderLeftWidth: 1, borderColor: c.border }}>
+            {QUICK_ACTIONS.map((a) => (
+              <Pressable
+                key={a.label}
+                onPress={() => router.push(a.href as never)}
+                style={({ pressed }) => ({
+                  width: "50%",
+                  height: 100,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  borderRightWidth: 1,
+                  borderBottomWidth: 1,
+                  borderColor: c.border,
+                  backgroundColor: pressed ? c.neutral50 : c.background,
+                })}
+              >
+                <Feather name={a.icon} size={24} color={c.foreground} />
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.foreground, textAlign: "center" }}>
+                  {a.label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         </View>
 
