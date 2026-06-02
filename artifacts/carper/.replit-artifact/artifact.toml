@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Carper"
+version = "1.0.0"
+id = "artifacts/carper"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 26270
+
+[services.development]
+run = "pnpm --filter @workspace/carper run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/carper", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/carper", "run", "serve" ]
+
+[services.env]
+PORT = "26270"
+BASE_PATH = "/"

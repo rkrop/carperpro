@@ -1,1 +1,1 @@
-- [Mockup-sandbox gotchas](mockup-sandbox-gotchas.md) — wouter NOT installed (use anchor links); assets must be public/images + /__mockup/ paths; no-scrollbar utility not built-in.
+- [RN-web Inter blank text](rnweb-inter-blank-text.md) — custom-font Text can paint blank on react-native-web after a loading/Animated subtree swap; gate the swap to native.
