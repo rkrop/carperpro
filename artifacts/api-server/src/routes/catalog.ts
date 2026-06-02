@@ -47,6 +47,21 @@ function notTestProduct(): SQL {
   )`;
 }
 
+// Unsellable / junk rows hidden from the catalog:
+//  - no price AND no cost (price=0 and costo=0/null) → nothing to sell
+//  - no name AND no description → empty junk row
+// Like notTestProduct(), enforced at the query layer so a re-sync from
+// Admintotal can't resurface them.
+function sellableProduct(): SQL {
+  return sql`(
+    (coalesce(${productsTable.price}, 0) > 0 or coalesce(${productsTable.costo}, 0) > 0)
+    and (
+      btrim(coalesce(${productsTable.name}, '')) <> ''
+      or btrim(coalesce(${productsTable.descripcion}, '')) <> ''
+    )
+  )`;
+}
+
 function serializeProduct(
   row: DbProduct & { stock: number },
 ): Record<string, unknown> {
@@ -111,7 +126,7 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const offset = Number(req.query.offset) || 0;
 
-  const conditions: SQL[] = [notTestProduct()];
+  const conditions: SQL[] = [notTestProduct(), sellableProduct()];
   if (q) {
     // Full-text prefix search on the tsvector column (covers name, descripcion,
     // sku, brand, oem codes).  Each word in the query gets a :* prefix so it
@@ -173,7 +188,7 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
   const rows = await db
     .select({ product: productsTable, stock })
     .from(productsTable)
-    .where(and(eq(productsTable.id, id), notTestProduct()))
+    .where(and(eq(productsTable.id, id), notTestProduct(), sellableProduct()))
     .limit(1);
   const row = rows[0];
   if (!row) {
@@ -196,6 +211,7 @@ router.get("/deals", async (req: Request, res: Response): Promise<void> => {
     .where(
       and(
         notTestProduct(),
+        sellableProduct(),
         sql`${productsTable.originalPrice} is not null`,
         sql`${productsTable.originalPrice} > ${productsTable.price}`,
       ),

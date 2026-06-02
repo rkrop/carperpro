@@ -3,8 +3,6 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
-import { SectionLabel } from "@/components/CarperUI";
-import { ProductCardMini } from "@/components/ProductRow";
 import { SearchHeader } from "@/components/SearchHeader";
 import { Colecciones } from "@/components/home/Colecciones";
 import { Confianza } from "@/components/home/Confianza";
@@ -28,11 +26,10 @@ const QUICK_ACTIONS: { label: string; icon: keyof typeof Feather.glyphMap; href:
 export default function Inicio() {
   const c = useColors();
   const router = useRouter();
-  const { recent, sucursal } = useApp();
+  const { sucursal } = useApp();
   const sucursalId = sucursal.id || undefined;
   const { data: deals } = useDeals(sucursalId);
   const dealOfDay = deals?.dealOfDay ?? null;
-  const recentProducts = recent.slice(0, 6);
 
   return (
     <View style={{ flex: 1, backgroundColor: c.neutral50 }}>
@@ -81,18 +78,6 @@ export default function Inicio() {
 
         {/* Colecciones destacadas — curated campaigns */}
         <Colecciones />
-
-        {/* Recently viewed */}
-        {recentProducts.length > 0 ? (
-          <View style={{ paddingVertical: 32 }}>
-            <SectionLabel style={{ marginBottom: 20, paddingHorizontal: 24 }}>Vistos Recientemente</SectionLabel>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, gap: 16 }}>
-              {recentProducts.map((p) => (
-                <ProductCardMini key={p.id} product={p} />
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
 
         {/* Consejos del taller — editorial tips */}
         <ConsejosTaller />
