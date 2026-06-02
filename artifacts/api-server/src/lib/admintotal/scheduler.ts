@@ -2,6 +2,7 @@ import { logger } from "../logger";
 import { getSyncIntervalMs, isAdmintotalConfigured, missingConfigMessage } from "./config";
 import { runInboundSync } from "./sync";
 import { processOutboundQueue } from "./outbound";
+import { reconcilePendingStripeOrders } from "../stripe/service";
 
 let started = false;
 let timer: NodeJS.Timeout | null = null;
@@ -16,6 +17,11 @@ async function tick(): Promise<void> {
     await processOutboundQueue();
   } catch (err) {
     logger.error({ err }, "Admintotal: error inesperado al procesar cola");
+  }
+  try {
+    await reconcilePendingStripeOrders();
+  } catch (err) {
+    logger.error({ err }, "Stripe: error inesperado al reconciliar pedidos");
   }
 }
 

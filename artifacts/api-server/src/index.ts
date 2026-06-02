@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startScheduler } from "./lib/admintotal/scheduler";
+import { initStripe } from "./lib/stripe/init";
 
 const rawPort = process.env["PORT"];
 
@@ -25,4 +26,6 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
   // Kick off the Admintotal inbound sync + outbound queue scheduler.
   startScheduler();
+  // Best-effort Stripe setup (schema, managed webhook, backfill). Never fatal.
+  void initStripe();
 });

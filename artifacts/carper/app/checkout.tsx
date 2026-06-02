@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Alert, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -13,6 +13,7 @@ import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { formatMXN } from "@/lib/format";
 import { STORE } from "@/lib/store";
+import { startCardCheckout, verifyPayment, type VerifiedOrder } from "@/lib/stripeCheckout";
 
 type Entrega = "tienda" | "envio";
 type Pago = "efectivo" | "tarjeta" | "spei";
@@ -56,6 +57,18 @@ function buildWhatsAppMessage(opts: {
   return lines.join("\n");
 }
 
+function verifiedToOrder(v: VerifiedOrder): Order {
+  return {
+    id: v.folio,
+    folio: v.folio,
+    date: new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }),
+    total: v.total,
+    lines: v.lines.map((l) => ({ id: l.id, name: l.name, sku: l.sku, qty: l.qty, price: l.price })),
+    entrega: v.entrega === "envio" ? "envio" : "tienda",
+    pago: v.pago,
+  };
+}
+
 export default function Checkout() {
   const c = useColors();
   const router = useRouter();
@@ -70,6 +83,55 @@ export default function Checkout() {
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 16;
+
+  // Web: after Stripe redirects back to this page, verify the pending order.
+  const webReturnHandled = useRef(false);
+  useEffect(() => {
+    if (Platform.OS !== "web" || webReturnHandled.current) return;
+    let orderId: number | null = null;
+    let status: string | null = null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      status = params.get("status");
+      const fromQuery = params.get("order");
+      const fromStore = window.sessionStorage.getItem("carper_stripe_order");
+      orderId = fromQuery ? Number(fromQuery) : fromStore ? Number(fromStore) : null;
+    } catch {
+      return;
+    }
+    if (!orderId || !Number.isFinite(orderId)) return;
+    webReturnHandled.current = true;
+
+    // Clean the URL so a refresh doesn't re-trigger verification.
+    try {
+      window.history.replaceState({}, "", window.location.pathname);
+      window.sessionStorage.removeItem("carper_stripe_order");
+    } catch {
+      // best-effort
+    }
+
+    if (status === "cancel") {
+      Alert.alert("Pago cancelado", "No se completó el pago con tarjeta. Puedes intentar de nuevo.");
+      return;
+    }
+
+    setSubmitting(true);
+    verifyPayment(orderId)
+      .then((order) => {
+        if (order && order.paymentStatus === "paid") {
+          addOrder(verifiedToOrder(order));
+          cart.clear();
+          router.replace(`/confirmacion?folio=${order.folio}`);
+        } else {
+          Alert.alert("Pago pendiente", "Aún no confirmamos tu pago. Si ya pagaste, espera unos minutos.");
+        }
+      })
+      .catch(() => {
+        Alert.alert("Error", "No se pudo verificar el pago. Intenta de nuevo.");
+      })
+      .finally(() => setSubmitting(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const steps = ["Entrega", "Pago", "Resumen"];
   const canNext =
@@ -96,6 +158,40 @@ export default function Checkout() {
     }
     setSubmitting(true);
     const pagoLabel = PAGOS.find((x) => x.id === pago)?.label ?? "";
+
+    // Card payments go through Stripe; efectivo/spei keep the WhatsApp flow.
+    if (pago === "tarjeta") {
+      try {
+        const result = await startCardCheckout({
+          entrega,
+          buyerName: name.trim(),
+          buyerPhone: phone.trim(),
+          lines: cart.items.map((i) => ({ productId: i.id, qty: i.qty })),
+        });
+        if (result.mode === "native") {
+          // Browser closed — verify authoritatively before confirming.
+          const order = await verifyPayment(result.orderId);
+          if (order && order.paymentStatus === "paid") {
+            addOrder(verifiedToOrder(order));
+            cart.clear();
+            if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            router.replace(`/confirmacion?folio=${order.folio}`);
+          } else {
+            if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            Alert.alert("Pago no completado", "No confirmamos tu pago con tarjeta. Si ya pagaste, espera unos minutos o intenta de nuevo.");
+          }
+        }
+        // web-redirect: the page navigated to Stripe; verification runs on return.
+      } catch (err) {
+        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        const message = err instanceof Error ? err.message : "No se pudo iniciar el pago con tarjeta.";
+        Alert.alert("Error de pago", message);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const folio = `CAR-${Date.now().toString(36).toUpperCase().slice(-6)}`;
     try {
       const text = buildWhatsAppMessage({
@@ -238,9 +334,11 @@ export default function Checkout() {
             </View>
 
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 20, borderWidth: 1, borderColor: c.border, padding: 14 }}>
-              <Feather name="message-circle" size={16} color={c.primary} />
+              <Feather name={pago === "tarjeta" ? "credit-card" : "message-circle"} size={16} color={c.primary} />
               <Text style={{ flex: 1, fontFamily: Fonts.medium, fontSize: 11, letterSpacing: 0.3, color: c.mutedForeground }}>
-                Tu pedido se enviará por WhatsApp a Carper Autopartes para confirmar disponibilidad y entrega.
+                {pago === "tarjeta"
+                  ? "Pagarás de forma segura con tarjeta. Al confirmar el pago coordinaremos la entrega contigo."
+                  : "Tu pedido se enviará por WhatsApp a Carper Autopartes para confirmar disponibilidad y entrega."}
               </Text>
             </View>
           </>
@@ -249,8 +347,8 @@ export default function Checkout() {
 
       <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: c.background, borderTopWidth: 1, borderTopColor: c.border, padding: 20, paddingBottom: bottomPad }}>
         <AccentButton
-          label={step < 2 ? "Continuar" : "Enviar Pedido por WhatsApp"}
-          icon={step < 2 ? "arrow-right" : "message-circle"}
+          label={step < 2 ? "Continuar" : pago === "tarjeta" ? "Pagar con Tarjeta" : "Enviar Pedido por WhatsApp"}
+          icon={step < 2 ? "arrow-right" : pago === "tarjeta" ? "credit-card" : "message-circle"}
           onPress={next}
           disabled={!canNext}
           loading={submitting}

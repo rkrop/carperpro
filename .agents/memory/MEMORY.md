@@ -6,3 +6,4 @@
 - [Admintotal webhooks](admintotal-webhooks.md) — /api/webhooks/admintotal/* push price/stock (by sku) + product creation; aggregate stock → 1 sucursal (Matriz 9); sync no longer wipes inventory.
 - [Ofertas & Home curation](ofertas-screen.md) — live "Oferta del día" from /deals + curated cards in lib/campaigns.ts / lib/homeContent.ts; inventory table EMPTY in dev so filter price>0 not stock>0.
 - [Carper asset strategy](carper-asset-strategy.md) — brand logos = non-tappable credibility wall (catalog mostly SIN MARCA); deep links via ?q=/?category=, never ?brand=; icons match accent-insensitive.
+- [Stripe integration](stripe-integration.md) — card-only Checkout Sessions w/ dynamic price_data; awaiting_payment status skips ERP queue; MUST externalize stripe-replit-sync in esbuild or migrations silently no-op.

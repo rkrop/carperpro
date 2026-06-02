@@ -3,8 +3,37 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { WebhookHandlers } from "./lib/stripe/webhookHandlers";
+import { reconcilePendingStripeOrders } from "./lib/stripe/service";
 
 const app: Express = express();
+
+// Stripe webhook — MUST be registered BEFORE express.json() so the body stays a
+// raw Buffer for signature verification.
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const signature = req.headers["stripe-signature"];
+    if (!signature) {
+      res.status(400).json({ error: "Missing stripe-signature" });
+      return;
+    }
+    try {
+      const sig = Array.isArray(signature) ? signature[0] : signature;
+      await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+      res.status(200).json({ received: true });
+      // After syncing, reconcile any unpaid card orders (covers buyers who paid
+      // but never returned to the app).
+      reconcilePendingStripeOrders().catch((err) =>
+        logger.warn({ err }, "Stripe: reconciliación post-webhook falló"),
+      );
+    } catch (err) {
+      logger.error({ err }, "Stripe: error procesando webhook");
+      res.status(400).json({ error: "Webhook processing error" });
+    }
+  },
+);
 
 app.use(
   pinoHttp({

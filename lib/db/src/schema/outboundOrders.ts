@@ -18,7 +18,15 @@ export interface OutboundOrderLine {
   price: number;
 }
 
-export type OutboundOrderStatus = "pending" | "sent" | "failed";
+export type OutboundOrderStatus =
+  | "pending"
+  | "sent"
+  | "failed"
+  // Card orders awaiting Stripe payment. Excluded from the Admintotal queue
+  // (which only picks up "pending") until payment is confirmed.
+  | "awaiting_payment";
+
+export type PaymentStatus = "unpaid" | "paid" | "failed";
 
 // Queue of app orders to push to Admintotal as pedidos. Retried automatically.
 export const outboundOrdersTable = pgTable("outbound_orders", {
@@ -35,6 +43,13 @@ export const outboundOrdersTable = pgTable("outbound_orders", {
   buyerPhone: text("buyer_phone"),
   lines: jsonb("lines").$type<OutboundOrderLine[]>().notNull().default([]),
   total: doublePrecision("total").notNull().default(0),
+  // Online card payment (Stripe). Cash/SPEI orders stay "unpaid".
+  paymentStatus: text("payment_status")
+    .$type<PaymentStatus>()
+    .notNull()
+    .default("unpaid"),
+  stripeSessionId: text("stripe_session_id"),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
