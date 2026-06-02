@@ -12,8 +12,8 @@ const require = createRequire(import.meta.url);
 
 // pg from lib/db (shared dep in monorepo)
 const { Pool } = require("../../lib/db/node_modules/pg/lib/index.js");
-// xlsx from /tmp install
-const { read: xlsxRead, utils } = require("/tmp/node_modules/xlsx/xlsx.js");
+// xlsx is a declared dependency of this package (resolved from the pnpm store)
+const { read: xlsxRead, utils } = require("xlsx");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -83,12 +83,24 @@ async function main() {
     if (row.marca) brandSet.add(fixEncoding(String(row.marca).trim()));
   }
 
-  // ── 1. Ensure "matriz" sucursal exists ──────────────────────────────────────
+  // ── 1. Ensure the single Carper store exists ────────────────────────────────
+  // Carper is ONE physical store. All Excel stock lives under this canonical
+  // sentinel branch ("matriz"); the app reads stock with no branch filter, so it
+  // sums across whatever branches exist. Keeping exactly one branch here avoids
+  // splitting the canonical stock.
   await query(
     `INSERT INTO sucursales(id, name, address, city, hours)
      VALUES($1,$2,$3,$4,$5)
-     ON CONFLICT(id) DO NOTHING`,
-    ["matriz", "Matriz Centro", "Calle Principal 1", "Monterrey", "Lun-Sáb 8am-7pm"]
+     ON CONFLICT(id) DO UPDATE SET
+       name=EXCLUDED.name, address=EXCLUDED.address,
+       city=EXCLUDED.city, hours=EXCLUDED.hours`,
+    [
+      "matriz",
+      "Carper Autopartes",
+      "Blvd. Ignacio Ramírez 290, Ciudad Obregón, Sonora, CP 85160",
+      "Ciudad Obregón, Sonora",
+      "Lun-Vie 8:00-18:00 · Sáb 8:00-14:00",
+    ]
   );
 
   // ── 2. Categories ──────────────────────────────────────────────────────────
@@ -159,8 +171,17 @@ async function main() {
     if (inserted % 500 === 0) process.stdout.write(`  ${inserted}/${rawRows.length}\r`);
   }
 
+  // ── 4b. Single store: drop stray branches + orphaned inventory ─────────────
+  // Re-running must leave EXACTLY one store. Inventory has no FK to sucursales,
+  // so we explicitly remove any inventory not under "matriz" (e.g. rows left by a
+  // previous ERP sync) before removing the extra branches themselves.
+  console.log("\nReducing to a single store (removing stray branches)…");
+  const invDel = await query(`DELETE FROM inventory WHERE sucursal_id <> 'matriz'`);
+  const sucDel = await query(`DELETE FROM sucursales WHERE id <> 'matriz'`);
+  console.log(`  Removed ${invDel.rowCount} stray inventory rows, ${sucDel.rowCount} branches.`);
+
   // ── 5. Category counts ─────────────────────────────────────────────────────
-  console.log(`\nInserted ${inserted}, skipped ${skipped}. Updating category counts…`);
+  console.log(`Inserted ${inserted}, skipped ${skipped}. Updating category counts…`);
   await query(
     `UPDATE categories SET count = (
        SELECT count(*) FROM products WHERE products.category_id = categories.id

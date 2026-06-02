@@ -6,7 +6,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import { read as xlsxRead, utils } from "xlsx";
 import { sql } from "drizzle-orm";
-import { db, categoriesTable, brandsTable, productsTable, inventoryTable } from "@workspace/db";
+import { db, categoriesTable, brandsTable, productsTable, inventoryTable, sucursalesTable } from "@workspace/db";
 
 function slugify(name: string): string {
   return (
@@ -75,6 +75,30 @@ async function main() {
       .values({ name })
       .onConflictDoNothing({ target: brandsTable.name });
   }
+
+  // ── 2b. Single Carper store ────────────────────────────────────────────────
+  // Carper is ONE physical store. All Excel stock lives under this canonical
+  // sentinel branch ("matriz"); the app reads stock with no branch filter, so it
+  // sums across whatever branches exist.
+  console.log("Ensuring the single Carper store…");
+  await db
+    .insert(sucursalesTable)
+    .values({
+      id: "matriz",
+      name: "Carper Autopartes",
+      address: "Blvd. Ignacio Ramírez 290, Ciudad Obregón, Sonora, CP 85160",
+      city: "Ciudad Obregón, Sonora",
+      hours: "Lun-Vie 8:00-18:00 · Sáb 8:00-14:00",
+    })
+    .onConflictDoUpdate({
+      target: sucursalesTable.id,
+      set: {
+        name: "Carper Autopartes",
+        address: "Blvd. Ignacio Ramírez 290, Ciudad Obregón, Sonora, CP 85160",
+        city: "Ciudad Obregón, Sonora",
+        hours: "Lun-Vie 8:00-18:00 · Sáb 8:00-14:00",
+      },
+    });
 
   // ── 3. Products ────────────────────────────────────────────────────────────
   console.log("Upserting products…");
@@ -154,6 +178,14 @@ async function main() {
       process.stdout.write(`  ${inserted} / ${rawRows.length}\r`);
     }
   }
+
+  // ── 3b. Single store: drop stray branches + orphaned inventory ─────────────
+  // Re-running must leave EXACTLY one store. Inventory has no FK to sucursales,
+  // so explicitly remove any inventory not under "matriz" (e.g. rows left by a
+  // previous ERP sync) before removing the extra branches themselves.
+  console.log("\nReducing to a single store (removing stray branches)…");
+  await db.execute(sql`DELETE FROM inventory WHERE sucursal_id <> 'matriz'`);
+  await db.execute(sql`DELETE FROM sucursales WHERE id <> 'matriz'`);
 
   // ── 4. Category counts ─────────────────────────────────────────────────────
   console.log("\nUpdating category counts…");
