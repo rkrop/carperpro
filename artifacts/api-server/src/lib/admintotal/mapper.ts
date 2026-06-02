@@ -101,6 +101,7 @@ function parseInventory(
   raw: Raw,
 ): { inventory: { sucursalId: string; quantity: number }[]; flat?: number } {
   const arr = pick(raw, [
+    "info_almacenes",
     "existencias",
     "inventarios",
     "almacenes",
@@ -113,13 +114,25 @@ function parseInventory(
       const e = entry as Raw;
       const almacen = pick(e, ["almacen", "almacen_id", "sucursal", "id_almacen"]);
       let sucursalId: string | undefined;
+      let almacenNombre: string | undefined;
       if (almacen && typeof almacen === "object") {
         sucursalId = asId(pick(almacen as Raw, ["id", "pk", "clave"]));
+        almacenNombre =
+          asString(pick(almacen as Raw, ["nombre", "name"])) ?? undefined;
       } else {
         sucursalId = asId(almacen);
       }
+      // Skip damaged-goods warehouses (e.g. "MAL ESTADO") — not sellable.
+      if (almacenNombre && /mal\s*estado/i.test(almacenNombre)) continue;
       const qty = asNumber(
-        pick(e, ["existencia", "existencias", "cantidad", "quantity", "stock"]),
+        pick(e, [
+          "disponible",
+          "existencia",
+          "existencias",
+          "cantidad",
+          "quantity",
+          "stock",
+        ]),
       );
       if (sucursalId && qty !== undefined) {
         inventory.push({ sucursalId, quantity: Math.max(0, Math.round(qty)) });

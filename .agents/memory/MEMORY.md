@@ -2,7 +2,7 @@
 - [Carper API routes](carper-api-routes.md) — routes mount at /api/* (not /api/catalog/*); port from PORT env, defaults to 8080 in dev.
 - [Full-text search setup](fts-setup.md) — search_vector tsvector + GIN index + unaccent trigger; prefix search via to_tsquery('simple', unaccent(word:*)).
 - [Carper catalog test data](carper-demo-data.md) — catalog is a live ERP mirror (numeric ids LEGIT); kill test rows via query-layer notTestProduct() filter, not DELETE (sync re-adds them).
-- [Admintotal ERP sync](admintotal-sync.md) — ADMINTOTAL_CLAVE is the bare account subdomain (config normalizes URLs); productos endpoint is heavily 429-rate-limited so full sync takes many minutes.
+- [Admintotal ERP sync](admintotal-sync.md) — bare-subdomain CLAVE; productos 429-rate-limited (full sync = minutes); stock lives in info_almacenes[].disponible (not existencias) — mapper must read those names or all shows Agotado.
 - [Admintotal webhooks](admintotal-webhooks.md) — /api/webhooks/admintotal/* push price/stock (by sku) + product creation; aggregate stock → 1 sucursal (Matriz 9); sync no longer wipes inventory.
 - [Ofertas & Home curation](ofertas-screen.md) — live "Oferta del día" from /deals + curated cards in lib/campaigns.ts / lib/homeContent.ts; inventory table EMPTY in dev so filter price>0 not stock>0.
 - [Carper asset strategy](carper-asset-strategy.md) — brand logos = non-tappable credibility wall (catalog mostly SIN MARCA); deep links via ?q=/?category=, never ?brand=; icons match accent-insensitive.

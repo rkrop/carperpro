@@ -24,3 +24,22 @@ scheduler retries every ~15 min, so a partial/slow product sync is not a failure
 **How to apply:** Don't block waiting for the product sync to finish. Verify the
 connection via the categories/branches sync succeeding; let products complete in
 the background.
+
+## Stock lives in `info_almacenes[].disponible` (not `existencias`)
+The ERP `productos/` payload carries per-warehouse stock under the key
+**`info_almacenes`**, an array of `{ almacen: { id, nombre }, disponible }`.
+Quantity is `disponible`; the warehouse id is `almacen.id` (e.g. 1533 "Bodega",
+9 "Matriz", 1535 "MAL ESTADO"). The catalog derives in-stock by summing
+`inventory.quantity` across all sucursales for a product.
+
+**Why:** The sync mapper originally only checked `existencias`/`almacenes` +
+`cantidad`/`stock`, so it silently dropped every stock value — a full 32k-product
+sync left `inventory` EMPTY and the whole app showed *Agotado*. Stock is real but
+sparse (~1% of catalog rows have any). The "MAL ESTADO" warehouse is
+damaged/unsellable goods and is excluded by name (`/mal\s*estado/i`).
+
+**How to apply:** If everything shows *Agotado*, check `select count(*) from
+inventory` — if 0, the mapper isn't reading the ERP stock field names. The
+precios-existencias webhook is a separate path that sends a single aggregate
+`stock` per sku (stored under sucursal "9"); it only covers changed SKUs, so the
+full sync is what bulk-loads initial stock.
