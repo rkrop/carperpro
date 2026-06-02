@@ -1,49 +1,45 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 
 import { Chip, EmptyState, Hairline, IconBox, Skeleton } from "@/components/CarperUI";
 import { ProductRow } from "@/components/ProductRow";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { Fonts, isWeb } from "@/constants/fonts";
-import { BRANDS, PRODUCTS, Product, getCategory } from "@/data/catalog";
+import { Fonts } from "@/constants/fonts";
+import { useBrands, useCategories, useProducts } from "@/data/catalog";
+import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
-
-function matches(p: Product, q: string) {
-  const term = q.toLowerCase();
-  return (
-    p.name.toLowerCase().includes(term) ||
-    p.sku.toLowerCase().includes(term) ||
-    p.brand.toLowerCase().includes(term) ||
-    (getCategory(p.categoryId)?.name.toLowerCase().includes(term) ?? false)
-  );
-}
 
 export default function Resultados() {
   const c = useColors();
   const params = useLocalSearchParams<{ q?: string; category?: string; compat?: string }>();
-  const [loading, setLoading] = useState(!isWeb);
+  const { sucursal } = useApp();
   const [brand, setBrand] = useState<string | null>(null);
   const [availOnly, setAvailOnly] = useState(false);
   const [priceSort, setPriceSort] = useState<"asc" | "desc" | null>(null);
 
-  useEffect(() => {
-    if (isWeb) return;
-    setLoading(true);
-    const t = setTimeout(() => setLoading(false), 550);
-    return () => clearTimeout(t);
-  }, [params.q, params.category, params.compat]);
+  const { data: categories } = useCategories();
+  const { data: allBrands } = useBrands();
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+  } = useProducts({
+    q: params.q || undefined,
+    categoryId: params.category || undefined,
+    sucursalId: sucursal.id || undefined,
+    limit: 200,
+  });
 
-  const category = params.category ? getCategory(params.category) : undefined;
+  const category = params.category ? categories?.find((cat) => cat.id === params.category) : undefined;
 
   const base = useMemo(() => {
-    let list = PRODUCTS;
-    if (params.category) list = list.filter((p) => p.categoryId === params.category);
-    if (params.q) list = list.filter((p) => matches(p, params.q!));
+    let list = data?.items ?? [];
     if (params.compat === "1") list = list.filter((p) => p.compatible);
     return list;
-  }, [params.q, params.category, params.compat]);
+  }, [data?.items, params.compat]);
 
   const filtered = useMemo(() => {
     let list = brand ? base.filter((p) => p.brand === brand) : base;
@@ -51,7 +47,8 @@ export default function Resultados() {
     if (priceSort) list = [...list].sort((a, b) => (priceSort === "asc" ? a.price - b.price : b.price - a.price));
     return list;
   }, [base, brand, availOnly, priceSort]);
-  const availableBrands = useMemo(() => BRANDS.filter((b) => base.some((p) => p.brand === b)), [base]);
+
+  const availableBrands = useMemo(() => (allBrands ?? []).filter((b) => base.some((p) => p.brand === b)), [allBrands, base]);
 
   const title = category ? category.name : params.compat === "1" ? "Compatibles" : "Resultados";
   const subtitle = params.q
@@ -89,7 +86,9 @@ export default function Resultados() {
         </View>
       ) : null}
 
-      {loading ? (
+      {isError ? (
+        <EmptyState icon="alert-circle" title="Error al cargar" message={error instanceof Error ? error.message : "No se pudieron cargar las refacciones."} />
+      ) : isLoading ? (
         <View>
           {[0, 1, 2, 3].map((i) => (
             <View key={i} style={{ flexDirection: "row", gap: 16, padding: 20, borderBottomWidth: 1, borderBottomColor: c.border }}>

@@ -2,13 +2,13 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AccentButton } from "@/components/CarperUI";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts, isWeb, WEB_BOTTOM_INSET } from "@/constants/fonts";
-import { getProduct } from "@/data/catalog";
+import { useCreateOrder } from "@/data/catalog";
 import { Order, useApp } from "@/context/AppContext";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
@@ -30,11 +30,12 @@ export default function Checkout() {
   const insets = useSafeAreaInsets();
   const cart = useCart();
   const { sucursal, addOrder } = useApp();
+  const createOrder = useCreateOrder();
   const [step, setStep] = useState(0);
   const [entrega, setEntrega] = useState<Entrega>("tienda");
   const [pago, setPago] = useState<Pago | null>(null);
   const [address, setAddress] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const submitting = createOrder.isPending;
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 16;
 
   const steps = ["Entrega", "Pago", "Resumen"];
@@ -47,28 +48,37 @@ export default function Checkout() {
     else confirm();
   };
 
-  const confirm = () => {
-    setSubmitting(true);
-    const order: Order = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      folio: `CRP-${Math.floor(100000 + Math.random() * 900000)}`,
-      date: new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }),
-      total: cart.total,
-      lines: cart.items.flatMap((i) => {
-        const p = getProduct(i.id);
-        if (!p) return [];
-        return [{ id: p.id, name: p.name, sku: p.sku, qty: i.qty, price: p.price }];
-      }),
-      entrega,
-      sucursalId: sucursal.id,
-      pago: PAGOS.find((x) => x.id === pago)?.label ?? "",
-    };
-    setTimeout(() => {
+  const confirm = async () => {
+    const pagoLabel = PAGOS.find((x) => x.id === pago)?.label ?? "";
+    try {
+      const result = await createOrder.mutateAsync({
+        data: {
+          lines: cart.items.map((i) => ({ productId: i.id, sku: i.sku, name: i.name, qty: i.qty, price: i.price })),
+          sucursalId: sucursal.id,
+          entrega,
+          pago: pagoLabel,
+          total: cart.total,
+        },
+      });
+      const order: Order = {
+        id: String(result.id),
+        folio: result.folio,
+        date: new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }),
+        total: cart.total,
+        lines: cart.items.map((i) => ({ id: i.id, name: i.name, sku: i.sku, qty: i.qty, price: i.price })),
+        entrega,
+        sucursalId: sucursal.id,
+        pago: pagoLabel,
+      };
       addOrder(order);
       cart.clear();
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace(`/confirmacion?folio=${order.folio}`);
-    }, 800);
+    } catch (err) {
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const message = err instanceof Error ? err.message : "No se pudo enviar el pedido. Intenta de nuevo.";
+      Alert.alert("Error al confirmar", message);
+    }
   };
 
   return (
@@ -120,15 +130,13 @@ export default function Checkout() {
             <Text style={{ fontFamily: Fonts.black, fontSize: 22, letterSpacing: -0.8, textTransform: "uppercase", color: c.foreground, marginBottom: 20 }}>Resumen</Text>
             <View style={{ borderWidth: 1, borderColor: c.border }}>
               {cart.items.map((it, i) => {
-                const p = getProduct(it.id);
-                if (!p) return null;
                 return (
                   <View key={it.id} style={{ flexDirection: "row", justifyContent: "space-between", padding: 16, borderBottomWidth: i < cart.items.length - 1 ? 1 : 0, borderBottomColor: c.border }}>
                     <View style={{ flex: 1, paddingRight: 12 }}>
-                      <Text style={{ fontFamily: Fonts.bold, fontSize: 11, textTransform: "uppercase", color: c.foreground }} numberOfLines={1}>{p.name}</Text>
-                      <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.mutedForeground, marginTop: 2 }}>{it.qty} × {formatMXN(p.price)}</Text>
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 11, textTransform: "uppercase", color: c.foreground }} numberOfLines={1}>{it.name}</Text>
+                      <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.mutedForeground, marginTop: 2 }}>{it.qty} × {formatMXN(it.price)}</Text>
                     </View>
-                    <Text style={{ fontFamily: Fonts.mono, fontSize: 12, color: c.foreground }}>{formatMXN(p.price * it.qty)}</Text>
+                    <Text style={{ fontFamily: Fonts.mono, fontSize: 12, color: c.foreground }}>{formatMXN(it.price * it.qty)}</Text>
                   </View>
                 );
               })}

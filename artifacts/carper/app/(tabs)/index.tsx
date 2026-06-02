@@ -7,9 +7,10 @@ import { Hairline, SectionLabel } from "@/components/CarperUI";
 import { ProductCardMini } from "@/components/ProductRow";
 import { SearchHeader } from "@/components/SearchHeader";
 import { Fonts, TAB_BAR_HEIGHT } from "@/constants/fonts";
-import { CATEGORIES, DEAL_OF_DAY, getProduct } from "@/data/catalog";
+import { useCategories, useDeals } from "@/data/catalog";
 import { useApp, vehicleLabel, vehicleSub } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { discountPct } from "@/lib/format";
 
 function useCountdown(targetMs: number) {
   const [remaining, setRemaining] = useState(targetMs);
@@ -27,10 +28,15 @@ function useCountdown(targetMs: number) {
 export default function Inicio() {
   const c = useColors();
   const router = useRouter();
-  const { vehicle, recent } = useApp();
+  const { vehicle, recent, sucursal } = useApp();
   const countdown = useCountdown(4 * 3_600_000 + 12 * 60_000 + 59 * 1000);
-  const recentProducts = recent.map(getProduct).filter(Boolean).slice(0, 6);
-  const popularCats = CATEGORIES.slice(0, 9);
+  const sucursalId = sucursal.id || undefined;
+  const { data: categories } = useCategories();
+  const { data: deals } = useDeals(sucursalId);
+  const dealOfDay = deals?.dealOfDay ?? null;
+  const dealOff = dealOfDay?.originalPrice ? discountPct(dealOfDay.price, dealOfDay.originalPrice) : 0;
+  const recentProducts = recent.slice(0, 6);
+  const popularCats = categories?.slice(0, 9) ?? [];
 
   return (
     <View style={{ flex: 1, backgroundColor: c.neutral50 }}>
@@ -92,22 +98,26 @@ export default function Inicio() {
         </View>
 
         {/* Deal of day */}
-        <Pressable
-          onPress={() => router.push(`/producto/${DEAL_OF_DAY.id}`)}
-          style={{ backgroundColor: c.background, borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.border, paddingHorizontal: 24, paddingVertical: 24, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
-        >
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <Feather name="zap" size={12} color={c.primary} />
-              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.primary }}>Oferta del Día</Text>
+        {dealOfDay ? (
+          <Pressable
+            onPress={() => router.push(`/producto/${dealOfDay.id}`)}
+            style={{ backgroundColor: c.background, borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.border, paddingHorizontal: 24, paddingVertical: 24, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+          >
+            <View style={{ flex: 1, paddingRight: 16 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <Feather name="zap" size={12} color={c.primary} />
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.primary }}>Oferta del Día</Text>
+              </View>
+              <Text style={{ fontFamily: Fonts.black, fontSize: 18, letterSpacing: -0.6, textTransform: "uppercase", color: c.foreground }} numberOfLines={2}>
+                {dealOfDay.name}{dealOff > 0 ? ` -${dealOff}%` : ""}
+              </Text>
             </View>
-            <Text style={{ fontFamily: Fonts.black, fontSize: 18, letterSpacing: -0.6, textTransform: "uppercase", color: c.foreground }}>Marcha Bosch -20%</Text>
-          </View>
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 4 }}>Termina en</Text>
-            <Text style={{ fontFamily: Fonts.mono, fontSize: 15, letterSpacing: -0.5, color: c.foreground }}>{countdown}</Text>
-          </View>
-        </Pressable>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 4 }}>Termina en</Text>
+              <Text style={{ fontFamily: Fonts.mono, fontSize: 15, letterSpacing: -0.5, color: c.foreground }}>{countdown}</Text>
+            </View>
+          </Pressable>
+        ) : null}
 
         {/* Categories */}
         <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 32, borderBottomWidth: 1, borderBottomColor: c.border }}>
@@ -134,7 +144,7 @@ export default function Inicio() {
             <SectionLabel style={{ marginBottom: 20, paddingHorizontal: 24 }}>Vistos Recientemente</SectionLabel>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, gap: 16 }}>
               {recentProducts.map((p) => (
-                <ProductCardMini key={p!.id} product={p!} />
+                <ProductCardMini key={p.id} product={p} />
               ))}
             </ScrollView>
           </View>

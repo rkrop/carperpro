@@ -8,7 +8,7 @@ import { Platform, Pressable, Text, View } from "react-native";
 import { AccentButton, OutlineButton } from "@/components/CarperUI";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts } from "@/constants/fonts";
-import { PRODUCTS } from "@/data/catalog";
+import { useProducts } from "@/data/catalog";
 import { useColors } from "@/hooks/useColors";
 
 export default function Escanear() {
@@ -17,13 +17,16 @@ export default function Escanear() {
   const [permission, requestPermission] = useCameraPermissions();
   const handled = useRef(false);
   const [scanned, setScanned] = useState(false);
+  const { data } = useProducts({ limit: 20 });
 
   const goToRandom = () => {
     if (handled.current) return;
+    const items = data?.items ?? [];
+    if (items.length === 0) return;
     handled.current = true;
     setScanned(true);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const pick = PRODUCTS[Math.floor(Math.random() * 3)]; // resolves to a real catalog SKU
+    const pick = items[Math.floor(Math.random() * items.length)]; // resolves to a real catalog SKU
     setTimeout(() => router.replace(`/producto/${pick.id}`), 450);
   };
 

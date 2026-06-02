@@ -17,9 +17,16 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { setBaseUrl } from "@workspace/api-client-react";
+
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppProvider } from "@/context/AppContext";
 import { CartProvider } from "@/context/CartContext";
+
+// Point the generated API client at the api-server. EXPO_PUBLIC_DOMAIN is the
+// Replit dev domain (no scheme); requests use relative `/api/...` paths.
+const apiDomain = process.env.EXPO_PUBLIC_DOMAIN;
+if (apiDomain) setBaseUrl(`https://${apiDomain}`);
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();

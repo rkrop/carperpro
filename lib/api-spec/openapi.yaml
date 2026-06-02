@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: catalog
+    description: Catalog read endpoints (mirror of Admintotal ERP)
+  - name: orders
+    description: Outbound order push to Admintotal
 paths:
   /healthz:
     get:
@@ -24,6 +28,175 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [catalog]
+      summary: List categories (lineas)
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+  /brands:
+    get:
+      operationId: listBrands
+      tags: [catalog]
+      summary: List brands (marcas)
+      responses:
+        "200":
+          description: Brands
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /sucursales:
+    get:
+      operationId: listSucursales
+      tags: [catalog]
+      summary: List sucursales (almacenes)
+      responses:
+        "200":
+          description: Sucursales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sucursal"
+  /products:
+    get:
+      operationId: listProducts
+      tags: [catalog]
+      summary: List/search products
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: brand
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sucursalId
+          in: query
+          required: false
+          description: When set, stock is reported for this sucursal only.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Products page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductPage"
+  /products/{id}:
+    get:
+      operationId: getProduct
+      tags: [catalog]
+      summary: Get a single product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sucursalId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /deals:
+    get:
+      operationId: getDeals
+      tags: [catalog]
+      summary: Featured deal of the day and current offers
+      parameters:
+        - name: sucursalId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deals"
+  /sync-status:
+    get:
+      operationId: getSyncStatus
+      tags: [catalog]
+      summary: Inbound Admintotal sync status
+      responses:
+        "200":
+          description: Sync status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncStatus"
+  /orders:
+    post:
+      operationId: createOrder
+      tags: [orders]
+      summary: Submit an app order (pushed to Admintotal as a pedido)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResult"
+        "400":
+          description: Invalid order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +206,138 @@ components:
           type: string
       required:
         - status
-
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    Category:
+      type: object
+      required: [id, name, icon, count]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        icon: { type: string }
+        count: { type: integer }
+    Sucursal:
+      type: object
+      required: [id, name, address, city, hours]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { type: string }
+        city: { type: string }
+        hours: { type: string }
+    Spec:
+      type: object
+      required: [label, value]
+      properties:
+        label: { type: string }
+        value: { type: string }
+    Product:
+      type: object
+      required:
+        - id
+        - sku
+        - name
+        - brand
+        - price
+        - stock
+        - compatible
+        - specs
+        - vehicles
+      properties:
+        id: { type: string }
+        sku: { type: string }
+        name: { type: string }
+        brand: { type: string }
+        price: { type: number }
+        originalPrice: { type: ["number", "null"] }
+        stock: { type: integer }
+        categoryId: { type: ["string", "null"] }
+        image: { type: ["string", "null"] }
+        compatible: { type: boolean }
+        specs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Spec"
+        vehicles:
+          type: array
+          items:
+            type: string
+        oem:
+          type: ["array", "null"]
+          items:
+            type: string
+        equivalents:
+          type: ["array", "null"]
+          items:
+            type: string
+    ProductPage:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        total: { type: integer }
+    Deals:
+      type: object
+      required: [ofertas]
+      properties:
+        dealOfDay:
+          oneOf:
+            - $ref: "#/components/schemas/Product"
+            - type: "null"
+        ofertas:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+    SyncStatus:
+      type: object
+      required: [status, productsSynced, categoriesSynced, sucursalesSynced, brandsSynced]
+      properties:
+        status: { type: string }
+        lastStartedAt: { type: ["string", "null"], format: date-time }
+        lastFinishedAt: { type: ["string", "null"], format: date-time }
+        lastSuccessAt: { type: ["string", "null"], format: date-time }
+        lastError: { type: ["string", "null"] }
+        message: { type: ["string", "null"] }
+        productsSynced: { type: integer }
+        categoriesSynced: { type: integer }
+        sucursalesSynced: { type: integer }
+        brandsSynced: { type: integer }
+    OrderLineInput:
+      type: object
+      required: [productId, sku, name, qty, price]
+      properties:
+        productId: { type: string }
+        sku: { type: string }
+        name: { type: string }
+        qty: { type: integer }
+        price: { type: number }
+    OrderInput:
+      type: object
+      required: [lines, sucursalId, entrega, pago, total]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineInput"
+        sucursalId: { type: string }
+        entrega: { type: string }
+        pago: { type: string }
+        total: { type: number }
+        buyerName: { type: ["string", "null"] }
+        buyerPhone: { type: ["string", "null"] }
+    OrderResult:
+      type: object
+      required: [id, folio, status]
+      properties:
+        id: { type: integer }
+        folio: { type: string }
+        status: { type: string }
+        admintotalPedidoId: { type: ["string", "null"] }

@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-import { SUCURSALES, Sucursal } from "@/data/catalog";
+import { Product, Sucursal, useSucursales } from "@/data/catalog";
 
 export interface SavedVehicle {
   marca: string;
@@ -36,12 +36,12 @@ interface AppState {
   vehicle: SavedVehicle | null;
   setVehicle: (v: SavedVehicle | null) => void;
 
-  favorites: string[];
-  toggleFavorite: (id: string) => void;
+  favorites: Product[];
+  toggleFavorite: (p: Product) => void;
   isFavorite: (id: string) => boolean;
 
-  recent: string[];
-  addRecent: (id: string) => void;
+  recent: Product[];
+  addRecent: (p: Product) => void;
 
   orders: Order[];
   addOrder: (o: Order) => void;
@@ -49,7 +49,7 @@ interface AppState {
   hydrated: boolean;
 }
 
-const STORAGE_KEY = "carper.app.v1";
+const STORAGE_KEY = "carper.app.v2";
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
@@ -60,13 +60,28 @@ const DEFAULT_VEHICLE: SavedVehicle = {
   motor: "1.6L",
 };
 
+/** Shown until the sucursal list loads from the API. */
+const PLACEHOLDER_SUCURSAL: Sucursal = {
+  id: "",
+  name: "Selecciona sucursal",
+  address: "",
+  city: "",
+  hours: "",
+};
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [sucursal, setSucursalState] = useState<Sucursal>(SUCURSALES[0]);
+  const { data: sucursales } = useSucursales();
+  const [sucursalId, setSucursalId] = useState<string | null>(null);
   const [vehicle, setVehicleState] = useState<SavedVehicle | null>(DEFAULT_VEHICLE);
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [recent, setRecent] = useState<string[]>(["2740", "990"]);
+  const [favorites, setFavorites] = useState<Product[]>([]);
+  const [recent, setRecent] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [hydrated, setHydrated] = useState<boolean>(false);
+
+  const sucursal = useMemo<Sucursal>(() => {
+    if (!sucursales || sucursales.length === 0) return PLACEHOLDER_SUCURSAL;
+    return sucursales.find((s) => s.id === sucursalId) ?? sucursales[0];
+  }, [sucursales, sucursalId]);
 
   useEffect(() => {
     (async () => {
@@ -74,10 +89,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const data = JSON.parse(raw);
-          if (data.sucursalId) {
-            const found = SUCURSALES.find((s) => s.id === data.sucursalId);
-            if (found) setSucursalState(found);
-          }
+          if (typeof data.sucursalId === "string") setSucursalId(data.sucursalId);
           if (data.vehicle !== undefined) setVehicleState(data.vehicle);
           if (Array.isArray(data.favorites)) setFavorites(data.favorites);
           if (Array.isArray(data.recent)) setRecent(data.recent);
@@ -91,9 +103,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const persist = (next: Partial<{ sucursalId: string; vehicle: SavedVehicle | null; favorites: string[]; recent: string[]; orders: Order[] }>) => {
+  const persist = (
+    next: Partial<{ sucursalId: string | null; vehicle: SavedVehicle | null; favorites: Product[]; recent: Product[]; orders: Order[] }>,
+  ) => {
     const snapshot = {
-      sucursalId: next.sucursalId ?? sucursal.id,
+      sucursalId: next.sucursalId !== undefined ? next.sucursalId : sucursalId,
       vehicle: next.vehicle !== undefined ? next.vehicle : vehicle,
       favorites: next.favorites ?? favorites,
       recent: next.recent ?? recent,
@@ -103,7 +117,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setSucursal = (s: Sucursal) => {
-    setSucursalState(s);
+    setSucursalId(s.id);
     persist({ sucursalId: s.id });
   };
 
@@ -112,19 +126,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     persist({ vehicle: v });
   };
 
-  const toggleFavorite = (id: string) => {
+  const toggleFavorite = (p: Product) => {
     setFavorites((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev];
+      const next = prev.some((x) => x.id === p.id) ? prev.filter((x) => x.id !== p.id) : [p, ...prev];
       persist({ favorites: next });
       return next;
     });
   };
 
-  const isFavorite = (id: string) => favorites.includes(id);
+  const isFavorite = (id: string) => favorites.some((f) => f.id === id);
 
-  const addRecent = (id: string) => {
+  const addRecent = (p: Product) => {
     setRecent((prev) => {
-      const next = [id, ...prev.filter((x) => x !== id)].slice(0, 10);
+      const next = [p, ...prev.filter((x) => x.id !== p.id)].slice(0, 10);
       persist({ recent: next });
       return next;
     });

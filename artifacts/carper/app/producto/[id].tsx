@@ -5,12 +5,12 @@ import React, { useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AccentButton, EmptyState, Hairline } from "@/components/CarperUI";
+import { AccentButton, EmptyState, Hairline, Skeleton } from "@/components/CarperUI";
 import { CompatibilityBadge } from "@/components/CompatibilityBadge";
 import { ProductImage } from "@/components/ProductImage";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts, isWeb, WEB_BOTTOM_INSET } from "@/constants/fonts";
-import { getProduct } from "@/data/catalog";
+import { useProduct } from "@/data/catalog";
 import { useApp } from "@/context/AppContext";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
@@ -21,21 +21,42 @@ export default function Producto() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const product = getProduct(id);
+  const { sucursal } = useApp();
+  const { data: product, isLoading, isError, error } = useProduct(id, sucursal.id || undefined);
   const cart = useCart();
   const { addRecent, toggleFavorite, isFavorite } = useApp();
   const [showAll, setShowAll] = useState(false);
   const [added, setAdded] = useState(false);
 
   useEffect(() => {
-    if (product) addRecent(product.id);
+    if (product) addRecent(product);
   }, [product?.id]);
 
-  if (!product) {
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.neutral50 }}>
+        <ScreenHeader title="Detalle de Refacción" />
+        <View style={{ width: "100%", aspectRatio: 1, backgroundColor: c.background, borderBottomWidth: 1, borderBottomColor: c.border }} />
+        <View style={{ padding: 24, gap: 12 }}>
+          <Skeleton width="30%" height={12} />
+          <Skeleton width="90%" height={26} />
+          <Skeleton width="50%" height={36} style={{ marginTop: 12 }} />
+        </View>
+      </View>
+    );
+  }
+
+  if (isError || !product) {
     return (
       <View style={{ flex: 1, backgroundColor: c.background }}>
         <ScreenHeader title="Detalle" />
-        <EmptyState icon="alert-circle" title="No encontrado" message="Esta refacción no está disponible." actionLabel="Volver" onAction={() => router.back()} />
+        <EmptyState
+          icon="alert-circle"
+          title={isError ? "Error al cargar" : "No encontrado"}
+          message={isError ? (error instanceof Error ? error.message : "No se pudo cargar la refacción.") : "Esta refacción no está disponible."}
+          actionLabel="Volver"
+          onAction={() => router.back()}
+        />
       </View>
     );
   }
@@ -47,7 +68,7 @@ export default function Producto() {
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 16;
 
   const onAdd = () => {
-    cart.add(product.id);
+    cart.add(product);
     setAdded(true);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -59,7 +80,7 @@ export default function Producto() {
     <View style={{ flex: 1, backgroundColor: c.neutral50 }}>
       <ScreenHeader
         title="Detalle de Refacción"
-        action={{ icon: "heart", onPress: () => toggleFavorite(product.id), tint: fav ? c.primary : c.foreground }}
+        action={{ icon: "heart", onPress: () => toggleFavorite(product), tint: fav ? c.primary : c.foreground }}
       />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>

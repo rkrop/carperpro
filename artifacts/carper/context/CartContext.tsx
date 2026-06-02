@@ -1,17 +1,27 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { ImageSourcePropType } from "react-native";
 
-import { getProduct } from "@/data/catalog";
-
+/** A denormalized cart line — carries everything needed to render and total
+ * the cart without a live catalog fetch. */
 export interface CartItem {
   id: string;
+  sku: string;
+  name: string;
+  brand: string;
+  price: number;
+  image: ImageSourcePropType | null;
+  categoryId: string | null;
   qty: number;
 }
+
+/** The product fields required to add something to the cart. */
+export type CartProduct = Omit<CartItem, "qty">;
 
 interface CartState {
   items: CartItem[];
   count: number;
-  add: (id: string, qty?: number) => void;
+  add: (product: CartProduct, qty?: number) => void;
   remove: (id: string) => void;
   setQty: (id: string, qty: number) => void;
   clear: () => void;
@@ -21,7 +31,7 @@ interface CartState {
   total: number;
 }
 
-const STORAGE_KEY = "carper.cart.v1";
+const STORAGE_KEY = "carper.cart.v2";
 const IVA_RATE = 0.16;
 
 const CartContext = createContext<CartState | undefined>(undefined);
@@ -47,12 +57,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
   };
 
-  const add = (id: string, qty: number = 1) => {
+  const add = (product: CartProduct, qty: number = 1) => {
     setItems((prev) => {
-      const existing = prev.find((i) => i.id === id);
+      const existing = prev.find((i) => i.id === product.id);
       const next = existing
-        ? prev.map((i) => (i.id === id ? { ...i, qty: i.qty + qty } : i))
-        : [...prev, { id, qty }];
+        ? prev.map((i) => (i.id === product.id ? { ...i, ...product, qty: i.qty + qty } : i))
+        : [...prev, { ...product, qty }];
       save(next);
       return next;
     });
@@ -79,11 +89,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     save([]);
   };
 
-  const total = items.reduce((sum, item) => {
-    const p = getProduct(item.id);
-    return sum + (p ? p.price * item.qty : 0);
-  }, 0);
-
+  const total = items.reduce((sum, item) => sum + item.price * item.qty, 0);
   const count = items.reduce((sum, i) => sum + i.qty, 0);
   const base = total / (1 + IVA_RATE);
   const iva = total - base;

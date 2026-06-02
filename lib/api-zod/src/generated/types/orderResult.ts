@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
+export interface OrderResult {
+  id: number;
+  folio: string;
   status: string;
+  /** @nullable */
+  admintotalPedidoId?: string | null;
 }

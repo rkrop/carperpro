@@ -115,7 +115,7 @@ export function ProductRow({ product }: { product: Product }) {
             disabled={agotado}
             onPress={() => {
               if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              cart.add(product.id);
+              cart.add(product);
             }}
             style={{
               width: 36,

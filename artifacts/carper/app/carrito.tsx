@@ -8,7 +8,6 @@ import { AccentButton, EmptyState } from "@/components/CarperUI";
 import { ProductImage } from "@/components/ProductImage";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts, isWeb, WEB_BOTTOM_INSET } from "@/constants/fonts";
-import { getProduct } from "@/data/catalog";
 import { useApp } from "@/context/AppContext";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
@@ -47,28 +46,26 @@ export default function Carrito() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 220 }}>
         <View style={{ backgroundColor: c.background, borderBottomWidth: 1, borderBottomColor: c.border }}>
           {cart.items.map((item) => {
-            const p = getProduct(item.id);
-            if (!p) return null;
             return (
               <View key={item.id} style={{ flexDirection: "row", gap: 16, padding: 20, borderBottomWidth: 1, borderBottomColor: c.border }}>
-                <Pressable onPress={() => router.push(`/producto/${p.id}`)} style={{ width: 80, height: 80, borderWidth: 1, borderColor: c.border }}>
-                  <ProductImage image={p.image} categoryId={p.categoryId} style={{ flex: 1 }} />
+                <Pressable onPress={() => router.push(`/producto/${item.id}`)} style={{ width: 80, height: 80, borderWidth: 1, borderColor: c.border }}>
+                  <ProductImage image={item.image} categoryId={item.categoryId} style={{ flex: 1 }} />
                 </Pressable>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400 }}>{p.brand}</Text>
-                    <Pressable onPress={() => cart.remove(p.id)} hitSlop={8}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400 }}>{item.brand}</Text>
+                    <Pressable onPress={() => cart.remove(item.id)} hitSlop={8}>
                       <Feather name="trash-2" size={15} color={c.neutral400} />
                     </Pressable>
                   </View>
-                  <Text style={{ fontFamily: Fonts.bold, fontSize: 12, textTransform: "uppercase", color: c.foreground, lineHeight: 16, marginTop: 4 }} numberOfLines={2}>{p.name}</Text>
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 12, textTransform: "uppercase", color: c.foreground, lineHeight: 16, marginTop: 4 }} numberOfLines={2}>{item.name}</Text>
                   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-                      <QtyButton icon="minus" onPress={() => cart.setQty(p.id, item.qty - 1)} />
+                      <QtyButton icon="minus" onPress={() => cart.setQty(item.id, item.qty - 1)} />
                       <Text style={{ fontFamily: Fonts.mono, fontSize: 14, color: c.foreground, minWidth: 16, textAlign: "center" }}>{item.qty}</Text>
-                      <QtyButton icon="plus" onPress={() => cart.setQty(p.id, item.qty + 1)} />
+                      <QtyButton icon="plus" onPress={() => cart.setQty(item.id, item.qty + 1)} />
                     </View>
-                    <Text style={{ fontFamily: Fonts.monoBold, fontSize: 15, letterSpacing: -0.5, color: c.foreground }}>{formatMXN(p.price * item.qty)}</Text>
+                    <Text style={{ fontFamily: Fonts.monoBold, fontSize: 15, letterSpacing: -0.5, color: c.foreground }}>{formatMXN(item.price * item.qty)}</Text>
                   </View>
                 </View>
               </View>

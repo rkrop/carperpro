@@ -6,8 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Hairline, SectionLabel } from "@/components/CarperUI";
 import { Fonts, isWeb, TAB_BAR_HEIGHT, WEB_TOP_INSET } from "@/constants/fonts";
-import { getProduct } from "@/data/catalog";
-import { useApp, vehicleLabel, vehicleSub } from "@/context/AppContext";
+import { useApp, vehicleLabel, vehicleSub, type OrderLine } from "@/context/AppContext";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { formatMXN } from "@/lib/format";
@@ -35,8 +34,8 @@ export default function Cuenta() {
   const cart = useCart();
   const topPad = (isWeb ? WEB_TOP_INSET : insets.top) + 16;
 
-  const reorder = (lines: { id: string; qty: number }[]) => {
-    lines.forEach((l) => cart.add(l.id, l.qty));
+  const reorder = (lines: OrderLine[]) => {
+    lines.forEach((l) => cart.add({ id: l.id, sku: l.sku, name: l.name, brand: "", price: l.price, image: null, categoryId: null }, l.qty));
     router.push("/carrito");
   };
 
@@ -92,7 +91,7 @@ export default function Cuenta() {
             <SectionLabel style={{ paddingHorizontal: 24, marginBottom: 12 }}>Historial de Pedidos</SectionLabel>
             <View style={{ borderTopWidth: 1, borderColor: c.border }}>
               {orders.slice(0, 5).map((o) => {
-                const first = getProduct(o.lines[0]?.id);
+                const firstName = o.lines[0]?.name;
                 return (
                   <View key={o.id} style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: c.border }}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
@@ -101,7 +100,7 @@ export default function Cuenta() {
                     </View>
                     <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: c.mutedForeground }} numberOfLines={1}>
                       {o.date} · {o.lines.length} {o.lines.length === 1 ? "artículo" : "artículos"}
-                      {first ? ` · ${first.name}` : ""}
+                      {firstName ? ` · ${firstName}` : ""}
                     </Text>
                     <Pressable
                       onPress={() => reorder(o.lines)}
