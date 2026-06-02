@@ -66,7 +66,7 @@ export default function Producto() {
           </div>
         </div>
 
-        {/* Details / Equivalentes */}
+        {/* Especificaciones Técnicas */}
         <div className="px-6 py-8 bg-white mb-8">
           <h3 className="text-[10px] font-bold tracking-widest uppercase text-neutral-400 mb-6">Especificaciones Técnicas</h3>
           
@@ -80,8 +80,8 @@ export default function Producto() {
               <span className="text-[11px] font-medium uppercase">12V</span>
             </div>
             <div className="flex justify-between py-4 border-b border-neutral-200">
-              <span className="text-[10px] font-bold tracking-widest uppercase">Equivalentes OEM</span>
-              <span className="font-mono text-xs">23300-M8200</span>
+              <span className="text-[10px] font-bold tracking-widest uppercase">Rotación</span>
+              <span className="text-[11px] font-medium uppercase">CW (Derecha)</span>
             </div>
           </div>
         </div>

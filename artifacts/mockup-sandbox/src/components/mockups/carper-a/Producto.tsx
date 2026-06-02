@@ -88,14 +88,6 @@ export default function Producto() {
                 <div className="text-[hsl(var(--c-text-muted))]">Rotación</div>
                 <div className="font-medium text-right">CW (Derecha)</div>
               </div>
-              
-              <div className="mt-2">
-                <div className="text-sm text-[hsl(var(--c-text-muted))] mb-1">Equivalentes</div>
-                <div className="flex gap-2">
-                  <span className="text-xs carper-mono bg-[hsl(var(--c-bg))] border border-[hsl(var(--c-border))] px-2 py-1 rounded">BOS-2740</span>
-                  <span className="text-xs carper-mono bg-[hsl(var(--c-bg))] border border-[hsl(var(--c-border))] px-2 py-1 rounded">VAL-9982</span>
-                </div>
-              </div>
             </div>
 
           </div>

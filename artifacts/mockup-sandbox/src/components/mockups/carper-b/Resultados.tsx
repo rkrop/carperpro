@@ -89,7 +89,7 @@ export default function Resultados() {
                 )}
                 {product.stock && (
                   <div className="absolute top-0 left-0 bg-black text-white text-[8px] font-bold tracking-widest uppercase px-1.5 py-0.5">
-                    Stock
+                    Existencia
                   </div>
                 )}
               </div>
