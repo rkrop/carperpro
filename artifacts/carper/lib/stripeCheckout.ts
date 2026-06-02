@@ -19,6 +19,7 @@ export interface VerifiedOrder {
   total: number;
   entrega: string;
   pago: string;
+  status: string;
   paymentStatus: string;
   lines: { id: string; name: string; sku: string; qty: number; price: number }[];
 }

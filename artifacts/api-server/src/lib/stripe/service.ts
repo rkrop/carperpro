@@ -11,7 +11,7 @@ import type Stripe from "stripe";
 import { getUncachableStripeClient } from "./client";
 import { getWebhookSucursalId } from "../admintotal/config";
 import { pushOrder } from "../admintotal/outbound";
-import { getAvailableStock, getLiveSellableStock } from "../admintotal/liveStock";
+import { getLiveSellableStock } from "../admintotal/liveStock";
 import { logger } from "../logger";
 
 export interface CheckoutLineInput {
@@ -35,6 +35,7 @@ export interface ClientOrder {
   total: number;
   entrega: string;
   pago: string;
+  status: string;
   paymentStatus: string;
   lines: { id: string; name: string; sku: string; qty: number; price: number }[];
 }
@@ -77,6 +78,7 @@ export function orderToClient(order: OutboundOrder): ClientOrder {
     total: order.total,
     entrega: order.entrega,
     pago: order.pago,
+    status: order.status,
     paymentStatus: order.paymentStatus,
     lines: order.lines.map((l) => ({
       id: l.productId,
@@ -148,11 +150,21 @@ export async function createCardCheckoutSession(
   }
 
   // Live stock gate: verify each part is actually available (in the requested
-  // quantity) against Admintotal before taking the buyer to payment. Falls back
-  // to the local mirror when the ERP is unreachable. Requested quantity is summed
-  // per productId first, so the same part split across multiple lines can't slip
-  // past the check.
-  const availability = await getAvailableStock(requestedIds);
+  // quantity) against Admintotal before taking the buyer to payment. Requested
+  // quantity is summed per productId first, so the same part split across
+  // multiple lines can't slip past the check. FAIL SAFE: if the ERP can't be
+  // reached to confirm a part live, we refuse to start payment rather than trust
+  // the (possibly stale) local mirror — that is the only way to truly prevent
+  // overselling during an ERP outage.
+  const { available: availability, unverified } =
+    await getLiveSellableStock(requestedIds);
+  if (unverified.length > 0) {
+    throw new CheckoutError(
+      503,
+      "No pudimos confirmar la disponibilidad en este momento. Intenta de nuevo en unos minutos o paga en efectivo/transferencia.",
+      { unverified },
+    );
+  }
   const requestedByProduct = aggregateRequested(lines);
   const shortfalls = lines.filter(
     (l) => (availability.get(l.productId) ?? 0) < (requestedByProduct.get(l.productId) ?? 0),
@@ -377,26 +389,51 @@ async function fulfillPaidOrder(
   session: Stripe.Checkout.Session,
   order: OutboundOrder,
 ): Promise<OutboundOrder> {
-  let soldOut: OutboundOrderLine[] = [];
+  let available = new Map<string, number>();
+  let unverified: string[] = [];
   try {
-    const { available } = await getLiveSellableStock(
-      order.lines.map((l) => l.productId),
-    );
-    // Sum requested qty per productId so a part split across lines is compared
-    // against its TOTAL demand, not each line in isolation.
-    const requestedByProduct = aggregateRequested(order.lines);
-    soldOut = order.lines.filter(
-      (l) =>
-        available.has(l.productId) &&
-        (available.get(l.productId) ?? 0) < (requestedByProduct.get(l.productId) ?? 0),
-    );
+    const res = await getLiveSellableStock(order.lines.map((l) => l.productId));
+    available = res.available;
+    unverified = res.unverified;
   } catch (err) {
     logger.warn(
       { orderId: order.id, err },
-      "Stripe: no se pudo reverificar stock tras el pago; se continúa con el envío",
+      "Stripe: error inesperado al reverificar stock tras el pago",
     );
-    soldOut = [];
+    unverified = order.lines.map((l) => l.productId);
   }
+
+  // FAIL SAFE: if any line could not be confirmed live, do NOT fulfill (could
+  // oversell) and do NOT refund (the buyer paid — refunding on mere uncertainty
+  // is wrong). Release the fulfillment claim back to awaiting_payment so the
+  // scheduler retries once the ERP is reachable again.
+  if (unverified.length > 0) {
+    await db
+      .update(outboundOrdersTable)
+      .set({
+        status: "awaiting_payment",
+        lastError:
+          "Stock no verificable tras el pago; en espera de reverificación contra Admintotal",
+      })
+      .where(
+        and(
+          eq(outboundOrdersTable.id, order.id),
+          eq(outboundOrdersTable.status, "fulfilling"),
+        ),
+      );
+    logger.warn(
+      { orderId: order.id, unverified },
+      "Stripe: stock no verificable tras el pago; pedido en espera de reverificación",
+    );
+    return (await loadOrder(order.id)) ?? order;
+  }
+
+  // Sum requested qty per productId so a part split across lines is compared
+  // against its TOTAL demand, not each line in isolation.
+  const requestedByProduct = aggregateRequested(order.lines);
+  const soldOut = order.lines.filter(
+    (l) => (available.get(l.productId) ?? 0) < (requestedByProduct.get(l.productId) ?? 0),
+  );
 
   if (soldOut.length > 0) {
     return refundSoldOutOrder(stripe, session, order, soldOut);

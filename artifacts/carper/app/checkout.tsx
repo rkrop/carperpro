@@ -57,6 +57,24 @@ function buildWhatsAppMessage(opts: {
   return lines.join("\n");
 }
 
+// A cancelled order means a part sold out during the payment window. If the
+// refund went through automatically we say so; otherwise we tell the buyer the
+// store will reach out (staff follows up via the WhatsApp number on file).
+function soldOutMessage(order: VerifiedOrder): string {
+  return order.paymentStatus === "refunded"
+    ? "Uno o más productos se agotaron justo antes de completar tu compra. Tu pago fue reembolsado automáticamente a tu tarjeta."
+    : "Uno o más productos se agotaron justo antes de completar tu compra. Cancelamos el pedido y procesaremos tu reembolso; te contactaremos para confirmarlo.";
+}
+
+// A paid order is only truly done once it has been queued/sent to the ERP.
+// "awaiting_payment"/"fulfilling" mean we're still re-confirming stock.
+function isFulfilled(order: VerifiedOrder): boolean {
+  return order.status === "pending" || order.status === "sent";
+}
+
+const VERIFYING_MESSAGE =
+  "Recibimos tu pago. Estamos confirmando la disponibilidad final con la tienda y te avisaremos en breve.";
+
 function verifiedToOrder(v: VerifiedOrder): Order {
   return {
     id: v.folio,
@@ -118,16 +136,20 @@ export default function Checkout() {
     setSubmitting(true);
     verifyPayment(orderId)
       .then((order) => {
-        if (order && order.paymentStatus === "paid") {
+        if (order && order.status === "cancelled") {
+          // Sold out during payment — never treat as a successful purchase, even
+          // if paymentStatus is still "paid" (refund pending).
+          cart.clear();
+          Alert.alert("Producto agotado", soldOutMessage(order));
+        } else if (order && order.paymentStatus === "paid" && isFulfilled(order)) {
           addOrder(verifiedToOrder(order));
           cart.clear();
           router.replace(`/confirmacion?folio=${order.folio}`);
-        } else if (order && order.paymentStatus === "refunded") {
+        } else if (order && order.paymentStatus === "paid") {
+          // Paid but stock not yet re-confirmed (ERP unreachable post-payment):
+          // don't show "confirmed" — fulfillment is still being verified.
           cart.clear();
-          Alert.alert(
-            "Producto agotado",
-            "Uno o más productos se agotaron justo antes de completar tu compra. Tu pago fue reembolsado automáticamente a tu tarjeta.",
-          );
+          Alert.alert("Pago recibido", VERIFYING_MESSAGE);
         } else {
           Alert.alert("Pago pendiente", "Aún no confirmamos tu pago. Si ya pagaste, espera unos minutos.");
         }
@@ -177,18 +199,22 @@ export default function Checkout() {
         if (result.mode === "native") {
           // Browser closed — verify authoritatively before confirming.
           const order = await verifyPayment(result.orderId);
-          if (order && order.paymentStatus === "paid") {
+          if (order && order.status === "cancelled") {
+            // Sold out during payment — never treat as a successful purchase,
+            // even if paymentStatus is still "paid" (refund pending).
+            cart.clear();
+            if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            Alert.alert("Producto agotado", soldOutMessage(order));
+          } else if (order && order.paymentStatus === "paid" && isFulfilled(order)) {
             addOrder(verifiedToOrder(order));
             cart.clear();
             if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             router.replace(`/confirmacion?folio=${order.folio}`);
-          } else if (order && order.paymentStatus === "refunded") {
+          } else if (order && order.paymentStatus === "paid") {
+            // Paid but stock not yet re-confirmed (ERP unreachable post-payment).
             cart.clear();
             if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            Alert.alert(
-              "Producto agotado",
-              "Uno o más productos se agotaron justo antes de completar tu compra. Tu pago fue reembolsado automáticamente a tu tarjeta.",
-            );
+            Alert.alert("Pago recibido", VERIFYING_MESSAGE);
           } else {
             if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
             Alert.alert("Pago no completado", "No confirmamos tu pago con tarjeta. Si ya pagaste, espera unos minutos o intenta de nuevo.");
