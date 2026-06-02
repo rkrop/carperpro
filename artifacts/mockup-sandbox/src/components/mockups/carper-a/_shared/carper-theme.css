@@ -1,0 +1,30 @@
+.carper-theme {
+  --c-bg: 0 0% 98%;
+  --c-surface: 0 0% 100%;
+  --c-border: 220 13% 91%;
+  --c-text: 222 47% 11%;
+  --c-text-muted: 215 16% 47%;
+  --c-accent: 221 83% 53%;
+  --c-success: 142 71% 45%;
+  --c-success-bg: 142 76% 96%;
+}
+
+.carper-theme {
+  background-color: hsl(var(--c-bg));
+  color: hsl(var(--c-text));
+  font-family: "Geist", system-ui, sans-serif;
+}
+
+.carper-mono {
+  font-family: "Space Mono", "Courier New", monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Hide scrollbar for clean mockup */
+.carper-hide-scroll::-webkit-scrollbar {
+  display: none;
+}
+.carper-hide-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -1,0 +1,1 @@
+- [Mockup-sandbox gotchas](mockup-sandbox-gotchas.md) — wouter NOT installed (use anchor links); assets must be public/images + /__mockup/ paths; no-scrollbar utility not built-in.

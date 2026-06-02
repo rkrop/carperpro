@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "rL174yP_avd4V9fDfGMmb"
+uri = "file://artifacts/mockup-sandbox/public/carper-alternator.png"
+type = "image"
+title = "Alternator auto part"
+
+[[generated]]
+id = "oHVlTXvNBhWJQt9q7rxjR"
+uri = "file://artifacts/mockup-sandbox/public/carper-starter.png"
+type = "image"
+title = "Starter motor auto part"
