@@ -2,6 +2,7 @@
 - [Carper API routes](carper-api-routes.md) — routes mount at /api/* (not /api/catalog/*); port from PORT env, defaults to 8080 in dev.
 - [Full-text search setup](fts-setup.md) — catalog search is unaccent+ILIKE (NOT tsvector); search_vector MUST stay in Drizzle schema or push/publish drops it & the orphan trigger breaks all product writes.
 - [Stock model](stock-model.md) — one nullable number per product (products.erpStockQty), NOT inventory table; NULL=unknown(visible), 0=hidden, >0=count; API exposes stock+stockState.
+- [Effective price](pricing-fallback.md) — final price = precio venta if >0 else costo; one effectivePrice() helper applied at catalog/checkout/orders/deals so display never diverges from charge.
 - [Carper catalog test data](carper-demo-data.md) — live ERP mirror (numeric ids LEGIT); query-layer filters notTestProduct()+sellableProduct() (not DELETE); stock rule = hide only erpStockQty=0, unknown stays visible (~4,121 shown).
 - [Admintotal ERP sync](admintotal-sync.md) — bare-subdomain CLAVE; productos 429-rate-limited (full sync = minutes); stock lives in info_almacenes[].disponible (not existencias), mapped to erpStockQty.
 - [Admintotal webhooks](admintotal-webhooks.md) — /api/webhooks/admintotal/* push price/stock (by sku) + product creation; aggregate stock → products.erpStockQty; never zeroes on absent stock.

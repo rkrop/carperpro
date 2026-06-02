@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { CreateOrderBody } from "@workspace/api-zod";
 import { pushOrder } from "../lib/admintotal/outbound";
+import { effectivePrice } from "../lib/pricing";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -47,7 +48,7 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
   // Recompute prices from DB — never trust client-supplied economic values.
   const requestedIds = input.lines.map((l) => l.productId);
   const dbProducts = await db
-    .select({ id: productsTable.id, sku: productsTable.sku, name: productsTable.name, price: productsTable.price })
+    .select({ id: productsTable.id, sku: productsTable.sku, name: productsTable.name, price: productsTable.price, costo: productsTable.costo })
     .from(productsTable)
     .where(inArray(productsTable.id, requestedIds));
 
@@ -65,7 +66,7 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
       sku: dbP.sku,
       name: dbP.name,
       qty: l.qty,
-      price: dbP.price, // authoritative ERP-mirrored price
+      price: effectivePrice(dbP), // authoritative ERP-mirrored price (precio venta, else costo)
     };
   });
 

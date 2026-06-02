@@ -163,6 +163,8 @@ export function mapProduct(raw: Raw): MappedProduct | null {
     asString(pick(raw, ["marca", "brand", "fabricante"])) ?? "SIN MARCA";
   const categoryId = lineaId(raw) ?? null;
   const price = asNumber(pick(raw, ["precio", "precio_publico", "precio1"])) ?? 0;
+  const costo =
+    asNumber(pick(raw, ["costo", "precio_costo", "costo_promedio"])) ?? null;
   const originalPrice =
     asNumber(pick(raw, ["precio_lista", "precio_anterior", "precio_regular"])) ??
     null;
@@ -188,6 +190,7 @@ export function mapProduct(raw: Raw): MappedProduct | null {
     brand,
     categoryId,
     price,
+    costo,
     originalPrice:
       originalPrice !== null && originalPrice > price ? originalPrice : null,
     image,

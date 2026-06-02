@@ -18,6 +18,7 @@ import {
   GetDealsResponse,
   GetSyncStatusResponse,
 } from "@workspace/api-zod";
+import { effectivePrice } from "../lib/pricing";
 
 const router: IRouter = Router();
 
@@ -75,7 +76,7 @@ function serializeProduct(row: DbProduct): Record<string, unknown> {
     sku: row.sku,
     name: row.name,
     brand: row.brand,
-    price: row.price,
+    price: effectivePrice(row),
     originalPrice: row.originalPrice ?? null,
     stock: qty ?? null,
     stockState,
@@ -194,6 +195,9 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
 });
 
 router.get("/deals", async (_req: Request, res: Response): Promise<void> => {
+  // Compare/rank against the EFFECTIVE price (precio de venta, else costo) so a
+  // product priced from its costo can't show a bogus discount vs a raw 0 price.
+  const effPrice = sql`(case when ${productsTable.price} > 0 then ${productsTable.price} else coalesce(${productsTable.costo}, 0) end)`;
   const rows = await db
     .select()
     .from(productsTable)
@@ -202,10 +206,10 @@ router.get("/deals", async (_req: Request, res: Response): Promise<void> => {
         notTestProduct(),
         sellableProduct(),
         sql`${productsTable.originalPrice} is not null`,
-        sql`${productsTable.originalPrice} > ${productsTable.price}`,
+        sql`${productsTable.originalPrice} > ${effPrice}`,
       ),
     )
-    .orderBy(desc(sql`${productsTable.originalPrice} - ${productsTable.price}`))
+    .orderBy(desc(sql`${productsTable.originalPrice} - ${effPrice}`))
     .limit(20);
 
   const ofertas = rows.map((r) => serializeProduct(r));

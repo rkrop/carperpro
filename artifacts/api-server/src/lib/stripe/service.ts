@@ -12,6 +12,7 @@ import { getUncachableStripeClient } from "./client";
 import { getWebhookSucursalId } from "../admintotal/config";
 import { pushOrder } from "../admintotal/outbound";
 import { getLiveSellableStock } from "../admintotal/liveStock";
+import { effectivePrice } from "../pricing";
 import { logger } from "../logger";
 
 export interface CheckoutLineInput {
@@ -123,6 +124,7 @@ export async function createCardCheckoutSession(
       sku: productsTable.sku,
       name: productsTable.name,
       price: productsTable.price,
+      costo: productsTable.costo,
     })
     .from(productsTable)
     .where(inArray(productsTable.id, requestedIds));
@@ -138,7 +140,7 @@ export async function createCardCheckoutSession(
   const lines: OutboundOrderLine[] = input.lines.map((l) => {
     const dbP = priceMap.get(l.productId)!;
     const qty = Math.max(1, Math.floor(l.qty));
-    return { productId: dbP.id, sku: dbP.sku, name: dbP.name, qty, price: dbP.price };
+    return { productId: dbP.id, sku: dbP.sku, name: dbP.name, qty, price: effectivePrice(dbP) };
   });
 
   const payable = lines.filter((l) => l.price > 0);

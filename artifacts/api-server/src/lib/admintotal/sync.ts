@@ -176,6 +176,7 @@ export async function runInboundSync(): Promise<SyncResult> {
             brand: product.brand,
             categoryId: product.categoryId,
             price: product.price,
+            costo: product.costo,
             originalPrice: product.originalPrice,
             image: product.image,
             specs: product.specs,
