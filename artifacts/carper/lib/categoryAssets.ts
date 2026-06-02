@@ -85,6 +85,5 @@ export const FEATURED_CATEGORIES: FeaturedCategory[] = [
   { label: "Partes eléctricas", href: "/resultados?category=1539", image: require("@/assets/categories/partes-electricas.jpg") },
   { label: "Iluminación", href: "/resultados?category=1550", image: require("@/assets/categories/sistemas-iluminacion.jpg") },
   { label: "Enfriamiento", href: "/resultados?category=1542", image: require("@/assets/categories/sistemas-enfriamiento.jpg") },
-  { label: "Sistemas de gasolina", href: "/resultados?q=gasolina", image: require("@/assets/categories/sistemas-gasolina.png") },
   { label: "Equipo de diagnóstico", href: "/resultados?category=1558", image: require("@/assets/categories/equipos.png") },
 ];

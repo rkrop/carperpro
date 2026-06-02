@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import React from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Image, Pressable, Text, useWindowDimensions, View } from "react-native";
 
 import { SectionLabel } from "@/components/CarperUI";
 import { Fonts } from "@/constants/fonts";
@@ -15,6 +15,11 @@ import { BRAND_LOGOS, NUESTRAS_MARCAS_BANNER, SUPPLIER_BANNERS } from "@/lib/bra
 export function NuestrasMarcas() {
   const c = useColors();
   const router = useRouter();
+
+  const screenW = useWindowDimensions().width;
+  const bannerW = screenW - 48;
+  const bannerH = Math.round(bannerW * (1160 / 1400));
+  const supplierW = (screenW - 48 - 12) / 2;
 
   return (
     <View style={{ backgroundColor: c.background, paddingVertical: 32, borderBottomWidth: 1, borderBottomColor: c.border }}>
@@ -32,7 +37,7 @@ export function NuestrasMarcas() {
       <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
         <Image
           source={NUESTRAS_MARCAS_BANNER}
-          style={{ width: "100%", aspectRatio: 1024 / 819, borderWidth: 1, borderColor: c.border }}
+          style={{ width: bannerW, height: bannerH, borderWidth: 1, borderColor: c.border }}
           resizeMode="cover"
         />
       </View>
@@ -45,7 +50,7 @@ export function NuestrasMarcas() {
             onPress={() => router.push(b.href as never)}
             style={({ pressed }) => ({ flex: 1, borderWidth: 1, borderColor: pressed ? c.borderStrong : c.border, backgroundColor: pressed ? c.neutral50 : c.background })}
           >
-            <Image source={b.image} style={{ width: "100%", aspectRatio: 16 / 9 }} resizeMode="cover" />
+            <Image source={b.image} style={{ width: "100%", height: Math.round(supplierW * b.ratio) }} resizeMode="cover" />
           </Pressable>
         ))}
       </View>

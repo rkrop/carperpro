@@ -51,9 +51,11 @@ export interface SupplierBanner {
   name: string;
   href: string;
   image: ImageSourcePropType;
+  /** Intrinsic height / width of the source asset, used to size without distortion. */
+  ratio: number;
 }
 
 export const SUPPLIER_BANNERS: SupplierBanner[] = [
-  { name: "Injetech", href: "/resultados?q=injetech", image: require("@/assets/brands/banners/injetech.png") },
-  { name: "TotalParts", href: "/resultados?q=totalparts", image: require("@/assets/brands/banners/totalparts.png") },
+  { name: "Injetech", href: "/resultados?q=injetech", image: require("@/assets/brands/banners/injetech.png"), ratio: 732 / 1920 },
+  { name: "TotalParts", href: "/resultados?q=totalparts", image: require("@/assets/brands/banners/totalparts.png"), ratio: 716 / 1920 },
 ];

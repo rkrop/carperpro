@@ -52,9 +52,11 @@ export default function Categorias() {
                 <Pressable
                   key={f.label}
                   onPress={() => router.push(f.href as never)}
-                  style={({ pressed }) => ({ width: 240, borderWidth: 1, borderColor: pressed ? c.borderStrong : c.border, backgroundColor: c.background })}
+                  style={({ pressed }) => ({ width: 280, borderWidth: 1, borderColor: pressed ? c.borderStrong : c.border, backgroundColor: c.background })}
                 >
-                  <Image source={f.image} style={{ width: "100%", aspectRatio: 16 / 9 }} resizeMode="cover" />
+                  <View style={{ width: "100%", height: 100, backgroundColor: c.neutral100 }}>
+                    <Image source={f.image} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                  </View>
                   <View style={{ paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.border }}>
                     <Text style={{ fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: c.foreground }} numberOfLines={1}>
                       {f.label}
