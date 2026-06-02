@@ -33,6 +33,15 @@ export interface Spec {
   value: string;
 }
 
+export type ProductStockState = typeof ProductStockState[keyof typeof ProductStockState];
+
+
+export const ProductStockState = {
+  in_stock: 'in_stock',
+  out_of_stock: 'out_of_stock',
+  unknown: 'unknown',
+} as const;
+
 export interface Product {
   id: string;
   sku: string;
@@ -41,7 +50,9 @@ export interface Product {
   price: number;
   /** @nullable */
   originalPrice?: number | null;
-  stock: number;
+  /** @nullable */
+  stock: number | null;
+  stockState: ProductStockState;
   /** @nullable */
   categoryId?: string | null;
   /** @nullable */

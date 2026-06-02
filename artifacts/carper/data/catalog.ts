@@ -35,7 +35,8 @@ export interface Product {
   brand: string;
   price: number;
   originalPrice: number | null;
-  stock: number;
+  /** Real on-hand count, or null when the ERP hasn't reported stock yet. */
+  stock: number | null;
   categoryId: string | null;
   image: ImageSourcePropType | null;
   compatible: boolean;

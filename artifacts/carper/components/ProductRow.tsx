@@ -72,7 +72,9 @@ export function ProductRow({ product }: { product: Product }) {
             }}
           >
             <Text style={{ color: c.background, fontFamily: Fonts.bold, fontSize: 8, letterSpacing: 1, textTransform: "uppercase" }}>
-              Existencia
+              {status === "consultar"
+                ? "Consultar"
+                : `${product.stock} pza`}
             </Text>
           </View>
         )}

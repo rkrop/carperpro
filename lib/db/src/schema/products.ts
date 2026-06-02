@@ -1,6 +1,7 @@
 import {
   pgTable,
   text,
+  integer,
   doublePrecision,
   boolean,
   jsonb,
@@ -44,6 +45,15 @@ export const productsTable = pgTable("products", {
   proveedor: text("proveedor"),
   skuProveedor: text("sku_proveedor"),
   image: text("image"),
+  // On-hand stock, mirrored from Admintotal onto the product row — the proven
+  // one-number-per-product model. NULL means stock is UNKNOWN (the ERP hasn't
+  // reported it yet): the product stays visible and orderable, but no count is
+  // shown. A real number drives the displayed count; 0 means confirmed out of
+  // stock (hidden from listings by the catalog query). Checkout still does a
+  // live ERP stock check, so this mirror can never let a customer over-buy.
+  erpStockQty: integer("erp_stock_qty"),
+  // When erpStockQty was last set from Admintotal (sync or webhook).
+  stockUpdatedAt: timestamp("stock_updated_at", { withTimezone: true }),
   specs: jsonb("specs").$type<ProductSpec[]>().notNull().default([]),
   // Vehicle-compatibility data is not provided by Admintotal; kept optional.
   compatible: boolean("compatible").notNull().default(false),

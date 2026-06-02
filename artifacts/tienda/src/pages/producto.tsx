@@ -47,7 +47,7 @@ export default function Producto() {
               price: product.price,
               image: product.image,
               description: product.descripcion,
-              inStock: product.stock > 0,
+              inStock: product.stock !== 0,
               oem: product.oem,
               path: productPath,
             }),
@@ -85,7 +85,9 @@ export default function Producto() {
     return <NotFound />;
   }
 
-  const isDisponible = product.stock > 0;
+  // Three availability states: in stock (>0), confirmed out (0), unknown (null).
+  const agotado = product.stock === 0;
+  const enExistencia = typeof product.stock === "number" && product.stock > 0;
   const priceFormatter = new Intl.NumberFormat('es-MX', { 
     style: 'currency', 
     currency: 'MXN' 
@@ -130,13 +132,17 @@ export default function Producto() {
             </h1>
 
             <div className="flex items-center gap-4 mb-8">
-              {isDisponible ? (
+              {enExistencia ? (
                 <div className="flex items-center text-success font-mono font-bold text-sm uppercase tracking-widest">
-                  <Check className="w-4 h-4 mr-2" /> Disponible en tienda
+                  <Check className="w-4 h-4 mr-2" /> {product.stock} disponibles en tienda
+                </div>
+              ) : agotado ? (
+                <div className="flex items-center text-muted-foreground font-mono font-bold text-sm uppercase tracking-widest">
+                  <Info className="w-4 h-4 mr-2" /> Agotado temporalmente
                 </div>
               ) : (
                 <div className="flex items-center text-muted-foreground font-mono font-bold text-sm uppercase tracking-widest">
-                  <Info className="w-4 h-4 mr-2" /> Agotado temporalmente
+                  <Info className="w-4 h-4 mr-2" /> Consultar disponibilidad
                 </div>
               )}
             </div>

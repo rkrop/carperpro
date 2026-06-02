@@ -13,11 +13,11 @@ import { useProducts } from "@/data/catalog";
 export function MasBuscados() {
   const { sucursal } = useApp();
   const { data, isLoading } = useProducts({ q: "marcha", sucursalId: sucursal.id || undefined, limit: 50 });
-  // Real, priced catalog products. In-stock items first (stock is 0 until the ERP
-  // inventory sync runs), so this naturally prioritizes available parts in prod.
+  // Real, priced catalog products. In-stock items first; unknown stock (null)
+  // is treated as available so it isn't pushed below confirmed stock.
   const items = (data?.items ?? [])
     .filter((p) => p.price > 0)
-    .sort((a, b) => Number(b.stock > 0) - Number(a.stock > 0))
+    .sort((a, b) => Number((b.stock ?? 1) > 0) - Number((a.stock ?? 1) > 0))
     .slice(0, 8);
 
   if (!isLoading && items.length === 0) return null;

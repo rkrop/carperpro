@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductStockState } from './productStockState';
 import type { Spec } from './spec';
 
 export interface Product {
@@ -15,7 +16,9 @@ export interface Product {
   price: number;
   /** @nullable */
   originalPrice?: number | null;
-  stock: number;
+  /** @nullable */
+  stock: number | null;
+  stockState: ProductStockState;
   /** @nullable */
   categoryId?: string | null;
   /** @nullable */

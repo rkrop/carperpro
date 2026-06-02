@@ -1,11 +1,10 @@
-import { sql, notInArray, and, eq as drizzleEq } from "drizzle-orm";
+import { sql, notInArray } from "drizzle-orm";
 import {
   db,
   categoriesTable,
   brandsTable,
   sucursalesTable,
   productsTable,
-  inventoryTable,
   syncStateTable,
 } from "@workspace/db";
 import { logger } from "../logger";
@@ -133,7 +132,7 @@ export async function runInboundSync(): Promise<SyncResult> {
     }
     logger.info({ count: sucursales.length }, "Admintotal: sucursales sincronizadas");
 
-    // 3) Productos -> products + brands + inventory
+    // 3) Productos -> products (with stock on the row) + brands
     const {
       results: rawProductos,
       expectedCount,
@@ -152,16 +151,23 @@ export async function runInboundSync(): Promise<SyncResult> {
     const categoryCounts = new Map<string, number>();
     let productsSynced = 0;
 
-    const defaultSucursalId = sucursales[0]?.id;
-
     for (const raw of rawProductos) {
       const mapped = mapProduct(raw);
       if (!mapped) continue;
-      const { product, inventory, fallbackStock } = mapped;
+      const { product, stockQty } = mapped;
+
+      // Stock lives on the product row (one-number-per-product). Only write it
+      // when this payload actually carried stock info: when it doesn't, leave
+      // the existing value alone so we never zero out stock that the real-time
+      // price/stock webhook already set.
+      const stockSet =
+        stockQty !== undefined
+          ? { erpStockQty: stockQty, stockUpdatedAt: new Date() }
+          : {};
 
       await db
         .insert(productsTable)
-        .values(product)
+        .values({ ...product, ...stockSet })
         .onConflictDoUpdate({
           target: productsTable.id,
           set: {
@@ -173,6 +179,7 @@ export async function runInboundSync(): Promise<SyncResult> {
             originalPrice: product.originalPrice,
             image: product.image,
             specs: product.specs,
+            ...stockSet,
           },
         });
       seenProductIds.push(product.id);
@@ -184,44 +191,11 @@ export async function runInboundSync(): Promise<SyncResult> {
           (categoryCounts.get(product.categoryId) ?? 0) + 1,
         );
       }
-
-      // Inventory: prefer per-sucursal breakdown, else attach flat stock to the
-      // first sucursal so the app still reflects availability.
-      const rows =
-        inventory.length > 0
-          ? inventory
-          : fallbackStock !== undefined && defaultSucursalId
-            ? [{ sucursalId: defaultSucursalId, quantity: Math.max(0, Math.round(fallbackStock)) }]
-            : [];
-      for (const inv of rows) {
-        await db
-          .insert(inventoryTable)
-          .values({
-            productId: product.id,
-            sucursalId: inv.sucursalId,
-            quantity: inv.quantity,
-          })
-          .onConflictDoUpdate({
-            target: [inventoryTable.productId, inventoryTable.sucursalId],
-            set: { quantity: inv.quantity },
-          });
-      }
-      // Prune stale per-sucursal rows for this product (ERP is source of truth).
-      const activeSucursalIds = rows.map((r) => r.sucursalId);
-      if (activeSucursalIds.length > 0) {
-        await db
-          .delete(inventoryTable)
-          .where(
-            and(
-              drizzleEq(inventoryTable.productId, product.id),
-              notInArray(inventoryTable.sucursalId, activeSucursalIds),
-            ),
-          );
-      }
-      // NOTE: when the ERP payload carries no existencias for a product we
-      // deliberately leave existing inventory rows untouched. The price/stock
-      // webhook (/webhooks/admintotal/precios-existencias) is the authoritative
-      // near-real-time stock source; wiping it here would zero stock every sync.
+      // NOTE: stock is written above (on the product row) only when this payload
+      // carried existencias. When it doesn't, we deliberately leave the stored
+      // erpStockQty alone: the price/stock webhook
+      // (/webhooks/admintotal/precios-existencias) is the authoritative
+      // near-real-time stock source, and zeroing here would wipe it every sync.
     }
     logger.info({ count: productsSynced }, "Admintotal: productos sincronizados");
 
@@ -233,14 +207,13 @@ export async function runInboundSync(): Promise<SyncResult> {
         .values({ name })
         .onConflictDoNothing({ target: brandsTable.name });
     }
-    // Prune stale products and their inventory, then stale brands — but ONLY
-    // when the product pull looked complete. A partial/failed pull must never
-    // delete products or zero out inventory (that would empty the catalog/stock
-    // on a transient ERP hiccup); we keep the existing rows and try again next
-    // sync.
+    // Prune stale products, then stale brands — but ONLY when the product pull
+    // looked complete. A partial/failed pull must never delete products (that
+    // would empty the catalog on a transient ERP hiccup); we keep the existing
+    // rows and try again next sync. Stock lives on the product row
+    // (products.erpStockQty), so pruning a product removes its stock with it.
     if (pullComplete) {
       if (seenProductIds.length > 0) {
-        await db.delete(inventoryTable).where(notInArray(inventoryTable.productId, seenProductIds));
         await db.delete(productsTable).where(notInArray(productsTable.id, seenProductIds));
       }
       if (seenBrands.length > 0) {

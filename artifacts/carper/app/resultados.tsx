@@ -43,7 +43,7 @@ export default function Resultados() {
 
   const filtered = useMemo(() => {
     let list = brand ? base.filter((p) => p.brand === brand) : base;
-    if (availOnly) list = list.filter((p) => p.stock > 0);
+    if (availOnly) list = list.filter((p) => p.stock == null || p.stock > 0);
     if (priceSort) list = [...list].sort((a, b) => (priceSort === "asc" ? a.price - b.price : b.price - a.price));
     return list;
   }, [base, brand, availOnly, priceSort]);

@@ -11,7 +11,12 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, featured = false }: ProductCardProps) {
-  const isDisponible = product.stock > 0;
+  // Three availability states: confirmed in stock (>0), confirmed out of stock
+  // (0 — hidden from listings server-side but handled here for safety), and
+  // unknown (null — the ERP hasn't reported a count yet, still orderable).
+  const agotado = product.stock === 0;
+  const enExistencia = typeof product.stock === "number" && product.stock > 0;
+  const consultable = !agotado; // in stock OR unknown → can ask by WhatsApp
   
   const priceFormatter = new Intl.NumberFormat('es-MX', { 
     style: 'currency', 
@@ -35,13 +40,17 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
         
         {/* Availability Badge */}
         <div className="absolute top-4 right-4">
-          {isDisponible ? (
+          {enExistencia ? (
             <span className="bg-success text-success-foreground text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1">
-              Disponible
+              {product.stock} disp.
+            </span>
+          ) : agotado ? (
+            <span className="bg-muted text-muted-foreground text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border border-border">
+              Agotado
             </span>
           ) : (
             <span className="bg-muted text-muted-foreground text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border border-border">
-              Agotado
+              Consultar
             </span>
           )}
         </div>
@@ -79,7 +88,7 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
           </div>
           
           <div className="flex gap-2">
-            {isDisponible && (
+            {consultable && (
               <Button 
                 variant="outline" 
                 size="icon" 

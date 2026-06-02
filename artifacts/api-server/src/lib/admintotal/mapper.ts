@@ -79,6 +79,11 @@ interface MappedProduct {
   inventory: { sucursalId: string; quantity: number }[];
   // Flat existencia used when no per-sucursal breakdown is available.
   fallbackStock?: number;
+  // Single on-hand number for the one-number-per-product model: the sum of the
+  // sellable per-sucursal rows, or the flat existencia when there's no
+  // breakdown. `undefined` means the payload carried NO stock info at all — the
+  // caller must then leave the existing stored stock untouched (never zero it).
+  stockQty?: number;
 }
 
 function buildSpecs(raw: Raw): ProductSpec[] {
@@ -166,6 +171,16 @@ export function mapProduct(raw: Raw): MappedProduct | null {
 
   const { inventory, flat } = parseInventory(raw);
 
+  // Collapse to a single on-hand number. Prefer the per-sucursal breakdown (sum
+  // of sellable warehouses; the mapper already drops "MAL ESTADO"); otherwise
+  // use the flat existencia. Undefined when the payload had no stock info.
+  const stockQty =
+    inventory.length > 0
+      ? inventory.reduce((sum, r) => sum + Math.max(0, r.quantity), 0)
+      : flat !== undefined
+        ? Math.max(0, Math.round(flat))
+        : undefined;
+
   const product: InsertProduct = {
     id,
     sku,
@@ -183,7 +198,7 @@ export function mapProduct(raw: Raw): MappedProduct | null {
     equivalents: null,
   };
 
-  return { product, inventory, fallbackStock: flat };
+  return { product, inventory, fallbackStock: flat, stockQty };
 }
 
 export type { MappedProduct };

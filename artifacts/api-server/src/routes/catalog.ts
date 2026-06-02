@@ -6,7 +6,6 @@ import {
   categoriesTable,
   brandsTable,
   sucursalesTable,
-  inventoryTable,
   syncStateTable,
   type Product as DbProduct,
 } from "@workspace/db";
@@ -21,33 +20,6 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
-
-// Stock reported when a product's inventory is UNKNOWN — i.e. it has no rows in
-// the `inventory` mirror. The Admintotal sync only ever reports a handful of
-// inventory rows (frequently none at all), so the overwhelming majority of the
-// catalog has no stock data. Those products are intentionally kept VISIBLE by
-// sellableProduct(), and they must ALSO be reported as available: returning 0
-// for "unknown" made every such product render as "Agotado" in the app even
-// though we have no evidence it's out of stock. We surface a small positive
-// sentinel (above the app's "últimas piezas" threshold of 3) so unknown items
-// read as "En existencia" and stay orderable. Checkout still performs a live
-// stock check, so an unknown-stock item can never let a customer over-buy.
-//
-// Confirmed-out-of-stock products (those that DO have inventory rows, summing to
-// 0) are removed entirely by sellableProduct() and never reach serialization, so
-// a real 0 is never reported as available here — only the genuine "no data" case
-// gets the sentinel.
-const UNKNOWN_STOCK = 10;
-
-// Stock for a product: summed across all sucursales, or for one sucursal when
-// `sucursalId` is provided. When no inventory data exists the result falls back
-// to UNKNOWN_STOCK so the catalog treats the item as available (see above).
-function stockExpr(sucursalId?: string): SQL<number> {
-  if (sucursalId) {
-    return sql<number>`coalesce((select ${inventoryTable.quantity} from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id} and ${inventoryTable.sucursalId} = ${sucursalId}), ${UNKNOWN_STOCK})`;
-  }
-  return sql<number>`coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), ${UNKNOWN_STOCK})`;
-}
 
 // Test/placeholder rows that leak in from the Admintotal ERP sync (e.g.
 // "ARTICULO PRUEBA", "REPTIL TEST BRAND"). Excluded at the query layer so they
@@ -64,20 +36,20 @@ export function notTestProduct(): SQL {
 }
 
 // Unsellable / junk rows hidden from the catalog:
-//  - CONFIRMED 0 stock → hidden. A product is only hidden for stock when it has
-//    inventory rows that sum to 0 (i.e. we know it's off the shelf). Products
-//    with NO inventory rows are treated as "stock unknown" and stay VISIBLE —
-//    the `inventory` mirror is sparsely populated (Admintotal sync only reports
-//    a handful of rows), so treating "no data" as "out of stock" would hide the
-//    entire catalog. Checkout performs a live stock check, so showing an
-//    unknown-stock item never lets a customer over-buy.
+//  - CONFIRMED 0 stock → hidden. A product is only hidden for stock when its
+//    erpStockQty is 0 (i.e. the ERP told us it's off the shelf). Products whose
+//    erpStockQty is NULL are treated as "stock unknown" and stay VISIBLE — the
+//    ERP reports stock sparsely (per-SKU webhooks fill it in over time), so
+//    treating "no data" as "out of stock" would hide most of the catalog.
+//    Checkout performs a live stock check, so showing an unknown-stock item
+//    never lets a customer over-buy.
 //  - no price AND no cost (price=0 and costo=0/null) → nothing to sell
 //  - no name AND no description → empty junk row
 // Like notTestProduct(), enforced at the query layer so a re-sync from
 // Admintotal can't resurface them.
 export function sellableProduct(): SQL {
   return sql`(
-    coalesce((select sum(${inventoryTable.quantity})::int from ${inventoryTable} where ${inventoryTable.productId} = ${productsTable.id}), 1) > 0
+    coalesce(${productsTable.erpStockQty}, 1) > 0
     and (coalesce(${productsTable.price}, 0) > 0 or coalesce(${productsTable.costo}, 0) > 0)
     and (
       btrim(coalesce(${productsTable.name}, '')) <> ''
@@ -86,9 +58,18 @@ export function sellableProduct(): SQL {
   )`;
 }
 
-function serializeProduct(
-  row: DbProduct & { stock: number },
-): Record<string, unknown> {
+// Map the stored stock number into the API's (stock, stockState) pair.
+//  - NULL erpStockQty  → unknown availability (count hidden, stays orderable)
+//  - 0                 → confirmed out of stock (hidden from listings)
+//  - > 0               → real on-hand count
+function serializeProduct(row: DbProduct): Record<string, unknown> {
+  const qty = row.erpStockQty;
+  const stockState =
+    qty === null || qty === undefined
+      ? "unknown"
+      : qty > 0
+        ? "in_stock"
+        : "out_of_stock";
   return {
     id: row.id,
     sku: row.sku,
@@ -96,7 +77,8 @@ function serializeProduct(
     brand: row.brand,
     price: row.price,
     originalPrice: row.originalPrice ?? null,
-    stock: row.stock ?? 0,
+    stock: qty ?? null,
+    stockState,
     categoryId: row.categoryId ?? null,
     image: row.image ?? null,
     compatible: row.compatible,
@@ -145,8 +127,6 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const categoryId =
     typeof req.query.categoryId === "string" ? req.query.categoryId : undefined;
   const brand = typeof req.query.brand === "string" ? req.query.brand : undefined;
-  const sucursalId =
-    typeof req.query.sucursalId === "string" ? req.query.sucursalId : undefined;
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const offset = Number(req.query.offset) || 0;
 
@@ -176,10 +156,8 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   if (brand) conditions.push(eq(productsTable.brand, brand));
   const where = and(...conditions);
 
-  const stock = stockExpr(sucursalId);
-
   const rows = await db
-    .select({ product: productsTable, stock })
+    .select()
     .from(productsTable)
     .where(where)
     .orderBy(productsTable.name)
@@ -193,19 +171,16 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const total = countRows[0]?.count ?? 0;
 
   const data = ListProductsResponse.parse({
-    items: rows.map((r) => serializeProduct({ ...r.product, stock: r.stock })),
+    items: rows.map((r) => serializeProduct(r)),
     total,
   });
   res.json(data);
 });
 
 router.get("/products/:id", async (req: Request, res: Response): Promise<void> => {
-  const sucursalId =
-    typeof req.query.sucursalId === "string" ? req.query.sucursalId : undefined;
-  const stock = stockExpr(sucursalId);
   const id = String(req.params.id);
   const rows = await db
-    .select({ product: productsTable, stock })
+    .select()
     .from(productsTable)
     .where(and(eq(productsTable.id, id), notTestProduct(), sellableProduct()))
     .limit(1);
@@ -214,18 +189,13 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
     res.status(404).json({ error: "Producto no encontrado" });
     return;
   }
-  const data = GetProductResponse.parse(
-    serializeProduct({ ...row.product, stock: row.stock }),
-  );
+  const data = GetProductResponse.parse(serializeProduct(row));
   res.json(data);
 });
 
-router.get("/deals", async (req: Request, res: Response): Promise<void> => {
-  const sucursalId =
-    typeof req.query.sucursalId === "string" ? req.query.sucursalId : undefined;
-  const stock = stockExpr(sucursalId);
+router.get("/deals", async (_req: Request, res: Response): Promise<void> => {
   const rows = await db
-    .select({ product: productsTable, stock })
+    .select()
     .from(productsTable)
     .where(
       and(
@@ -238,9 +208,7 @@ router.get("/deals", async (req: Request, res: Response): Promise<void> => {
     .orderBy(desc(sql`${productsTable.originalPrice} - ${productsTable.price}`))
     .limit(20);
 
-  const ofertas = rows.map((r) =>
-    serializeProduct({ ...r.product, stock: r.stock }),
-  );
+  const ofertas = rows.map((r) => serializeProduct(r));
   const data = GetDealsResponse.parse({
     dealOfDay: ofertas[0] ?? null,
     ofertas,

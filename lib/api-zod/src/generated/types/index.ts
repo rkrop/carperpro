@@ -18,6 +18,7 @@ export * from './orderLineInput';
 export * from './orderResult';
 export * from './product';
 export * from './productPage';
+export * from './productStockState';
 export * from './spec';
 export * from './sucursal';
 export * from './syncStatus';

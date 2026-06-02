@@ -29,8 +29,9 @@ the background.
 The ERP `productos/` payload carries per-warehouse stock under the key
 **`info_almacenes`**, an array of `{ almacen: { id, nombre }, disponible }`.
 Quantity is `disponible`; the warehouse id is `almacen.id` (e.g. 1533 "Bodega",
-9 "Matriz", 1535 "MAL ESTADO"). The catalog derives in-stock by summing
-`inventory.quantity` across all sucursales for a product.
+9 "Matriz", 1535 "MAL ESTADO"). The mapper sums sellable `disponible` across
+warehouses into a single `stockQty`, written to `products.erpStockQty` on the
+product row (the `inventory` table is no longer used) — see [stock-model.md](stock-model.md).
 
 **Why:** The sync mapper originally only checked `existencias`/`almacenes` +
 `cantidad`/`stock`, so it silently dropped every stock value — a full 32k-product
@@ -38,8 +39,8 @@ sync left `inventory` EMPTY and the whole app showed *Agotado*. Stock is real bu
 sparse (~1% of catalog rows have any). The "MAL ESTADO" warehouse is
 damaged/unsellable goods and is excluded by name (`/mal\s*estado/i`).
 
-**How to apply:** If everything shows *Agotado*, check `select count(*) from
-inventory` — if 0, the mapper isn't reading the ERP stock field names. The
-precios-existencias webhook is a separate path that sends a single aggregate
-`stock` per sku (stored under sucursal "9"); it only covers changed SKUs, so the
-full sync is what bulk-loads initial stock.
+**How to apply:** If everything shows *unknown / Consultar*, check `select count(*)
+from products where erp_stock_qty is not null` — if 0, no stock has synced yet
+(mapper not reading ERP field names, or no sync/webhook has run). The
+precios-existencias webhook sends a single aggregate `stock` per sku; it only
+covers changed SKUs, so the full `productos` sync is what bulk-loads initial stock.

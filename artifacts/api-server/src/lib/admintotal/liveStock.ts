@@ -1,5 +1,5 @@
-import { inArray, sql } from "drizzle-orm";
-import { db, inventoryTable } from "@workspace/db";
+import { inArray } from "drizzle-orm";
+import { db, productsTable } from "@workspace/db";
 import { AdmintotalClient } from "./client";
 import { mapProduct } from "./mapper";
 import { isAdmintotalConfigured } from "./config";
@@ -78,19 +78,21 @@ export async function getLiveSellableStock(
   return { available, unverified };
 }
 
-// Sum local mirror stock per product across all sucursales.
+// Local mirror stock per product, read from the product row. Unknown stock
+// (NULL erpStockQty) is treated as 0 here on purpose: this fallback only runs at
+// checkout when the live ERP can't be reached, and we'd rather block a sale we
+// can't confirm than risk overselling.
 async function getDbStock(productIds: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   if (productIds.length === 0) return map;
   const rows = await db
     .select({
-      productId: inventoryTable.productId,
-      qty: sql<number>`coalesce(sum(${inventoryTable.quantity}), 0)::int`,
+      productId: productsTable.id,
+      qty: productsTable.erpStockQty,
     })
-    .from(inventoryTable)
-    .where(inArray(inventoryTable.productId, productIds))
-    .groupBy(inventoryTable.productId);
-  for (const r of rows) map.set(r.productId, r.qty);
+    .from(productsTable)
+    .where(inArray(productsTable.id, productIds));
+  for (const r of rows) map.set(r.productId, r.qty ?? 0);
   return map;
 }
 

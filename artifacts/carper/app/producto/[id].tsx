@@ -71,8 +71,20 @@ export default function Producto() {
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const statusColor = status === "alto" ? c.success : status === "bajo" ? c.primary : c.neutral400;
-  const statusLabel = status === "alto" ? "En existencia" : status === "bajo" ? "Últimas piezas" : "Agotado";
+  const statusColor =
+    status === "alto"
+      ? c.success
+      : status === "bajo"
+        ? c.primary
+        : c.neutral400;
+  const statusLabel =
+    status === "alto"
+      ? `${product.stock} en existencia`
+      : status === "bajo"
+        ? `Últimas ${product.stock} piezas`
+        : status === "consultar"
+          ? "Consultar disponibilidad"
+          : "Agotado";
 
   return (
     <View style={{ flex: 1, backgroundColor: c.neutral50 }}>

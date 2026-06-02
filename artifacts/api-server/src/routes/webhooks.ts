@@ -7,14 +7,9 @@ import {
 } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
-import {
-  db,
-  productsTable,
-  inventoryTable,
-  brandsTable,
-} from "@workspace/db";
+import { db, productsTable, brandsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
-import { getWebhookToken, getWebhookSucursalId } from "../lib/admintotal/config";
+import { getWebhookToken } from "../lib/admintotal/config";
 import { mapProduct } from "../lib/admintotal/mapper";
 
 // Inbound Admintotal webhooks. Admintotal POSTs notifications here for:
@@ -135,7 +130,6 @@ router.post(
       return;
     }
 
-    const sucursalId = getWebhookSucursalId();
     let pricesUpdated = 0;
     let stockUpdated = 0;
     let notFound = 0;
@@ -148,45 +142,30 @@ router.post(
       const costo = asNumber(item.costo);
       const stock = asNumber(item.stock);
 
+      // Stock lives on the product row (one-number-per-product). Price, cost and
+      // stock all update the same row in a single statement, matched by SKU.
       const set: Partial<typeof productsTable.$inferInsert> = {};
       if (precio !== undefined) set.price = precio;
       if (costo !== undefined) set.costo = costo;
-
-      let ids: string[];
-      if (Object.keys(set).length > 0) {
-        const updated = await db
-          .update(productsTable)
-          .set(set)
-          .where(eq(productsTable.sku, sku))
-          .returning({ id: productsTable.id });
-        ids = updated.map((r) => r.id);
-        pricesUpdated += ids.length;
-      } else {
-        const found = await db
-          .select({ id: productsTable.id })
-          .from(productsTable)
-          .where(eq(productsTable.sku, sku));
-        ids = found.map((r) => r.id);
+      if (stock !== undefined) {
+        set.erpStockQty = Math.max(0, Math.round(stock));
+        set.stockUpdatedAt = new Date();
       }
 
-      if (ids.length === 0) {
+      if (Object.keys(set).length === 0) continue;
+
+      const updated = await db
+        .update(productsTable)
+        .set(set)
+        .where(eq(productsTable.sku, sku))
+        .returning({ id: productsTable.id });
+
+      if (updated.length === 0) {
         notFound += 1;
         continue;
       }
-
-      if (stock !== undefined) {
-        const qty = Math.max(0, Math.round(stock));
-        for (const id of ids) {
-          await db
-            .insert(inventoryTable)
-            .values({ productId: id, sucursalId, quantity: qty })
-            .onConflictDoUpdate({
-              target: [inventoryTable.productId, inventoryTable.sucursalId],
-              set: { quantity: qty },
-            });
-          stockUpdated += 1;
-        }
-      }
+      if (precio !== undefined || costo !== undefined) pricesUpdated += updated.length;
+      if (stock !== undefined) stockUpdated += updated.length;
     }
 
     logger.info(
@@ -225,17 +204,23 @@ router.post(
       return;
     }
 
-    const sucursalId = getWebhookSucursalId();
     let upserted = 0;
 
     for (const raw of list) {
       const mapped = mapProduct(raw);
       if (!mapped) continue;
-      const { product, inventory, fallbackStock } = mapped;
+      const { product, stockQty } = mapped;
+
+      // Stock lives on the product row. Only set it when this payload carried
+      // existencias; otherwise leave any existing value untouched.
+      const stockSet =
+        stockQty !== undefined
+          ? { erpStockQty: stockQty, stockUpdatedAt: new Date() }
+          : {};
 
       await db
         .insert(productsTable)
-        .values(product)
+        .values({ ...product, ...stockSet })
         .onConflictDoUpdate({
           target: productsTable.id,
           set: {
@@ -247,6 +232,7 @@ router.post(
             originalPrice: product.originalPrice,
             image: product.image,
             specs: product.specs,
+            ...stockSet,
           },
         });
 
@@ -257,25 +243,6 @@ router.post(
           .onConflictDoNothing({ target: brandsTable.name });
       }
 
-      const rows =
-        inventory.length > 0
-          ? inventory
-          : fallbackStock !== undefined
-            ? [{ sucursalId, quantity: Math.max(0, Math.round(fallbackStock)) }]
-            : [];
-      for (const inv of rows) {
-        await db
-          .insert(inventoryTable)
-          .values({
-            productId: product.id,
-            sucursalId: inv.sucursalId,
-            quantity: inv.quantity,
-          })
-          .onConflictDoUpdate({
-            target: [inventoryTable.productId, inventoryTable.sucursalId],
-            set: { quantity: inv.quantity },
-          });
-      }
       upserted += 1;
     }
 

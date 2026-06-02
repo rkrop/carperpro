@@ -245,6 +245,7 @@ components:
         - brand
         - price
         - stock
+        - stockState
         - compatible
         - specs
         - vehicles
@@ -255,7 +256,15 @@ components:
         brand: { type: string }
         price: { type: number }
         originalPrice: { type: ["number", "null"] }
-        stock: { type: integer }
+        # On-hand units. null means availability is UNKNOWN (not yet reported by
+        # the ERP); a number is the real confirmed count. Use stockState to drive
+        # UI rather than comparing stock to 0.
+        stock: { type: ["integer", "null"] }
+        # Availability state derived from stock: "in_stock" (count > 0),
+        # "out_of_stock" (confirmed 0, hidden from listings), or "unknown".
+        stockState:
+          type: string
+          enum: [in_stock, out_of_stock, unknown]
         categoryId: { type: ["string", "null"] }
         image: { type: ["string", "null"] }
         compatible: { type: boolean }

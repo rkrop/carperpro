@@ -310,12 +310,17 @@ export function EmptyState({
 }
 
 /** Stock status indicator. */
-export function StockPill({ status }: { status: "alto" | "bajo" | "agotado" }) {
+export function StockPill({
+  status,
+}: {
+  status: "alto" | "bajo" | "agotado" | "consultar";
+}) {
   const c = useColors();
   const map = {
     alto: { color: c.success, label: "En existencia" },
     bajo: { color: c.primary, label: "Últimas piezas" },
     agotado: { color: c.neutral400, label: "Agotado" },
+    consultar: { color: c.neutral400, label: "Consultar disponibilidad" },
   } as const;
   const cur = map[status];
   return (

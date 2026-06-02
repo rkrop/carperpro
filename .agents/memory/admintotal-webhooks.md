@@ -7,10 +7,10 @@ Admintotal pushes near-real-time updates via POST webhooks (docs.admintotal.com 
 - `precios-existencias` — body is an ARRAY of `{sku, precio, costo, stock}` (batched ≤50 per request, every ~4 min, NOT real-time). Matches products by **sku** (not id); updates price/costo and writes stock.
 - `productos` — single product object on creation; reuses `mapProduct` to upsert.
 
-**Auth:** shared token in `ADMINTOTAL_WEBHOOK_TOKEN`, accepted via the `Api-key` header OR HTTP Basic password (timing-safe compare). If the secret is unset the webhook still processes but logs a warning.
+**Auth:** shared token in `ADMINTOTAL_WEBHOOK_TOKEN`, accepted via the `Api-key` header OR HTTP Basic password (timing-safe compare). If the secret is unset the webhook **fails closed in production** (401) but is accepted with a warning in dev (NODE_ENV !== production).
 
-**Stock model (important):** the webhook sends ONE aggregate `stock` per sku (summed across the almacenes configured in Admintotal). It is written to a single sucursal (`ADMINTOTAL_WEBHOOK_SUCURSAL_ID`, default `9` = Matriz). The app sums stock across all sucursales (store id empty), so one row == the aggregate == correct total. Until a webhook/sync provides stock, inventory is empty so everything reads "Agotado".
+**Stock model (important):** the webhook sends ONE aggregate `stock` per sku (summed across the almacenes configured in Admintotal). It is written to `products.erpStockQty` on the product row (NOT the `inventory` table) — see [stock-model.md](stock-model.md). Only write stock when the payload actually carried it (stock defined); never zero out a product just because a payload omitted stock. Until a webhook/sync provides stock, `erpStockQty` is NULL so the product reads "unknown / Consultar" (still visible), not "Agotado".
 
-**Why the full sync was changed:** `runInboundSync` used to DELETE all inventory for a product when the ERP `productos` payload had no existencias (which is the normal case). That wiped webhook stock every ~15 min. It now leaves existing inventory untouched when the ERP gives no stock data — the webhook is the authoritative stock source.
+**Why sync no longer touches inventory:** an older sync DELETED inventory for products whose `productos` payload had no existencias (the normal case), wiping stock every ~15 min. Now both sync and webhooks write `erpStockQty` only when stock is present and never wipe on absent data — the webhook is the authoritative live stock source.
 
-**How to apply:** the ERP `productos` endpoint is heavily rate-limited and slow, so the webhook is the practical path for fresh prices/stock. Don't reintroduce per-product inventory deletion in the sync unless the ERP starts returning real existencias.
+**How to apply:** the ERP `productos` endpoint is heavily rate-limited and slow, so the webhook is the practical path for fresh prices/stock. Don't write `erpStockQty` (or 0) when a payload omits stock.
