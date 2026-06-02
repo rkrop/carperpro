@@ -1,0 +1,51 @@
+# Revised Visual & Art Direction — Auto Parts App
+
+> Use this to **replace** the previous "automotive-industrial / dark graphite" style description in your design prompt. The functional spec (screens, flows, content in Mexican Spanish) stays the same. This only changes the look and feel.
+
+---
+
+## VISUAL DIRECTION (paste this into the design tool)
+
+The brand promise is **Rápido, Simple y Eficiente**, and the visual design must *feel* like that — not just say it. The concept is **"precision and clarity":** the app should feel like a perfectly organized parts drawer or a well-designed engineering tool, calm and confident. Avoid the typical greasy, dark, industrial auto-parts aesthetic entirely.
+
+**Base & atmosphere**
+- Light, airy, and spacious. Use a warm off-white / near-white background with generous whitespace. The screen should feel calm and uncluttered so the part the user is looking for is the clear focus.
+- Most of the interface is neutral and quiet; color appears only where it carries meaning (a primary action, a status, a key piece of information).
+
+**Color**
+- A near-neutral palette (warm whites, soft light grays, a deep near-black for text) plus **one single confident accent color** used sparingly — only on primary buttons and the most important highlights.
+- Recommended accent: a strong, refined **electric/cobalt blue** (precise, trustworthy, modern) OR a clean **amber/orange** (energetic but not aggressive). Pick one and commit. Do NOT use aggressive automotive red.
+- Use a calm green only as a status signal for "En existencia" / compatibility confirmation. Color should always mean something.
+
+**Typography (this is the hero of the design)**
+- A clean, modern geometric/grotesk sans-serif for the interface (e.g., Inter, Geist, or Space Grotesk). Use strong weight contrast: large, bold, confident headings and calm, legible body text.
+- **Signature detail:** display all part numbers, SKUs, and OEM codes in a monospace font. This makes the data feel precise and engineered, reads as "technical and trustworthy," and gives the app a distinctive identity that competitors won't have.
+
+**Layout & structure**
+- Strict, consistent grid and a clean spacing scale (4/8px rhythm). "Ordered" means everything is aligned and breathing — no cramming.
+- Crisp white cards with subtle borders or very soft shadows; small corner radius (precise, not bubbly/playful).
+- Thin-to-medium line icons, consistent set, minimal.
+
+**Product imagery**
+- Clean, consistent product photos on plain neutral backgrounds (catalog-style), so the parts catalog feels premium and well-organized — the opposite of a cluttered online marketplace.
+
+**Signature element**
+- Make the compatibility badge a recognizable, well-designed component: a calm, confident "✓ Compatible con tu [vehículo]" treatment. It's the visual embodiment of the trust promise and should look intentional, not like a generic tag.
+
+**Motion & feel**
+- Everything should feel instant and effortless. Minimal, subtle skeleton loaders (no heavy splash screens or spinners). Fast, light, no friction.
+
+## DO NOT (explicit guardrails)
+- No dark graphite/black industrial theme, no carbon-fiber or metal textures, no "workshop / grease" mood.
+- No aggressive red, no loud gradients, no heavy drop shadows on everything.
+- No cluttered marketplace look, no rainbow of colors, no generic "rounded-everything tech app" template.
+- Minimalist must not mean empty or boring — keep it confident, intentional, and well-crafted.
+
+---
+
+## Why this direction (rationale for you)
+
+- **It differentiates you.** Every competitor leans dark/industrial. Going clean and light is instantly recognizable as "the modern one."
+- **It reinforces the promise.** Whitespace and order *are* the feeling of "simple and efficient." The design proves the claim instead of just stating it.
+- **It stays distinctive, not boring.** The monospace part numbers, the single confident accent, and the signature compatibility badge give it character without clutter.
+- **It ages well.** Clean and typographic designs stay current far longer than trend-driven industrial themes.

@@ -1,0 +1,84 @@
+# App Design Prompt — Auto Parts Store Mobile App
+
+> Copy the text below and paste it into your design/UI generation tool (v0, Lovable, Bolt, Figma Make, Claude, etc.). Adjust anything in brackets [ ].
+
+---
+
+## PROMPT (copy from here)
+
+Design a **mobile application** (mobile-first, Android priority) for an **auto parts store** in Mexico. The app is a fast-search catalog with integrated checkout. Its promise is: **Fast, Simple, and Efficient.**
+
+The app's UI text and content should be in **Mexican Spanish** (the end users are in Mexico), even though these instructions are in English.
+
+### Business context
+- Catalog of 8,000+ products (auto parts) and 80,000+ units in stock.
+- Users must find the correct part in seconds and be confident it's compatible with their vehicle.
+- Checkout in just a few taps, using payment methods common in Mexico.
+
+### Users
+- **Mechanics / repair shops:** search fast, sometimes already know the part number. Frequent buyers.
+- **Car owners:** don't know the part number; they search by their vehicle's make, model, and year.
+
+### Visual style
+- A **professional, trustworthy, automotive-industrial** look and feel.
+- Palette: **dark graphite/black tones + a strong accent color** (red, or industrial blue/orange). High contrast so it's readable in sunlight or inside a workshop.
+- Clear, generously sized typography (users may have dirty hands or be in a hurry).
+- Large, tappable buttons with obvious visual hierarchy. Simple iconography.
+- A sense of **speed and efficiency**, without visual clutter.
+
+### Screens to design
+
+1. **Home**
+   - Prominent search bar at the top ("Busca tu refacción…" / "Search for your part…").
+   - Quick access to "Search by my vehicle."
+   - A "My saved vehicle" card or selector.
+   - Popular categories as cards (brakes, filters, suspension, engine, electrical, etc.).
+   - Featured or on-sale products.
+
+2. **Search by vehicle**
+   - Step-by-step flow: Make → Model → Year → Engine/trim.
+   - Fast-selection design (lists or chips), minimal taps.
+   - Result: a filtered catalog showing ONLY compatible parts, each with a visible "Compatible with your [vehicle]" badge.
+
+3. **Search results**
+   - Product list as cards: photo, name, brand, price, availability ("In stock"), and an "Add" button.
+   - Filters (side or top): part brand, price, availability.
+   - Typo-tolerant search.
+
+4. **Product detail**
+   - Large product photo.
+   - Name, part number, brand, and equivalents.
+   - Highlighted price and stock level.
+   - Clear compatibility badge and an expandable list of compatible vehicles.
+   - A sticky, always-visible "Add to cart" button.
+
+5. **Cart**
+   - Product list with editable quantities.
+   - Clear subtotal, taxes, and total.
+   - Large "Continue to payment" button.
+
+6. **Checkout / Payment (as few steps as possible, ideally 2–3 screens)**
+   - Delivery selection: "Pick up at store" or "Home delivery."
+   - Payment methods: card, OXXO/cash, bank transfer (SPEI), pay on pickup.
+   - Final summary and a "Confirm purchase" button.
+   - Order-success confirmation screen.
+
+7. **My account**
+   - "My vehicles" saved (so users don't re-enter them).
+   - Order history with a one-tap "Reorder" button.
+
+### UX principles (mandatory)
+- Anyone, with or without mechanical knowledge, should be able to buy without help.
+- The fewest possible taps from search to purchase.
+- The search bar and the buy button should always be accessible.
+- Clear states: loading, no results, out of stock, error.
+
+Deliver the design for these screens with a consistent component system (buttons, cards, inputs) and a navigable flow between them.
+
+---
+
+## Usage notes
+
+- The instructions are in English for better tool performance, but the app's visible text should be in Mexican Spanish.
+- You can request screens in batches (Home + search first, then checkout) if the tool struggles to produce everything at once.
+- If it's for a human designer, this same text works as a brief.

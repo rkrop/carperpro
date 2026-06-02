@@ -1,0 +1,224 @@
+# PRD — Mobile Catalog & Purchase App for Auto Parts Store
+
+**Product Requirements Document**
+**Version:** 1.0 (Initial draft)
+**Date:** June 2026
+**Product owner:** [Your name / business owner]
+
+---
+
+## 1. Executive summary
+
+We are an auto parts store with a catalog of more than **8,000 SKUs** and an inventory of over **80,000 units** in stock. We want to launch a **mobile application** that works as a fast-search catalog for auto parts with integrated purchasing, so that customers choose us **first, ahead of the competition**.
+
+The value proposition fits in three words: **Fast, Simple, and Efficient.** The customer must find the right part in seconds, be certain it's compatible with their vehicle, and be able to pay for it in just a few clicks using accessible payment methods.
+
+The competitive advantage is clear: today **none of our direct competitors offer a mobile app** to showcase and sell their products. That gap is our opportunity to get ahead in the market.
+
+---
+
+## 2. Problem and opportunity
+
+**The customer's problem:** buying auto parts is frustrating. Customers often don't know the exact part number, aren't sure whether a part is compatible with their vehicle, and have to call or show up in person to confirm availability and price. This wastes their time and frequently leads them to buy the wrong part.
+
+**The business opportunity:**
+
+- Be the customer's **first choice** the moment they need a part, capturing them right from their phone.
+- **Differentiate ourselves** from local competitors, who still operate traditionally (counter, phone, no digital sales presence).
+- Reduce the counter's workload from repetitive questions like "do you have this part?" and "how much is it?".
+- Leverage our broad inventory (8,000 SKUs) as a selling point: "whatever you're looking for, it's here."
+
+---
+
+## 3. Goals and success metrics
+
+| Goal | Metric (KPI) | Initial target (first 6 months) |
+|---|---|---|
+| Make customers choose us first | Orders generated from the app / month | TBD based on current volume |
+| Fast and effective search | % of searches that end in a relevant result | > 85% |
+| Confidence in compatibility | % of returns due to "wrong part" | Reduce vs. the counter |
+| Ease of purchase | % of carts that get completed (not abandoned) | > 40% |
+| Adoption | Monthly active users | Sustained month-over-month growth |
+| Perceived speed | Search load time | < 2 seconds |
+
+> *Note: the numeric targets should be adjusted with your real sales figures once we have a baseline.*
+
+---
+
+## 4. Target users
+
+**Primary persona — Mechanic / repair shop:**
+Buys often, knows technical terms and sometimes the part number. Values speed, price, and immediate availability. The highest-volume, most frequent buyer.
+
+**Secondary persona — Vehicle owner (end customer):**
+Buys occasionally, usually doesn't know the part number. Searches by their car's make, model, and year. Needs more guidance and compatibility confirmation.
+
+**Tertiary persona — Fleet / business buyer:**
+Buys in volume, cares about order history, invoicing, and possibly credit or special pricing.
+
+---
+
+## 5. Value proposition
+
+> *"Find the exact part for your vehicle in seconds and buy it in just a few clicks — with the confidence that it's the right part."*
+
+Three non-negotiable pillars:
+
+1. **Fast** — instant search, smooth navigation, no extra steps.
+2. **Simple** — anyone, with or without mechanical knowledge, finds what they need.
+3. **Efficient** — from result to purchase in the fewest possible clicks.
+
+---
+
+## 6. Product scope
+
+### 6.1 In scope (MVP — first version)
+
+- Complete digital catalog (8,000+ SKUs) browsable from the app.
+- Fast search by part number, name, and by vehicle (make/model/year).
+- Product detail page with photo, description, price, and availability.
+- Vehicle compatibility validation ("this part does fit your car").
+- Shopping cart.
+- Online payment with accessible methods + pay/pick-up-at-store option.
+- User account and order history.
+
+### 6.2 Out of scope (future versions)
+
+- Loyalty / points program.
+- Customer credit and automatic invoicing (CFDI) — *evaluate whether it belongs in the MVP based on your operation*.
+- Fleet quotes.
+- Live support chat.
+- Desktop web version.
+
+---
+
+## 7. Functional requirements
+
+### 7.1 Product search (the heart of the app)
+
+This is the most important module. The customer must be able to search in **three ways**:
+
+1. **By part number / SKU / OEM code** — for mechanics who already know what they want.
+2. **By vehicle (make → model → year → engine/trim)** — for those who don't know the part number. The app filters the catalog and shows **only what's compatible** with that vehicle.
+3. **By category / free text** (e.g., "brake pads," "oil filter," "front shock absorber").
+
+Requirements:
+
+- Results in **under 2 seconds**.
+- Typo tolerance (so "amortigador" finds "amortiguador").
+- Voice search (desirable, not mandatory in the MVP).
+- Filters by part brand, price, and availability.
+
+### 7.2 Compatibility guarantee ("what I find is what I need")
+
+To deliver on the trust promise, the catalog needs a **vehicle-application database**: which SKU corresponds to which vehicles (make/model/year/engine).
+
+- When searching by vehicle, the app shows a clear badge: **"Compatible with your [vehicle]"**.
+- On the product detail page, display the list of compatible vehicles.
+- If there's any doubt, show a warning and a "confirm with an advisor" option.
+
+> ⚠️ **Critical project point:** this compatibility database is the most valuable asset and the biggest effort. We need to decide whether to build it in-house, buy/license an equivalence catalog, or load it gradually. It's the difference between an app that "works" and an app the customer trusts.
+
+### 7.3 Product detail page
+
+- Photo(s) of the part.
+- Name, brand, part number, and equivalents.
+- Price.
+- Availability / stock in real time (or near real time).
+- List of compatible vehicles.
+- Always-visible "Add to cart" button.
+
+### 7.4 Cart and checkout process
+
+- Add, remove, and modify quantities.
+- See subtotal, taxes, and a clear total.
+- Checkout in **the fewest possible steps** (ideally 2–3 screens).
+- Delivery options: **pick up at store** and/or **home delivery** (define based on your operation).
+
+### 7.5 Payment methods
+
+- Credit/debit card.
+- Cash payment at convenience stores (OXXO Pay / SPEI) — widely used in Mexico.
+- Bank transfer.
+- Cash on delivery or "pay at pickup" at the store.
+
+> *Requires integrating a payment gateway (e.g., Mercado Pago, Stripe, Clip, Conekta). To be defined based on fees and ease of use.*
+
+### 7.6 User account
+
+- Quick registration and login (phone, email, or social).
+- Saved "My vehicles" so they don't have to re-enter them.
+- Order history and one-click reorder capability.
+
+### 7.7 Admin panel (for you and your team)
+
+- Inventory and price synchronization with your current system.
+- Add/remove/edit products and stock.
+- View incoming orders.
+- Basic sales reports.
+
+---
+
+## 8. Non-functional requirements
+
+- **Performance:** searches < 2 s; smooth app loading on mid-range phones.
+- **Platforms:** Android and iOS (Android is the priority given the user base in Mexico).
+- **Catalog availability:** up-to-date inventory and price data (define whether real-time or periodic sync).
+- **Security:** payment data handled by a certified gateway (PCI-DSS), never stored directly by us.
+- **Scalability:** must support catalog and user growth without degrading.
+- **Usability:** a person with no technical experience must be able to buy without help.
+
+---
+
+## 9. Integration with current systems
+
+Key point to resolve with the development team:
+
+- What system do you use today for inventory / point of sale (ERP, POS)?
+- Does it have a way to export or connect the data (API, database, Excel/CSV file)?
+- How often do prices and stock change?
+
+The app **must be fed by your real inventory** so it doesn't sell what's out of stock or show outdated prices. If everything today sits in a closed system, defining the data bridge is part of the project.
+
+---
+
+## 10. Phased roadmap
+
+**Phase 0 — Data preparation (the most important and underestimated)**
+Catalog cleanup, SKU standardization, and building/loading the vehicle compatibility database.
+
+**Phase 1 — MVP**
+Search (all 3 ways), product detail page, cart, basic payment, and user account. Android launch.
+
+**Phase 2 — Sales improvements**
+More payment methods, shipping, one-click reorder, iOS launch.
+
+**Phase 3 — Loyalty**
+Loyalty program, promotions, customer credit, invoicing, fleets.
+
+---
+
+## 11. Risks and considerations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Disorganized catalog or no compatibility data | High — the app loses its trust promise | Invest in Phase 0 before coding |
+| Unsynced inventory | High — selling parts that aren't in stock | Properly define the integration with your system |
+| Low customer adoption | Medium | Train the counter staff to push the app; first-order incentives |
+| Payment gateway fees | Medium | Compare providers before choosing |
+| Overloading the MVP with features | Medium | Stay disciplined: an MVP focused on searching and buying |
+
+---
+
+## 12. Open questions to define
+
+1. What inventory / point-of-sale system do you use today, and does it allow connection?
+2. Do you already have vehicle compatibility data per SKU, or does it need to be built?
+3. Will you offer home delivery or pickup at the store only?
+4. Do you want invoicing (CFDI) inside the app from the start?
+5. Will you handle different prices for mechanics/wholesale vs. retail customers?
+6. What is your budget and target timeline for launch?
+
+---
+
+*This document is an initial draft meant to align the vision and to present to a development team or vendor. It should be refined with your real figures and the answers to the open questions.*
