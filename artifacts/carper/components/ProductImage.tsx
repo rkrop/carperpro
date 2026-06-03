@@ -87,8 +87,8 @@ export function ProductImage({
   }
 
   return (
-    <View style={[{ backgroundColor: c.neutral50, alignItems: "center", justifyContent: "center" }, style]}>
-      <MaterialCommunityIcons name={icon as any} size={iconSize} color={c.neutral300} />
+    <View style={[{ backgroundColor: c.neutral200, alignItems: "center", justifyContent: "center" }, style]}>
+      <MaterialCommunityIcons name={icon as any} size={iconSize} color={c.neutral500} />
     </View>
   );
 }
