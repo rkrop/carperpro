@@ -249,6 +249,10 @@ categoryId?: string;
 subcategoryId?: string;
 brand?: string;
 /**
+ * When "1"/"true", apply the natural-language search assist: if a free-text query yields few results, an AI layer rewrites the phrase into catalog keywords and re-runs the search. Falls back to plain search on any failure. Off by default (used by full result screens, not type-ahead).
+ */
+assist?: string;
+/**
  * When set, stock is reported for this sucursal only.
  */
 sucursalId?: string;

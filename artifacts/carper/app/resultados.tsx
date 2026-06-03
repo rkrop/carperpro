@@ -32,6 +32,10 @@ export default function Resultados() {
     categoryId: params.category || undefined,
     subcategoryId: params.subcategory || undefined,
     sucursalId: sucursal.id || undefined,
+    // Natural-language assist: when a free-text query (typed phrase or vehicle
+    // search like "tsuru 1992") comes up thin, let the API's AI layer rewrite it
+    // into catalog keywords. No-op for plain category/subcategory browsing.
+    assist: params.q ? "1" : undefined,
     limit: 200,
   });
 

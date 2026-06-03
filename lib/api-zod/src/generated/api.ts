@@ -79,6 +79,7 @@ export const ListProductsQueryParams = zod.object({
   "categoryId": zod.coerce.string().optional(),
   "subcategoryId": zod.coerce.string().optional(),
   "brand": zod.coerce.string().optional(),
+  "assist": zod.coerce.string().optional().describe('When \"1\"\/\"true\", apply the natural-language search assist: if a free-text query yields few results, an AI layer rewrites the phrase into catalog keywords and re-runs the search. Falls back to plain search on any failure. Off by default (used by full result screens, not type-ahead).'),
   "sucursalId": zod.coerce.string().optional().describe('When set, stock is reported for this sucursal only.'),
   "limit": zod.coerce.number().optional(),
   "offset": zod.coerce.number().optional()

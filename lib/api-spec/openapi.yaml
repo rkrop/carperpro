@@ -119,6 +119,17 @@ paths:
           required: false
           schema:
             type: string
+        - name: assist
+          in: query
+          required: false
+          description: >-
+            When "1"/"true", apply the natural-language search assist: if a
+            free-text query yields few results, an AI layer rewrites the phrase
+            into catalog keywords and re-runs the search. Falls back to plain
+            search on any failure. Off by default (used by full result screens,
+            not type-ahead).
+          schema:
+            type: string
         - name: sucursalId
           in: query
           required: false

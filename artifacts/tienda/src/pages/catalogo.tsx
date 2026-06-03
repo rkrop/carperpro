@@ -31,6 +31,10 @@ export default function Catalogo() {
     q: q || undefined,
     categoryId: categoryId || undefined,
     brand: brand || undefined,
+    // Natural-language assist: when a free-text query yields few results, the API
+    // rewrites the phrase into catalog keywords via AI. The interpretation is
+    // cached server-side so pagination stays consistent across pages.
+    assist: q ? "1" : undefined,
     limit,
     offset,
   };

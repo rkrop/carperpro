@@ -22,6 +22,8 @@ import {
   GetSyncStatusResponse,
 } from "@workspace/api-zod";
 import { effectivePrice, withIva } from "../lib/pricing";
+import { tokenizeQuery, buildFtsSearch, buildFallbackSearch } from "../lib/productSearch";
+import { interpretQuery } from "../lib/nlSearch";
 
 const router: IRouter = Router();
 
@@ -155,6 +157,12 @@ router.get("/sucursales", async (_req: Request, res: Response): Promise<void> =>
   res.json(data);
 });
 
+// When a shopper opts into AI assist, only invoke the language model if plain
+// search came back thin (this many results or fewer). Well-formed searches that
+// already work skip the AI entirely — keeping it cheap and guaranteeing assisted
+// search is never worse than today's search.
+const ASSIST_MIN_RESULTS = 6;
+
 router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const categoryId =
@@ -162,105 +170,99 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const subcategoryId =
     typeof req.query.subcategoryId === "string" ? req.query.subcategoryId : undefined;
   const brand = typeof req.query.brand === "string" ? req.query.brand : undefined;
+  // Opt-in natural-language assist. Enabled by the results/catalog screens, off
+  // for the type-ahead suggestions so keystroke latency stays instant.
+  const assist = req.query.assist === "1" || req.query.assist === "true";
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const offset = Number(req.query.offset) || 0;
 
-  const conditions: SQL[] = [notTestProduct(), sellableProduct()];
+  // Filters that apply regardless of the search terms. Kept separate from the
+  // search predicate so the AI-assist path can re-run the search with rewritten
+  // keywords while preserving the same category/brand scope.
+  const filterConditions: SQL[] = [notTestProduct(), sellableProduct()];
+  if (categoryId) filterConditions.push(eq(productsTable.categoryId, categoryId));
+  if (subcategoryId) filterConditions.push(eq(productsTable.subcategoryId, subcategoryId));
+  if (brand) filterConditions.push(eq(productsTable.brand, brand));
 
-  // Order is relevance-ranked when we run a full-text search, otherwise it falls
-  // back to alphabetical by name. `rankOrder` carries the ts_rank ordering when
-  // active.
+  // Run the catalog query for a given search predicate (may be empty for a
+  // pure browse/filter request) and relevance order. Returns the page rows plus
+  // the total match count.
+  async function runSearch(
+    searchConditions: SQL[],
+    rankOrder: SQL | null,
+  ): Promise<{ rows: DbProduct[]; total: number }> {
+    const where = and(...filterConditions, ...searchConditions);
+    // Deterministic order: relevance first when ranking, then name, then id as a
+    // final tiebreaker. Rows are unique by primary key, so no DISTINCT needed.
+    const orderBy: SQL[] = rankOrder
+      ? [rankOrder, sql`${productsTable.name} asc`, sql`${productsTable.id} asc`]
+      : [sql`${productsTable.name} asc`];
+    const rows = await db
+      .select()
+      .from(productsTable)
+      .where(where)
+      .orderBy(...orderBy)
+      .limit(limit)
+      .offset(offset);
+    const countRows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(productsTable)
+      .where(where);
+    return { rows, total: countRows[0]?.count ?? 0 };
+  }
+
+  // Build the plain (non-AI) search predicate from the raw query.
+  const searchConditions: SQL[] = [];
   let rankOrder: SQL | null = null;
-
+  let plainWords: string[] = [];
   if (q) {
-    // Connector stopwords that carry no search signal. Dropped so a phrase like
-    // "bomba de gasolina tsuru" doesn't force "de" to match and wrongly exclude
-    // a "BOMBA GASOLINA TSURU".
-    const STOPWORDS = new Set([
-      "de", "la", "el", "los", "las", "para", "con", "y", "o", "del", "un", "una",
-    ]);
-    // Sanitize: drop everything that isn't a unicode letter/number (this also
-    // strips the tsquery operators & | ! : ( ) ' " so to_tsquery can't choke on
-    // real-world input). Accents are kept here and removed by unaccent() in SQL,
-    // matching exactly how search_vector was built.
-    const allWords = q
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-      .split(/\s+/)
-      .filter((w) => w.length > 0);
-    const words = allWords.filter((w) => !STOPWORDS.has(w));
-
+    const { allWords, words } = tokenizeQuery(q);
+    plainWords = words;
     if (words.length > 0) {
-      // Full-text query: AND semantics + per-word prefix (foo:*), unaccented so
-      // it matches the stored vector built with to_tsvector('simple',
-      // unaccent(...)). Using the wrong config/accents would silently return 0.
-      const tsqueryStr = words.map((w) => `${w}:*`).join(" & ");
-      const tsquery = sql`to_tsquery('simple', unaccent(${tsqueryStr}))`;
-
-      // ILIKE safety net for partial SKU / OEM / part-number fragments only —
-      // full-text can't prefix-match a code typed mid-string. Restricted to
-      // sku/oem so we never reintroduce mid-word false positives in name/desc.
-      const skuHaystack = sql`unaccent(lower(
-        coalesce(${productsTable.sku}, '') || ' ' ||
-        coalesce(array_to_string(${productsTable.oem}, ' '), '')
-      ))`;
-      const netParts: SQL[] = [];
-      for (const w of words) {
-        const term = `%${w.replace(/([%_\\])/g, "\\$1")}%`;
-        netParts.push(sql`${skuHaystack} like unaccent(lower(${term}))`);
-      }
-      const ilikeNet = and(...netParts) as SQL;
-
-      conditions.push(
-        sql`(${productsTable.searchVector} @@ ${tsquery} or (${ilikeNet}))`,
-      );
-      // Weighted ts_rank ranks name/SKU (weight A) above brand/OEM (B) above
-      // description (C); SKU/OEM-only ILIKE-net hits rank 0 and sort last.
-      // coalesce(...,0) guards a transient NULL vector (pre-backfill) from
-      // sorting to the top under DESC's NULLS-FIRST default.
-      rankOrder = sql`coalesce(ts_rank(${productsTable.searchVector}, ${tsquery}), 0) desc`;
+      const fts = buildFtsSearch(words);
+      searchConditions.push(fts.condition);
+      rankOrder = fts.rankOrder;
     } else {
-      // Nothing searchable left after dropping stopwords/punctuation: fall back
-      // to the previous accent-insensitive substring AND match so search never
+      // Only stopwords/punctuation survived — substring fallback so search never
       // breaks or returns empty for inputs like "de la".
-      const haystack = sql`unaccent(lower(
-        coalesce(${productsTable.name}, '') || ' ' ||
-        coalesce(${productsTable.descripcion}, '') || ' ' ||
-        coalesce(${productsTable.sku}, '') || ' ' ||
-        coalesce(${productsTable.brand}, '') || ' ' ||
-        coalesce(array_to_string(${productsTable.oem}, ' '), '') || ' ' ||
-        coalesce(array_to_string(${productsTable.vehicles}, ' '), '')
-      ))`;
-      for (const w of allWords) {
-        const term = `%${w.replace(/([%_\\])/g, "\\$1")}%`;
-        conditions.push(sql`${haystack} like unaccent(lower(${term}))`);
+      searchConditions.push(...buildFallbackSearch(allWords));
+    }
+  }
+
+  let { rows, total } = await runSearch(searchConditions, rankOrder);
+
+  // AI assist: when the shopper opted in, the query has real terms, and plain
+  // search came back thin, ask the model to split the phrase into part + vehicle
+  // keywords and re-run. We try candidates from most specific (part + vehicle)
+  // to least (part only), and adopt the FIRST candidate that beats plain search.
+  // This prefers a precise "balatas para tsuru" match when the catalog has one,
+  // but still relaxes to "balatas" (the shopper's primary intent) rather than
+  // returning nothing when part and vehicle don't co-occur in product text.
+  // Any AI failure leaves the plain result untouched. The interpretation is
+  // cached, so paginated screens stay consistent across pages.
+  if (assist && plainWords.length > 0 && total < ASSIST_MIN_RESULTS) {
+    const interp = await interpretQuery(q);
+    if (interp) {
+      const candidates: string[][] = [];
+      const full = [...interp.parts, ...interp.vehicle];
+      if (full.length > 0) candidates.push(full);
+      if (interp.parts.length > 0) candidates.push(interp.parts);
+
+      // Skip candidates identical to the plain query or already tried.
+      const seen = new Set<string>([plainWords.join(" ")]);
+      for (const candidate of candidates) {
+        const key = candidate.join(" ");
+        if (key === "" || seen.has(key)) continue;
+        seen.add(key);
+        const aiFts = buildFtsSearch(candidate);
+        const aiResult = await runSearch([aiFts.condition], aiFts.rankOrder);
+        if (aiResult.total > total) {
+          ({ rows, total } = aiResult);
+          break;
+        }
       }
     }
   }
-  if (categoryId) conditions.push(eq(productsTable.categoryId, categoryId));
-  if (subcategoryId) conditions.push(eq(productsTable.subcategoryId, subcategoryId));
-  if (brand) conditions.push(eq(productsTable.brand, brand));
-  const where = and(...conditions);
-
-  // Deterministic order: relevance first when ranking, then name, then id as a
-  // final tiebreaker. Rows are unique by primary key, so no DISTINCT is needed.
-  const orderBy: SQL[] = rankOrder
-    ? [rankOrder, sql`${productsTable.name} asc`, sql`${productsTable.id} asc`]
-    : [sql`${productsTable.name} asc`];
-
-  const rows = await db
-    .select()
-    .from(productsTable)
-    .where(where)
-    .orderBy(...orderBy)
-    .limit(limit)
-    .offset(offset);
-
-  const countRows = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(productsTable)
-    .where(where);
-  const total = countRows[0]?.count ?? 0;
 
   const data = ListProductsResponse.parse({
     items: rows.map((r) => serializeProduct(r)),
