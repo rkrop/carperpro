@@ -30,6 +30,15 @@ export default function Producto() {
     if (product) addRecent(product);
   }, [product?.id]);
 
+  // Self-heal stale cart lines: if this part is in the cart at a higher qty than
+  // the current known stock (e.g. stock dropped since it was added), clamp it
+  // down. null stock = unknown = no cap.
+  useEffect(() => {
+    if (!product || product.stock == null) return;
+    const line = cart.items.find((i) => i.id === product.id);
+    if (line && line.qty > product.stock) cart.setQty(product.id, product.stock);
+  }, [product?.id, product?.stock]);
+
   if (isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: c.neutral50 }}>
@@ -65,7 +74,16 @@ export default function Producto() {
   const off = product.originalPrice ? discountPct(product.price, product.originalPrice) : 0;
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 16;
 
+  // How many of this part are already in the cart, and whether we've hit the
+  // known available count (null stock = unknown = no cap).
+  const inCart = cart.items.find((i) => i.id === product.id)?.qty ?? 0;
+  const atCap = product.stock != null && inCart >= product.stock;
+
   const onAdd = () => {
+    if (atCap) {
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     cart.add(product);
     setAdded(true);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -206,6 +224,17 @@ export default function Producto() {
             <View style={{ flex: 1, height: 56, borderWidth: 1, borderColor: c.success, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }}>
               <Feather name="check" size={16} color={c.success} />
               <Text style={{ fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: c.success }}>Agregado</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <AccentButton label="Ver Carrito" icon="shopping-cart" onPress={() => router.push("/carrito")} />
+            </View>
+          </View>
+        ) : atCap ? (
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flex: 1, height: 56, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground, textAlign: "center" }}>
+                {`Máximo disponible (${product.stock})`}
+              </Text>
             </View>
             <View style={{ flex: 1 }}>
               <AccentButton label="Ver Carrito" icon="shopping-cart" onPress={() => router.push("/carrito")} />

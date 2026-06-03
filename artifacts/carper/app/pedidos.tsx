@@ -19,7 +19,7 @@ export default function Pedidos() {
 
   const reorder = (lines: OrderLine[]) => {
     lines.forEach((l) =>
-      cart.add({ id: l.id, sku: l.sku, name: l.name, brand: "", price: l.price, image: null, categoryId: null }, l.qty),
+      cart.add({ id: l.id, sku: l.sku, name: l.name, brand: "", price: l.price, image: null, categoryId: null, stock: null }, l.qty),
     );
     router.push("/carrito");
   };

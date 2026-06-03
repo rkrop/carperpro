@@ -46,6 +46,7 @@ export default function Carrito() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 220 }}>
         <View style={{ backgroundColor: c.background, borderBottomWidth: 1, borderBottomColor: c.border }}>
           {cart.items.map((item) => {
+            const atMax = item.stock != null && item.qty >= item.stock;
             return (
               <View key={item.id} style={{ flexDirection: "row", gap: 16, padding: 20, borderBottomWidth: 1, borderBottomColor: c.border }}>
                 <Pressable onPress={() => router.push(`/producto/${item.id}`)} style={{ width: 80, height: 80, borderWidth: 1, borderColor: c.border }}>
@@ -63,10 +64,15 @@ export default function Carrito() {
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
                       <QtyButton icon="minus" onPress={() => cart.setQty(item.id, item.qty - 1)} />
                       <Text style={{ fontFamily: Fonts.mono, fontSize: 14, color: c.foreground, minWidth: 16, textAlign: "center" }}>{item.qty}</Text>
-                      <QtyButton icon="plus" onPress={() => cart.setQty(item.id, item.qty + 1)} />
+                      <QtyButton icon="plus" onPress={() => cart.setQty(item.id, item.qty + 1)} disabled={atMax} />
                     </View>
                     <Text style={{ fontFamily: Fonts.monoBold, fontSize: 15, letterSpacing: -0.5, color: c.foreground }}>{formatMXN(item.price * item.qty)}</Text>
                   </View>
+                  {atMax ? (
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 10, letterSpacing: 0.3, textTransform: "uppercase", color: c.primary, marginTop: 8 }}>
+                      {`Solo quedan ${item.stock} ${item.stock === 1 ? "pieza" : "piezas"}`}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
             );

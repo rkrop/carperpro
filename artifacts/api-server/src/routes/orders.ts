@@ -48,7 +48,7 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
   // Recompute prices from DB — never trust client-supplied economic values.
   const requestedIds = input.lines.map((l) => l.productId);
   const dbProducts = await db
-    .select({ id: productsTable.id, sku: productsTable.sku, name: productsTable.name, price: productsTable.price, costo: productsTable.costo })
+    .select({ id: productsTable.id, sku: productsTable.sku, name: productsTable.name, price: productsTable.price, costo: productsTable.costo, stock: productsTable.erpStockQty })
     .from(productsTable)
     .where(inArray(productsTable.id, requestedIds));
 
@@ -59,13 +59,47 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  // Normalize quantities to a positive integer (mirrors the Stripe path). This
+  // is what defends the stock check below: without it, a negative/zero/
+  // fractional qty could offset a positive line in the per-product sum and slip
+  // past the guard.
+  const normalizedQty = (qty: number): number => Math.max(1, Math.floor(qty));
+
+  // Stock guard for the non-card path (cash / SPEI). Enforce against the local
+  // ERP-mirrored count, the same source the app's quantity cap uses: a known
+  // count (erpStockQty not null) can't be exceeded, while unknown stock (null)
+  // stays orderable. Quantities are summed per product so the same part split
+  // across lines can't slip past. The card/Stripe path keeps its stricter
+  // live-ERP gate.
+  const requestedByProduct = new Map<string, number>();
+  for (const l of input.lines) {
+    requestedByProduct.set(l.productId, (requestedByProduct.get(l.productId) ?? 0) + normalizedQty(l.qty));
+  }
+  const shortfalls = dbProducts.filter(
+    (p) => p.stock != null && (requestedByProduct.get(p.id) ?? 0) > p.stock,
+  );
+  if (shortfalls.length > 0) {
+    const detail = shortfalls.map((p) => `${p.name} (disponible: ${p.stock})`).join(", ");
+    res.status(409).json({
+      error: `Algunos productos ya no están disponibles en la cantidad solicitada: ${detail}. Actualiza tu carrito e inténtalo de nuevo.`,
+      items: shortfalls.map((p) => ({
+        productId: p.id,
+        sku: p.sku,
+        name: p.name,
+        requested: requestedByProduct.get(p.id) ?? 0,
+        available: p.stock,
+      })),
+    });
+    return;
+  }
+
   const lines: OutboundOrderLine[] = input.lines.map((l) => {
     const dbP = priceMap.get(l.productId)!;
     return {
       productId: dbP.id,
       sku: dbP.sku,
       name: dbP.name,
-      qty: l.qty,
+      qty: normalizedQty(l.qty),
       price: effectivePrice(dbP), // authoritative ERP-mirrored price (precio venta, else costo)
     };
   });

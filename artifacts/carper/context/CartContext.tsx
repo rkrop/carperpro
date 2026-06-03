@@ -12,6 +12,9 @@ export interface CartItem {
   price: number;
   image: ImageSourcePropType | null;
   categoryId: string | null;
+  /** Known available units captured when added. null = unknown (no cap),
+   * a number caps how many of this part may sit in the cart. */
+  stock: number | null;
   qty: number;
 }
 
@@ -59,10 +62,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const add = (product: CartProduct, qty: number = 1) => {
     setItems((prev) => {
+      // null stock = unknown availability, so no cap; a number caps the line.
+      const cap = product.stock == null ? Infinity : Math.max(0, product.stock);
+      if (cap <= 0) return prev; // confirmed out of stock — nothing to add
       const existing = prev.find((i) => i.id === product.id);
       const next = existing
-        ? prev.map((i) => (i.id === product.id ? { ...i, ...product, qty: i.qty + qty } : i))
-        : [...prev, { ...product, qty }];
+        ? prev.map((i) =>
+            i.id === product.id ? { ...i, ...product, qty: Math.min(i.qty + qty, cap) } : i,
+          )
+        : [...prev, { ...product, qty: Math.min(qty, cap) }];
       save(next);
       return next;
     });
@@ -78,7 +86,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const setQty = (id: string, qty: number) => {
     setItems((prev) => {
-      const next = qty <= 0 ? prev.filter((i) => i.id !== id) : prev.map((i) => (i.id === id ? { ...i, qty } : i));
+      const item = prev.find((i) => i.id === id);
+      // Cap to the line's known availability (null = unknown = no cap). This
+      // also clamps a stale/restored line down to the current count.
+      const cap = item && item.stock != null ? Math.max(0, item.stock) : Infinity;
+      const clamped = Math.min(qty, cap);
+      const next =
+        clamped <= 0
+          ? prev.filter((i) => i.id !== id)
+          : prev.map((i) => (i.id === id ? { ...i, qty: clamped } : i));
       save(next);
       return next;
     });
