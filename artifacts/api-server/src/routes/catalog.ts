@@ -19,7 +19,7 @@ import {
   GetDealsResponse,
   GetSyncStatusResponse,
 } from "@workspace/api-zod";
-import { effectivePrice } from "../lib/pricing";
+import { effectivePrice, withIva } from "../lib/pricing";
 
 const router: IRouter = Router();
 
@@ -78,7 +78,12 @@ function serializeProduct(row: DbProduct): Record<string, unknown> {
     name: row.name,
     brand: row.brand,
     price: effectivePrice(row),
-    originalPrice: row.originalPrice ?? null,
+    // Strike-through "precio anterior" must carry IVA too, so the displayed
+    // discount stays consistent with the IVA-included current price.
+    originalPrice:
+      row.originalPrice && row.originalPrice > 0
+        ? withIva(row.originalPrice)
+        : null,
     stock: qty ?? null,
     stockState,
     categoryId: row.categoryId ?? null,

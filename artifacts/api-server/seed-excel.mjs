@@ -1,6 +1,25 @@
 /**
- * Seeds the DB from the Excel inventory snapshot.
- * Run: node seed-excel.mjs
+ * Seeds the DB to be an EXACT mirror of the two current Admintotal inventory
+ * exports (one file per warehouse: Bodega + Matriz).
+ *
+ *   node seed-excel.mjs
+ *
+ * What it does:
+ *   1. Aggregates both Excel files by "Código" (the product SKU). A product can
+ *      appear in both warehouse files: stock (Disponible) is SUMMED across them,
+ *      price/cost take the MAX (one warehouse often exports 0 when no price is
+ *      assigned there).
+ *   2. Stores the BASE price ("Precio Venta MXN", sin IVA) — the same convention
+ *      the ERP sync and the price/stock webhook use. The customer-facing IVA is
+ *      added at read time in `effectivePrice`, so the path stays consistent.
+ *   3. Matches existing rows by SKU to PRESERVE their Admintotal numeric `id`
+ *      (so the ERP sync/webhook keep aligning by id/sku) and their enrichment
+ *      (brand, image, descripcion, oem, vehicles, original_price, category).
+ *      Only the Excel-provided fields are updated: name, price, costo, proveedor,
+ *      sku_proveedor, erp_stock_qty.
+ *   4. DELETES every product whose SKU is NOT in the Excel — making the catalog
+ *      an exact mirror of the current ERP catalog (removes stale/discontinued
+ *      rows that the rate-limited full sync never got to prune).
  */
 import { createRequire } from "module";
 import { readFileSync } from "fs";
@@ -10,19 +29,29 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// pg from lib/db (shared dep in monorepo)
 const { Pool } = require("../../lib/db/node_modules/pg/lib/index.js");
-// xlsx is a declared dependency of this package (resolved from the pnpm store)
 const { read: xlsxRead, utils } = require("xlsx");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-/**
- * Repairs UTF-8 text that was double-encoded as Latin-1 (mojibake), e.g.
- * "Ficha tÃ©cnica" → "Ficha técnica".  Only applies the fix when the string is
- * provably a Latin-1 view of valid UTF-8 bytes (roundtrip check), so correct
- * ASCII and correctly-encoded accented strings pass through untouched.
- */
+const FILES = ["productos-001.xlsx", "productos-005.xlsx"];
+const IVA_RATE = 0.16;
+
+// ── Safety guardrails for the destructive (exact-mirror) phase ────────────────
+// This script DELETES every product not present in the Excel. If the wrong/empty
+// files are passed it could wipe the catalog, so two gates protect a real run:
+//   • MIN_PRODUCTS  – abort if the aggregated Excel yields fewer than this.
+//   • MAX_DELETE_PCT – abort if the delete would remove more than this share of
+//     the current catalog.
+// Bypass with `--force` (or SEED_FORCE=1). Preview without writing with
+// `--dry-run` (or SEED_DRY_RUN=1).
+const MIN_PRODUCTS = 5000;
+const MAX_DELETE_PCT = 0.7;
+const FORCE = process.argv.includes("--force") || process.env.SEED_FORCE === "1";
+const DRY_RUN =
+  process.argv.includes("--dry-run") || process.env.SEED_DRY_RUN === "1";
+
+/** Repair double-encoded UTF-8 (Latin-1 mojibake), roundtrip-checked. */
 function fixEncoding(value) {
   if (typeof value !== "string" || value.length === 0) return value;
   let decoded;
@@ -53,147 +82,272 @@ function slugify(name) {
   );
 }
 
-async function query(text, params) {
-  const client = await pool.connect();
-  try {
-    return await client.query(text, params);
-  } finally {
-    client.release();
-  }
+/** Normalize a category name for matching against existing ERP categories. */
+function normName(name) {
+  return fixEncoding(String(name ?? ""))
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+function num(v) {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+function str(v) {
+  return v === null || v === undefined ? "" : String(v).trim();
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
 }
 
 async function main() {
-  const filePath = resolve(__dirname, "../../attached_assets/inventario_carper_1780375030669.xlsx");
-  console.log("Reading Excel:", filePath);
+  // ── 1. Read + aggregate both warehouse files by Código ──────────────────────
+  const map = new Map(); // code -> aggregated product
+  for (const f of FILES) {
+    const filePath = resolve(__dirname, "../../attached_assets/", f);
+    const buf = readFileSync(filePath);
+    const wb = xlsxRead(buf, { type: "buffer" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = utils.sheet_to_json(ws, { defval: null });
+    console.log(`Read ${rows.length} rows from ${f}`);
 
-  const buf = readFileSync(filePath);
-  const wb = xlsxRead(buf, { type: "buffer" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rawRows = utils.sheet_to_json(ws, { defval: null });
-  console.log(`Loaded ${rawRows.length} rows`);
-
-  // Collect unique categories and brands
-  const catMap = new Map();
-  const brandSet = new Set();
-  for (const row of rawRows) {
-    if (row.categoria) {
-      const cat = fixEncoding(String(row.categoria).trim());
-      catMap.set(slugify(cat), cat);
+    for (const row of rows) {
+      const code = str(row["Código"]);
+      if (!code) continue;
+      const cur =
+        map.get(code) ??
+        {
+          code,
+          name: "",
+          linea: "",
+          priceBase: 0,
+          neto: 0,
+          costo: 0,
+          stock: 0,
+          proveedor: "",
+          origen: "",
+        };
+      const name = fixEncoding(str(row["Descripción"]));
+      const linea = fixEncoding(str(row["Línea"]));
+      const proveedor = fixEncoding(str(row["Proveedor"]));
+      const origen = str(row["Código Origen"]);
+      if (name && !cur.name) cur.name = name;
+      if (linea && !cur.linea) cur.linea = linea;
+      if (proveedor && !cur.proveedor) cur.proveedor = proveedor;
+      if (origen && !cur.origen) cur.origen = origen;
+      cur.priceBase = Math.max(cur.priceBase, num(row["Precio Venta MXN"]));
+      cur.neto = Math.max(cur.neto, num(row["Precio Neto MXN"]));
+      cur.costo = Math.max(cur.costo, num(row["Costo Promedio"]));
+      cur.stock += Math.max(0, Math.round(num(row["Disponible"])));
+      map.set(code, cur);
     }
-    if (row.marca) brandSet.add(fixEncoding(String(row.marca).trim()));
   }
+  console.log(`Aggregated ${map.size} unique products (by Código).`);
 
-  // ── 1. Ensure the single Carper store exists ────────────────────────────────
-  // Carper is ONE physical store. All Excel stock lives under this canonical
-  // sentinel branch ("matriz"); the app reads stock with no branch filter, so it
-  // sums across whatever branches exist. Keeping exactly one branch here avoids
-  // splitting the canonical stock.
-  await query(
-    `INSERT INTO sucursales(id, name, address, city, hours)
-     VALUES($1,$2,$3,$4,$5)
-     ON CONFLICT(id) DO UPDATE SET
-       name=EXCLUDED.name, address=EXCLUDED.address,
-       city=EXCLUDED.city, hours=EXCLUDED.hours`,
-    [
-      "matriz",
-      "Carper Autopartes",
-      "Blvd. Ignacio Ramírez 290, Ciudad Obregón, Sonora, CP 85160",
-      "Ciudad Obregón, Sonora",
-      "Lun-Vie 8:00-18:00 · Sáb 8:00-14:00",
-    ]
-  );
-
-  // ── 2. Categories ──────────────────────────────────────────────────────────
-  console.log(`Upserting ${catMap.size} categories…`);
-  for (const [id, name] of catMap) {
-    await query(
-      `INSERT INTO categories(id, name, icon, count)
-       VALUES($1,$2,'cog-outline',0)
-       ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name`,
-      [id, name]
+  // Guardrail 1: refuse to mirror from an implausibly small export (wrong/empty
+  // files) — that would otherwise wipe most of the catalog.
+  if (map.size < MIN_PRODUCTS && !FORCE) {
+    throw new Error(
+      `Aborting: only ${map.size} products aggregated (< MIN_PRODUCTS=${MIN_PRODUCTS}). ` +
+        `Check the Excel files. Re-run with --force to override.`,
     );
   }
 
-  // ── 3. Brands ──────────────────────────────────────────────────────────────
-  console.log(`Upserting ${brandSet.size} brands…`);
-  for (const name of brandSet) {
-    await query(
-      `INSERT INTO brands(name) VALUES($1) ON CONFLICT(name) DO NOTHING`,
-      [String(name)]
-    );
+  // Finalize: derive base price from neto when a base wasn't exported, and a
+  // safe fallback name so NOT NULL never trips.
+  for (const p of map.values()) {
+    if (p.priceBase === 0 && p.neto > 0) p.priceBase = round2(p.neto / (1 + IVA_RATE));
+    if (!p.name) p.name = p.code;
   }
 
-  // ── 4. Products ────────────────────────────────────────────────────────────
-  console.log("Upserting products…");
-  let inserted = 0, skipped = 0;
-
-  for (const row of rawRows) {
-    if (!row.sku || !row.nombre) { skipped++; continue; }
-
-    const id = String(row.sku).trim();
-    const name = fixEncoding(String(row.nombre).trim());
-    const brand = row.marca ? fixEncoding(String(row.marca).trim()) : "SIN MARCA";
-    const categoryId = row.categoria ? slugify(fixEncoding(String(row.categoria).trim())) : null;
-    const price = typeof row.precio_venta === "number" ? row.precio_venta : 0;
-    const costo = typeof row.costo === "number" ? row.costo : null;
-    const stock = typeof row.stock === "number" ? Math.max(0, Math.round(row.stock)) : 0;
-    const descripcion = row.descripcion ? fixEncoding(String(row.descripcion).trim()) : null;
-    const proveedor = row.proveedor ? fixEncoding(String(row.proveedor).trim()) : null;
-    const skuProveedor = row.sku_proveedor ? String(row.sku_proveedor).trim() : null;
-    const imagen_url = row.imagen_url ? String(row.imagen_url).trim() : null;
-
-    await query(
-      `INSERT INTO products(id, sku, name, brand, category_id, price, costo,
-         proveedor, sku_proveedor, descripcion, image, specs, compatible,
-         vehicles, oem, equivalents, updated_at)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'[]'::jsonb,false,'{}',
-              $12, null, now())
+  const client = await pool.connect();
+  try {
+    // ── 2. Single Carper store ────────────────────────────────────────────────
+    await client.query(
+      `INSERT INTO sucursales(id, name, address, city, hours)
+       VALUES($1,$2,$3,$4,$5)
        ON CONFLICT(id) DO UPDATE SET
-         sku=$2, name=$3, brand=$4, category_id=$5, price=$6,
-         costo=$7, proveedor=$8, sku_proveedor=$9,
-         descripcion=$10, image=$11, oem=$12`,
-      [id, id, name, brand, categoryId, price, costo,
-       proveedor, skuProveedor, descripcion, imagen_url,
-       row.codigo_oem ? [String(row.codigo_oem)] : null]
+         name=EXCLUDED.name, address=EXCLUDED.address,
+         city=EXCLUDED.city, hours=EXCLUDED.hours`,
+      [
+        "matriz",
+        "Carper Autopartes",
+        "Blvd. Ignacio Ramírez 290, Ciudad Obregón, Sonora, CP 85160",
+        "Ciudad Obregón, Sonora",
+        "Lun-Vie 8:00-18:00 · Sáb 8:00-14:00",
+      ],
     );
 
-    // Inventory
-    if (stock > 0) {
-      await query(
-        `INSERT INTO inventory(product_id, sucursal_id, quantity)
-         VALUES($1,'matriz',$2)
-         ON CONFLICT(product_id, sucursal_id) DO UPDATE SET quantity=$2`,
-        [id, stock]
+    // ── 3. Category name -> id map (ERP categories use numeric linea ids) ──────
+    const catRes = await client.query(`SELECT id, name FROM categories`);
+    const catByName = new Map();
+    for (const r of catRes.rows) catByName.set(normName(r.name), r.id);
+
+    // Create any Línea present in the Excel but missing from the categories table
+    // so new products always have a valid category reference.
+    const missingLineas = new Map(); // norm -> raw name
+    for (const p of map.values()) {
+      if (!p.linea) continue;
+      const key = normName(p.linea);
+      if (!catByName.has(key) && !missingLineas.has(key))
+        missingLineas.set(key, p.linea);
+    }
+    for (const [key, raw] of missingLineas) {
+      const id = slugify(raw);
+      await client.query(
+        `INSERT INTO categories(id, name, icon, count)
+         VALUES($1,$2,'cog-outline',0)
+         ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name`,
+        [id, raw],
+      );
+      catByName.set(key, id);
+    }
+
+    // ── 4. Existing SKU -> id map (preserve Admintotal numeric ids) ───────────
+    const skuRes = await client.query(
+      `SELECT sku, id FROM products WHERE sku <> ''`,
+    );
+    const idBySku = new Map();
+    for (const r of skuRes.rows) idBySku.set(r.sku, r.id);
+
+    // ── 5. Upsert products (batched) ──────────────────────────────────────────
+    // On conflict we update ONLY Excel-provided columns and preserve enrichment
+    // (brand, category_id, image, original_price, descripcion, oem, vehicles).
+    const products = [];
+    const keepIds = [];
+    let existingMatched = 0;
+    for (const p of map.values()) {
+      const id = idBySku.get(p.code) ?? p.code;
+      if (idBySku.has(p.code)) existingMatched++;
+      keepIds.push(id);
+      products.push({
+        id,
+        sku: p.code,
+        name: p.name,
+        categoryId: p.linea ? catByName.get(normName(p.linea)) ?? null : null,
+        price: round2(p.priceBase),
+        costo: p.costo > 0 ? round2(p.costo) : null,
+        proveedor: p.proveedor || null,
+        skuProveedor: p.origen || null,
+        stock: p.stock,
+      });
+    }
+
+    // Guardrail 2: reject a run that would prune more than MAX_DELETE_PCT of the
+    // current catalog (likely an incomplete export). Also powers the dry-run.
+    const totalRes = await client.query(
+      `SELECT count(*)::int AS n FROM products`,
+    );
+    const currentTotal = totalRes.rows[0].n;
+    const wouldDelete = Math.max(0, currentTotal - existingMatched);
+    const deletePct = currentTotal > 0 ? wouldDelete / currentTotal : 0;
+    console.log(
+      `Plan: ${products.length} upserts (${existingMatched} existing, ` +
+        `${products.length - existingMatched} new), ${wouldDelete} deletes ` +
+        `(${(deletePct * 100).toFixed(1)}% of ${currentTotal}).`,
+    );
+    if (deletePct > MAX_DELETE_PCT && !FORCE) {
+      throw new Error(
+        `Aborting: delete would remove ${(deletePct * 100).toFixed(1)}% of the ` +
+          `catalog (> MAX_DELETE_PCT=${MAX_DELETE_PCT * 100}%). ` +
+          `Check the Excel files. Re-run with --force to override.`,
       );
     }
+    if (DRY_RUN) {
+      console.log("Dry run — no changes written. Exiting.");
+      return;
+    }
 
-    inserted++;
-    if (inserted % 500 === 0) process.stdout.write(`  ${inserted}/${rawRows.length}\r`);
+    const COLS = 10;
+    const BATCH = 400;
+    let done = 0;
+    for (let i = 0; i < products.length; i += BATCH) {
+      const chunk = products.slice(i, i + BATCH);
+      const values = [];
+      const params = [];
+      chunk.forEach((p, j) => {
+        const b = j * COLS;
+        // id, sku, name, brand, category_id, price, costo, proveedor,
+        // sku_proveedor, erp_stock_qty  + literals
+        values.push(
+          `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},now(),'[]'::jsonb,false,'{}'::text[],now())`,
+        );
+        params.push(
+          p.id,
+          p.sku,
+          p.name,
+          "SIN MARCA",
+          p.categoryId,
+          p.price,
+          p.costo,
+          p.proveedor,
+          p.skuProveedor,
+          p.stock,
+        );
+      });
+      await client.query(
+        `INSERT INTO products
+           (id, sku, name, brand, category_id, price, costo, proveedor,
+            sku_proveedor, erp_stock_qty, stock_updated_at, specs, compatible,
+            vehicles, updated_at)
+         VALUES ${values.join(",")}
+         ON CONFLICT(id) DO UPDATE SET
+           sku=EXCLUDED.sku,
+           name=EXCLUDED.name,
+           price=EXCLUDED.price,
+           costo=EXCLUDED.costo,
+           proveedor=EXCLUDED.proveedor,
+           sku_proveedor=COALESCE(EXCLUDED.sku_proveedor, products.sku_proveedor),
+           erp_stock_qty=EXCLUDED.erp_stock_qty,
+           stock_updated_at=now(),
+           updated_at=now()`,
+        params,
+      );
+      done += chunk.length;
+      process.stdout.write(`  upserted ${done}/${products.length}\r`);
+    }
+    console.log(`\nUpserted ${products.length} products.`);
+
+    // ── 6. Delete everything not in the Excel (exact mirror) ──────────────────
+    await client.query(`CREATE TEMP TABLE keep_ids(id text PRIMARY KEY)`);
+    for (let i = 0; i < keepIds.length; i += BATCH) {
+      const chunk = keepIds.slice(i, i + BATCH);
+      const values = chunk.map((_, j) => `($${j + 1})`).join(",");
+      await client.query(
+        `INSERT INTO keep_ids(id) VALUES ${values} ON CONFLICT DO NOTHING`,
+        chunk,
+      );
+    }
+    const del = await client.query(
+      `DELETE FROM products WHERE id NOT IN (SELECT id FROM keep_ids)`,
+    );
+    console.log(`Deleted ${del.rowCount} products not present in the Excel.`);
+
+    // Drop orphaned per-sucursal inventory + stray branches (single-store model).
+    await client.query(`DELETE FROM inventory WHERE sucursal_id <> 'matriz'`);
+    await client.query(`DELETE FROM sucursales WHERE id <> 'matriz'`);
+    await client.query(
+      `DELETE FROM inventory WHERE product_id NOT IN (SELECT id FROM products)`,
+    );
+
+    // ── 7. Recompute category counts ──────────────────────────────────────────
+    await client.query(
+      `UPDATE categories SET count = (
+         SELECT count(*) FROM products WHERE products.category_id = categories.id
+       )`,
+    );
+
+    const total = await client.query(`SELECT count(*)::int AS n FROM products`);
+    console.log(`Done ✓  Catalog now holds ${total.rows[0].n} products.`);
+  } finally {
+    client.release();
+    await pool.end();
   }
-
-  // ── 4b. Single store: drop stray branches + orphaned inventory ─────────────
-  // Re-running must leave EXACTLY one store. Inventory has no FK to sucursales,
-  // so we explicitly remove any inventory not under "matriz" (e.g. rows left by a
-  // previous ERP sync) before removing the extra branches themselves.
-  console.log("\nReducing to a single store (removing stray branches)…");
-  const invDel = await query(`DELETE FROM inventory WHERE sucursal_id <> 'matriz'`);
-  const sucDel = await query(`DELETE FROM sucursales WHERE id <> 'matriz'`);
-  console.log(`  Removed ${invDel.rowCount} stray inventory rows, ${sucDel.rowCount} branches.`);
-
-  // ── 5. Category counts ─────────────────────────────────────────────────────
-  console.log(`Inserted ${inserted}, skipped ${skipped}. Updating category counts…`);
-  await query(
-    `UPDATE categories SET count = (
-       SELECT count(*) FROM products WHERE products.category_id = categories.id
-     )`
-  );
-
-  // ── 6. Rebuild search_vector (trigger fires on UPDATE, touch all rows) ─────
-  console.log("Rebuilding search vectors…");
-  await query(`UPDATE products SET updated_at = now()`);
-
-  console.log("Done ✓");
-  await pool.end();
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

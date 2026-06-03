@@ -1,25 +1,40 @@
 ---
 name: Excel seed script
-description: How the inventory Excel was seeded into Postgres; key constraints for re-runs.
+description: How seed-excel.mjs mirrors the DB to the Admintotal Excel exports, and the IVA read-boundary convention.
 ---
 
-Run: `node seed-excel.mjs` from `artifacts/api-server/` (plain ESM, no tsx).
+# Excel seed (`artifacts/api-server/seed-excel.mjs`)
 
-**Dependencies:**
-- pg: `../../lib/db/node_modules/pg/lib/index.js`
-- xlsx: `require("xlsx")` — it is a declared dep of `@workspace/api-server`, resolved from the pnpm store. Do NOT hardcode `/tmp/node_modules` (ephemeral, wiped between sessions).
-- Excel: `attached_assets/inventario_carper_1780375030669.xlsx`
+Run from `artifacts/api-server` with `node seed-excel.mjs`. It makes the
+`products` table an **exact mirror** of the current Admintotal catalog as given
+by the warehouse Excel exports in `attached_assets/`.
 
-**Why:** tsx/ts-node not available in this monorepo. Plain .mjs avoids compile step.
+- **Source files:** stable names `productos-001.xlsx` (Bodega) + `productos-005.xlsx`
+  (Matriz). These two together = ALL current Admintotal products. Replace the
+  contents of both files (keep the names) to re-mirror. The old single backup
+  `inventario_carper_*.xlsx` was deleted — do not reintroduce it.
+- **Column keys (exact):** `Código`(sku), `Descripción`(name), `Línea`(category),
+  `Precio Venta MXN`(base price, sin IVA), `Precio Neto MXN`(con IVA),
+  `Costo Promedio`, `Disponible`(stock), `Proveedor`, `Código Origen`(sku_proveedor).
+- **Aggregation:** a `Código` can appear in BOTH files (same product, 2 warehouses).
+  stock = SUM(Disponible) across files; price/costo = MAX (one warehouse often
+  exports 0). Base price falls back to `Precio Neto / 1.16` when venta is 0.
+- **Preserves enrichment:** matches existing rows by SKU to keep the Admintotal
+  numeric `id` + brand/image/descripcion/oem/vehicles/original_price/category.
+  ON CONFLICT updates ONLY Excel fields (sku,name,price,costo,proveedor,
+  sku_proveedor coalesce, erp_stock_qty). New products get brand `SIN MARCA`.
+- **Exact mirror = it DELETES** every product whose id is not in the Excel (uses a
+  TEMP `keep_ids` table — NOTE: no transaction wraps the script, so the temp table
+  must NOT use `ON COMMIT DROP` or it vanishes before the inserts).
+- Categories matched by normalized `Línea` name → existing numeric ERP id; missing
+  ones created as slug categories. Single `matriz` sucursal; `inventory` table dead.
 
-**How to apply:** If re-seeding after schema changes, run the same script — all inserts are ON CONFLICT upserts.
+# IVA convention (the key rule)
 
-## Single-store invariant (Carper has ONE physical store)
-The seed creates exactly one canonical sucursal `id='matriz'` (real Carper identity) and, at the end, deletes `inventory WHERE sucursal_id <> 'matriz'` then `sucursales WHERE id <> 'matriz'`. So a re-run always leaves one store with no orphaned inventory.
-**Why:** the app reads stock with no branch filter and sums across whatever branches exist (`catalog.ts` stockExpr); extra branches would split the canonical stock. `inventory` has NO FK to `sucursales`, so orphans must be deleted explicitly.
-**Interaction with ERP sync:** the live Admintotal sync re-adds ERP branches (almacenes) and can prune `matriz` inventory; that's accepted because the app sums all branches regardless. `seed-excel.mjs` is the single canonical seed (the duplicate `src/scripts/seed-excel.ts` was removed). This Excel seed is a MANUAL, one-time bootstrap/fallback only — NOT wired into dev/build/start; the running catalog is maintained by the Admintotal sync + webhooks.
-
-## Encoding (mojibake) repair
-The Excel cells contain double-encoded text (UTF-8 bytes stored as Latin-1), e.g. "Ficha tÃ©cnica". The seed script's `fixEncoding()` repairs this with a roundtrip-validated `Buffer.from(s,'latin1').toString('utf8')` — only applies when `Buffer.from(decoded,'utf8').toString('latin1') === original` and no U+FFFD, so correct strings are never corrupted. Applied to category/brand names, product name, descripcion, proveedor.
-
-**Why roundtrip check:** blindly applying latin1→utf8 corrupts already-correct accented strings (a real "É" becomes U+FFFD). The roundtrip proves the string was genuinely double-encoded before fixing.
+Prices are stored EVERYWHERE as the **base price (sin IVA)** — seed, ERP sync,
+mapper, and the price/stock webhook all write base. The 16% IVA is added at the
+**single read boundary** `effectivePrice()` in `src/lib/pricing.ts` via
+`withIva()` (IVA_RATE=0.16). catalog/orders/stripe all read through
+`effectivePrice`, so the customer sees Precio Neto. `serializeProduct` also wraps
+`originalPrice` in `withIva()`. **Why:** keeps ingestion paths zero-risk (no
+double-IVA) while showing IVA-inclusive prices. Do NOT add IVA in ingestion.
