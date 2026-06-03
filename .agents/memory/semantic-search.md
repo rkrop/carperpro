@@ -68,4 +68,26 @@ is read-only, so the agent cannot enable it either. Replit prod DB is Neon-backe
 before republishing. The supported path is Replit Support enabling it once; then
 republish (the migration adds the column cleanly). The only agent-side alternative
 is dropping the extension-typed column from the schema (loses the feature). Carper
-chose to keep semantic search and enable pgvector in prod via Support.
+chose to keep semantic search; pgvector was enabled in prod by the user running
+`CREATE EXTENSION vector;` over the prod connection string (Database → Production →
+Settings → Environment variables → DATABASE_URL) in an external client.
+
+## Publish blocker #2 — HNSW index opclass is dropped by the diff
+After pgvector was enabled, the next publish failed on
+`CREATE INDEX products_embedding_hnsw ON products USING hnsw ("embedding")` with
+"data type vector has no default operator class for access method hnsw". **Why:**
+the HNSW index is created out-of-band at runtime (`ensure-embedding-setup.ts`,
+WITH `vector_cosine_ops`), NOT in the Drizzle schema. The publish diff is
+introspection-based (dev DB vs prod DB) — proof: it emits the runtime index NAME
+`products_embedding_hnsw`, not a drizzle-generated name — and the introspection
+DROPS the `vector_cosine_ops` opclass, so the regenerated CREATE INDEX is invalid.
+The migration is TRANSACTIONAL, so the failed index rolls back the ADD COLUMN too
+(prod ends up with neither column). Declaring the index in the Drizzle schema does
+NOT fix it (introspection reads the DB, not the schema file).
+**How to apply:** pre-create the column AND index in PROD so dev/prod match and the
+diff stops emitting the broken statement — run over the prod connection:
+`ALTER TABLE products ADD COLUMN IF NOT EXISTS embedding vector(768);` then
+`CREATE INDEX IF NOT EXISTS products_embedding_hnsw ON products USING hnsw (embedding vector_cosine_ops);`
+Then republish (only the plain `descripcion_generada` text column remains in the
+diff). Fully-automated alternative = drop the HNSW index from dev + runtime so it's
+never in the diff (semantic search falls back to a sequential scan).
