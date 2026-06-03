@@ -138,3 +138,15 @@ Admintotal API if one is ever enabled). The mobile app renders photos via
 `artifacts/carper/components/ProductImage.tsx` — which uses **expo-image** with
 `cachePolicy="memory-disk"` so a photo downloads once and repeat views are
 instant (the old RN `Image` had no disk cache → it re-fetched every time).
+
+**Confirmed by a live dump of `productos/{id}/`** (every top-level key): the ONLY
+image field is `imagen_url`; there is no imagenes/medios/galeria/documentos array.
+The single image lives in GCS under `.../carper/documentos/<name>_<rand>.jpg`, so
+the extra photos a merchant sees in the web admin are attachments in the product's
+"Documentos" area — not exposed by v2 (documentos endpoints 404). The webhook
+"Creación de productos" body confirms the same single `imagen_url`.
+
+**Unused-but-available fields worth surfacing later:** `descripcion_ecommerce`
+(rich text, e.g. "APLICACIONES: Cummins / Freightliner / Kenworth / Mack" — the
+vehicle fitment list), `marca`, `porcentaje_iva`/`porcentaje_ieps`, `precio_neto`.
+We currently don't map `descripcion_ecommerce`; it's a quick catalog-quality win.
