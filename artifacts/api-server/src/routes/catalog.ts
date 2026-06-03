@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   productsTable,
@@ -41,14 +41,31 @@ router.get("/categories", async (_req: Request, res: Response): Promise<void> =>
 router.get("/subcategories", async (req: Request, res: Response): Promise<void> => {
   const categoryId =
     typeof req.query.categoryId === "string" ? req.query.categoryId : undefined;
-  // Only surface subcategories that actually have sellable products in them, so
-  // the second-level nav never shows an empty grouping.
-  const conditions: SQL[] = [sql`${subcategoriesTable.count} > 0`];
-  if (categoryId) conditions.push(eq(subcategoriesTable.categoryId, categoryId));
+  // Derive counts live from the products table using the SAME sellable/test
+  // filters as the catalog search, so the second-level nav only surfaces
+  // subcategories with products the user can actually see — and the count
+  // matches the results screen exactly. We can't rely on the stored
+  // `subcategories.count` column: it's only recomputed at the very end of a
+  // full, rate-limited ERP sync, so it routinely sits at 0 and hides every
+  // subcategory (the bug this replaces).
   const rows = await db
-    .select()
+    .select({
+      id: subcategoriesTable.id,
+      categoryId: subcategoriesTable.categoryId,
+      name: subcategoriesTable.name,
+      count: sql<number>`count(${productsTable.id})::int`,
+    })
     .from(subcategoriesTable)
-    .where(and(...conditions))
+    .innerJoin(
+      productsTable,
+      and(
+        eq(productsTable.subcategoryId, subcategoriesTable.id),
+        notTestProduct(),
+        sellableProduct(),
+      ),
+    )
+    .where(categoryId ? eq(subcategoriesTable.categoryId, categoryId) : undefined)
+    .groupBy(subcategoriesTable.id, subcategoriesTable.categoryId, subcategoriesTable.name)
     .orderBy(subcategoriesTable.name);
   const data = ListSubcategoriesResponse.parse(
     rows.map((r) => ({

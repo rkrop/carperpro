@@ -1,0 +1,36 @@
+Mejora el rate-limiting hacia AdminTotal en artifacts/api-server/src/lib/admintotal/. 
+Hoy el control es LOCAL (CONCURRENCY=5 dentro de liveStock) y hay reintentos con 
+backoff en client.ts, pero no hay límite global compartido, se crea un cliente 
+nuevo por checkout (re-login), el backoff no tiene jitter y el Retry-After solo 
+frena una petición. Haz estos 5 cambios SIN romper la lógica de negocio:
+
+1) CLIENTE SINGLETON: expón una única instancia compartida de AdmintotalClient 
+   (p.ej. getAdmintotalClient() que devuelva un singleton perezoso) y úsala en 
+   liveStock.ts, sync.ts y outbound.ts en vez de "new AdmintotalClient()". Así el 
+   api_key se cachea una sola vez para todo el proceso y se evitan logins extra.
+
+2) LIMITADOR GLOBAL: agrega un token-bucket / cola compartida dentro del cliente 
+   que envuelva TODA llamada a request() (sync, liveStock, pedidos). Limita a un 
+   máximo de N peticiones concurrentes Y un intervalo mínimo entre peticiones, 
+   configurables por env: ADMINTOTAL_MAX_CONCURRENCY (default 5) y 
+   ADMINTOTAL_MIN_INTERVAL_MS (default 0). El CONCURRENCY local de liveStock debe 
+   quedar subordinado a este límite global, no sumarse a él.
+
+3) JITTER en el backoff de client.ts: cambia wait = BASE_BACKOFF_MS * 2**attempt 
+   por wait = base * 2**attempt * (0.5 + Math.random()*0.5), con un techo máximo 
+   (p.ej. 15000 ms). Aplica a los tres caminos de reintento (red, 401-reauth no, 
+   429/5xx sí).
+
+4) PAUSA GLOBAL en 429: cuando llegue un 429 con Retry-After, guarda en el cliente 
+   un timestamp "pausedUntil" y haz que el limitador del punto 2 respete esa pausa 
+   para TODAS las peticiones, no solo la que recibió el 429.
+
+5) CACHE CORTO opcional para stock en vivo: en liveStock.ts agrega un cache en 
+   memoria por productId con TTL corto (ADMINTOTAL_STOCK_TTL_MS, default 30000) 
+   para que vistas/checkouts repetidos del mismo producto no disparen un detalle 
+   cada vez. IMPORTANTE: la verificación final POST-PAGO debe poder saltarse el 
+   cache (parámetro force) para nunca confirmar una venta con stock cacheado.
+
+No cambies la autenticación, ni las rutas, ni el modelo de datos. Mantén el 
+comportamiento de "unverified" en liveStock (degradar al mirror local). Dime qué 
+archivos y líneas tocaste.
