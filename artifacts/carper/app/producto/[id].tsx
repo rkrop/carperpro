@@ -77,7 +77,8 @@ export default function Producto() {
   // How many of this part are already in the cart, and whether we've hit the
   // known available count (null stock = unknown = no cap).
   const inCart = cart.items.find((i) => i.id === product.id)?.qty ?? 0;
-  const atCap = product.stock != null && inCart >= product.stock;
+  // Confirmed-0 stock is handled by the Agotado state, not the cap.
+  const atCap = product.stock != null && product.stock > 0 && inCart >= product.stock;
 
   const onAdd = () => {
     if (atCap) {

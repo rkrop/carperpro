@@ -48,7 +48,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const data = JSON.parse(raw);
-          if (Array.isArray(data)) setItems(data);
+          if (Array.isArray(data)) {
+            // Clamp restored lines to their known stock: drop confirmed-0 lines,
+            // cap over-limit ones. Unknown stock (null) is left untouched.
+            const normalized = (data as CartItem[])
+              .map((i) =>
+                i.stock != null && i.qty > i.stock ? { ...i, qty: Math.max(0, i.stock) } : i,
+              )
+              .filter((i) => i.qty > 0);
+            setItems(normalized);
+            save(normalized);
+          }
         }
       } catch {
         // ignore
