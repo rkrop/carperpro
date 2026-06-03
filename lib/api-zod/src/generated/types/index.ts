@@ -6,16 +6,20 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './address';
+export * from './addressInput';
 export * from './availabilityPage';
 export * from './category';
 export * from './deals';
 export * from './errorResponse';
+export * from './favoritesSync';
 export * from './getDealsParams';
 export * from './getProductParams';
 export * from './getProductsAvailabilityParams';
 export * from './healthStatus';
 export * from './listProductsParams';
 export * from './listSubcategoriesParams';
+export * from './orderHistoryItem';
 export * from './orderInput';
 export * from './orderLineInput';
 export * from './orderResult';
@@ -30,3 +34,4 @@ export * from './spec';
 export * from './subcategory';
 export * from './sucursal';
 export * from './syncStatus';
+export * from './userProfile';

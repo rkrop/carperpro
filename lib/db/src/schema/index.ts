@@ -6,3 +6,4 @@ export * from "./products";
 export * from "./inventory";
 export * from "./outboundOrders";
 export * from "./syncState";
+export * from "./users";

@@ -11,6 +11,7 @@ import {
   type CheckoutLineInput,
 } from "../lib/stripe/service";
 import { normalizeShippingAddress } from "../lib/shippingAddress";
+import { getOptionalUserId, ensureUser } from "../middlewares/requireAuth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -51,6 +52,15 @@ router.post("/stripe/checkout", async (req: Request, res: Response): Promise<voi
       res.status(400).json({ error: "La dirección de envío está incompleta o es inválida" });
       return;
     }
+    // Link to the buyer's account when signed in (guest checkout still works).
+    const userId = getOptionalUserId(req);
+    if (userId) {
+      try {
+        await ensureUser(userId);
+      } catch (err) {
+        logger.warn({ userId, err }, "No se pudo aprovisionar la cuenta al iniciar el pago");
+      }
+    }
     const result = await createCardCheckoutSession({
       sucursalId: typeof body.sucursalId === "string" ? body.sucursalId : undefined,
       entrega,
@@ -59,6 +69,7 @@ router.post("/stripe/checkout", async (req: Request, res: Response): Promise<voi
       shippingAddress,
       lines,
       dest,
+      userId,
     });
     res.status(201).json(result);
   } catch (err) {
@@ -144,6 +155,12 @@ router.post("/stripe/verify", async (req: Request, res: Response): Promise<void>
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
     }
+    // Account-linked orders are private: only their owner may read them back.
+    // Guest orders (no userId) stay readable so the guest flow keeps working.
+    if (order.userId && order.userId !== getOptionalUserId(req)) {
+      res.status(404).json({ error: "Pedido no encontrado" });
+      return;
+    }
     res.json({ paymentStatus: order.paymentStatus, order: orderToClient(order) });
     // Opportunistically reconcile any other stragglers.
     reconcilePendingStripeOrders().catch(() => {});
@@ -166,6 +183,11 @@ router.get("/stripe/order/:id", async (req: Request, res: Response): Promise<voi
     .where(eq(outboundOrdersTable.id, id))
     .limit(1);
   if (rows.length === 0) {
+    res.status(404).json({ error: "Pedido no encontrado" });
+    return;
+  }
+  // Account-linked orders are private: only their owner may read them back.
+  if (rows[0].userId && rows[0].userId !== getOptionalUserId(req)) {
     res.status(404).json({ error: "Pedido no encontrado" });
     return;
   }

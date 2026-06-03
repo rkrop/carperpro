@@ -14,6 +14,8 @@ tags:
     description: Catalog read endpoints (mirror of Admintotal ERP)
   - name: orders
     description: Outbound order push to Admintotal
+  - name: account
+    description: Signed-in user account (favorites, addresses, order history)
 paths:
   /healthz:
     get:
@@ -271,6 +273,203 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /me:
+    get:
+      operationId: getMe
+      tags: [account]
+      summary: Get the signed-in user's profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /me/favorites:
+    get:
+      operationId: listFavorites
+      tags: [account]
+      summary: List the user's saved favorites (product snapshots)
+      responses:
+        "200":
+          description: Favorites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /me/favorites/{productId}:
+    put:
+      operationId: addFavorite
+      tags: [account]
+      summary: Add or update a favorite (stores a product snapshot)
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Product"
+      responses:
+        "204":
+          description: Saved
+        "400":
+          description: Invalid product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: removeFavorite
+      tags: [account]
+      summary: Remove a favorite
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+  /me/favorites/sync:
+    post:
+      operationId: syncFavorites
+      tags: [account]
+      summary: Merge device-local favorites into the account (no duplicates)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FavoritesSync"
+      responses:
+        "200":
+          description: Merged favorites list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+  /me/addresses:
+    get:
+      operationId: listAddresses
+      tags: [account]
+      summary: List the user's saved addresses
+      responses:
+        "200":
+          description: Addresses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Address"
+    post:
+      operationId: createAddress
+      tags: [account]
+      summary: Save a new address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Address"
+        "400":
+          description: Invalid address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /me/addresses/{id}:
+    put:
+      operationId: updateAddress
+      tags: [account]
+      summary: Update a saved address
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Address"
+        "400":
+          description: Invalid address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAddress
+      tags: [account]
+      summary: Delete a saved address
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+  /me/orders:
+    get:
+      operationId: listMyOrders
+      tags: [account]
+      summary: List the signed-in user's order history
+      responses:
+        "200":
+          description: Order history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrderHistoryItem"
 components:
   schemas:
     HealthStatus:
@@ -484,3 +683,52 @@ components:
         folio: { type: string }
         status: { type: string }
         admintotalPedidoId: { type: ["string", "null"] }
+    UserProfile:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        email: { type: ["string", "null"] }
+        name: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+    FavoritesSync:
+      type: object
+      required: [products]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+    Address:
+      type: object
+      required: [id, address, isDefault]
+      properties:
+        id: { type: integer }
+        label: { type: ["string", "null"] }
+        address:
+          $ref: "#/components/schemas/ShippingAddress"
+        isDefault: { type: boolean }
+    AddressInput:
+      type: object
+      required: [address]
+      properties:
+        label: { type: ["string", "null"] }
+        address:
+          $ref: "#/components/schemas/ShippingAddress"
+        isDefault: { type: ["boolean", "null"] }
+    OrderHistoryItem:
+      type: object
+      required: [id, folio, date, total, entrega, pago, status, paymentStatus, lines]
+      properties:
+        id: { type: string }
+        folio: { type: string }
+        date: { type: string, format: date-time }
+        total: { type: number }
+        entrega: { type: string }
+        pago: { type: string }
+        status: { type: string }
+        paymentStatus: { type: string }
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineInput"

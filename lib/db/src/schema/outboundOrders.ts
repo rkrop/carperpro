@@ -6,6 +6,7 @@ import {
   doublePrecision,
   jsonb,
   timestamp,
+  index,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -54,8 +55,13 @@ export type OutboundOrderStatus =
 export type PaymentStatus = "unpaid" | "paid" | "failed" | "refunded";
 
 // Queue of app orders to push to Admintotal as pedidos. Retried automatically.
-export const outboundOrdersTable = pgTable("outbound_orders", {
+export const outboundOrdersTable = pgTable(
+  "outbound_orders",
+  {
   id: serial("id").primaryKey(),
+  // Owning account (Clerk user id) when the order was placed while signed in.
+  // Null for guest/anonymous checkout, which stays fully supported.
+  userId: text("user_id"),
   folio: text("folio").notNull(),
   status: text("status").$type<OutboundOrderStatus>().notNull().default("pending"),
   attempts: integer("attempts").notNull().default(0),
@@ -85,7 +91,9 @@ export const outboundOrdersTable = pgTable("outbound_orders", {
     .defaultNow()
     .$onUpdate(() => new Date()),
   sentAt: timestamp("sent_at", { withTimezone: true }),
-});
+  },
+  (t) => [index("outbound_orders_user_id_idx").on(t.userId)],
+);
 
 export const insertOutboundOrderSchema = createInsertSchema(
   outboundOrdersTable,

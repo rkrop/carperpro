@@ -6,6 +6,7 @@ import sitemapRouter from "./sitemap";
 import ordersRouter from "./orders";
 import webhooksRouter from "./webhooks";
 import stripeRouter from "./stripe";
+import accountRouter from "./account";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(sitemapRouter);
 router.use(ordersRouter);
 router.use(webhooksRouter);
 router.use(stripeRouter);
+router.use(accountRouter);
 
 export default router;

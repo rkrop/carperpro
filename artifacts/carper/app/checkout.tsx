@@ -6,7 +6,15 @@ import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getPostalCode, useCreateOrder } from "@workspace/api-client-react";
+import { useAuth } from "@clerk/expo";
+import {
+  getGetMeQueryKey,
+  getListAddressesQueryKey,
+  getPostalCode,
+  useCreateOrder,
+  useGetMe,
+  useListAddresses,
+} from "@workspace/api-client-react";
 import type { ShippingAddressInput } from "@/lib/stripeCheckout";
 
 import { AccentButton } from "@/components/CarperUI";
@@ -157,6 +165,44 @@ export default function Checkout() {
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 16;
+
+  // Prefill from the signed-in user's saved default address + profile. Only
+  // fills blank fields so it never clobbers what the shopper is typing.
+  const { isSignedIn } = useAuth();
+  const addressesQuery = useListAddresses({
+    query: { queryKey: getListAddressesQueryKey(), enabled: !!isSignedIn },
+  });
+  const meQuery = useGetMe({ query: { queryKey: getGetMeQueryKey(), enabled: !!isSignedIn } });
+  // Each source prefills independently the moment its own query settles, so a
+  // slower /me/addresses can't be skipped by a faster /me (and vice versa). We
+  // never auto-switch the delivery mode — the fields just sit ready in case the
+  // shopper picks "envío" — and we only fill blanks so typing is never clobbered.
+  const addrPrefilledRef = useRef(false);
+  const profilePrefilledRef = useRef(false);
+  useEffect(() => {
+    if (!isSignedIn) return;
+    if (!addrPrefilledRef.current && addressesQuery.data) {
+      addrPrefilledRef.current = true;
+      const def = addressesQuery.data.find((a) => a.isDefault) ?? addressesQuery.data[0];
+      if (def) {
+        const a = def.address;
+        setCalle((v) => v || a.calle);
+        setNumExt((v) => v || a.numExterior);
+        setNumInt((v) => v || a.numInterior || "");
+        setCp((v) => v || a.cp);
+        setColonia((v) => v || a.colonia);
+        setEstado((v) => v || a.estado || "");
+        setMunicipio((v) => v || a.municipio || "");
+        setReferencias((v) => v || a.referencias || "");
+      }
+    }
+    if (!profilePrefilledRef.current && meQuery.data) {
+      profilePrefilledRef.current = true;
+      const me = meQuery.data;
+      if (me.name) setName((v) => v || me.name || "");
+      if (me.phone) setPhone((v) => v || me.phone || "");
+    }
+  }, [isSignedIn, addressesQuery.data, meQuery.data]);
 
   // Look up colonias + estado + centroid for a 5-digit CP (free, server-proxied).
   // A monotonic request id guards against out-of-order responses: a slower reply

@@ -41,7 +41,9 @@
           "locationAlwaysAndWhenInUsePermission": "Carper usa tu ubicación para compartir un mapa exacto de tu domicilio con el repartidor.",
           "locationWhenInUsePermission": "Carper usa tu ubicación para compartir un mapa exacto de tu domicilio con el repartidor."
         }
-      ]
+      ],
+      "@clerk/expo",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

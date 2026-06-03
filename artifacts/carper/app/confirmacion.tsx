@@ -16,7 +16,7 @@ export default function Confirmacion() {
   const insets = useSafeAreaInsets();
   const { folio } = useLocalSearchParams<{ folio: string }>();
   const { orders, sucursal } = useApp();
-  const order = orders.find((o) => o.folio === folio) ?? orders[0];
+  const order = orders.find((o) => o.folio === folio);
   const topPad = (isWeb ? WEB_TOP_INSET : insets.top) + 24;
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 24;
 
@@ -47,6 +47,18 @@ export default function Confirmacion() {
               <Text style={{ fontFamily: Fonts.black, fontSize: 14, letterSpacing: -0.3, textTransform: "uppercase", color: c.foreground }}>Total</Text>
               <Text style={{ fontFamily: Fonts.monoBold, fontSize: 18, letterSpacing: -0.5, color: c.foreground }}>{formatMXN(order.total)}</Text>
             </View>
+          </View>
+        ) : folio ? (
+          // The order is being looked up / synced from the server. Folio is the
+          // proof the order exists; show it while the full record propagates.
+          <View style={{ borderWidth: 1, borderColor: c.border, padding: 18, gap: 10 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400 }}>Folio</Text>
+              <Text style={{ fontFamily: Fonts.monoBold, fontSize: 14, color: c.foreground }}>{folio}</Text>
+            </View>
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 11, letterSpacing: 0.3, textTransform: "uppercase", color: c.mutedForeground }}>
+              Cargando detalle de tu pedido…
+            </Text>
           </View>
         ) : null}
 

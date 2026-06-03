@@ -186,6 +186,48 @@ export interface OrderResult {
   admintotalPedidoId?: string | null;
 }
 
+export interface UserProfile {
+  id: string;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  phone?: string | null;
+}
+
+export interface FavoritesSync {
+  products: Product[];
+}
+
+export interface Address {
+  id: number;
+  /** @nullable */
+  label?: string | null;
+  address: ShippingAddress;
+  isDefault: boolean;
+}
+
+export interface AddressInput {
+  /** @nullable */
+  label?: string | null;
+  address: ShippingAddress;
+  /** @nullable */
+  isDefault?: boolean | null;
+}
+
+export interface OrderHistoryItem {
+  id: string;
+  folio: string;
+  date: string;
+  total: number;
+  entrega: string;
+  pago: string;
+  status: string;
+  paymentStatus: string;
+  lines: OrderLineInput[];
+}
+
 export type ListSubcategoriesParams = {
 /**
  * When set, only subcategories under this category (linea).

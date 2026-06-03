@@ -12,6 +12,7 @@ import { pushOrder } from "../lib/admintotal/outbound";
 import { getWebhookSucursalId } from "../lib/admintotal/config";
 import { effectivePrice } from "../lib/pricing";
 import { normalizeShippingAddress } from "../lib/shippingAddress";
+import { getOptionalUserId, ensureUser } from "../middlewares/requireAuth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -120,12 +121,24 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
 
   const total = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
 
+  // Link the order to the buyer's account when signed in (guest checkout stays
+  // fully supported — userId is simply null for anonymous orders).
+  const userId = getOptionalUserId(req);
+  if (userId) {
+    try {
+      await ensureUser(userId);
+    } catch (err) {
+      logger.warn({ userId, err }, "No se pudo aprovisionar la cuenta al crear el pedido");
+    }
+  }
+
   const folio = makeFolio();
   const inserted = await db
     .insert(outboundOrdersTable)
     .values({
       folio,
       status: "pending",
+      userId: userId ?? null,
       sucursalId,
       entrega: input.entrega,
       pago: input.pago,

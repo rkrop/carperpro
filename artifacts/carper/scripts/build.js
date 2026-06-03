@@ -140,6 +140,11 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
     ...process.env,
     EXPO_PUBLIC_DOMAIN: expoPublicDomain,
     EXPO_PUBLIC_REPL_ID: expoPublicReplId,
+    // Clerk publishable key is inlined into the production bundle. The Frontend
+    // API is reached through the api-server proxy on this same domain (the proxy
+    // only runs in production — in dev the app talks to Clerk directly).
+    EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.CLERK_PUBLISHABLE_KEY,
+    EXPO_PUBLIC_CLERK_PROXY_URL: `https://${expoPublicDomain}/api/__clerk`,
   };
 
   if (expoPublicReplId) {

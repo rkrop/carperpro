@@ -279,3 +279,256 @@ export const CreateOrderBody = zod.object({
 })
 
 
+/**
+ * @summary Get the signed-in user's profile
+ */
+export const GetMeResponse = zod.object({
+  "id": zod.string(),
+  "email": zod.string().nullish(),
+  "name": zod.string().nullish(),
+  "phone": zod.string().nullish()
+})
+
+
+/**
+ * @summary List the user's saved favorites (product snapshots)
+ */
+export const ListFavoritesResponseItem = zod.object({
+  "id": zod.string(),
+  "sku": zod.string(),
+  "name": zod.string(),
+  "brand": zod.string(),
+  "price": zod.number(),
+  "originalPrice": zod.number().nullish(),
+  "stock": zod.number().nullable(),
+  "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
+  "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "image": zod.string().nullish(),
+  "compatible": zod.boolean(),
+  "specs": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})),
+  "vehicles": zod.array(zod.string()),
+  "oem": zod.array(zod.string()).nullish(),
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
+})
+export const ListFavoritesResponse = zod.array(ListFavoritesResponseItem)
+
+
+/**
+ * @summary Add or update a favorite (stores a product snapshot)
+ */
+export const AddFavoriteParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const AddFavoriteBody = zod.object({
+  "id": zod.string(),
+  "sku": zod.string(),
+  "name": zod.string(),
+  "brand": zod.string(),
+  "price": zod.number(),
+  "originalPrice": zod.number().nullish(),
+  "stock": zod.number().nullable(),
+  "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
+  "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "image": zod.string().nullish(),
+  "compatible": zod.boolean(),
+  "specs": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})),
+  "vehicles": zod.array(zod.string()),
+  "oem": zod.array(zod.string()).nullish(),
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
+})
+
+
+/**
+ * @summary Remove a favorite
+ */
+export const RemoveFavoriteParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+
+/**
+ * @summary Merge device-local favorites into the account (no duplicates)
+ */
+export const SyncFavoritesBody = zod.object({
+  "products": zod.array(zod.object({
+  "id": zod.string(),
+  "sku": zod.string(),
+  "name": zod.string(),
+  "brand": zod.string(),
+  "price": zod.number(),
+  "originalPrice": zod.number().nullish(),
+  "stock": zod.number().nullable(),
+  "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
+  "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "image": zod.string().nullish(),
+  "compatible": zod.boolean(),
+  "specs": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})),
+  "vehicles": zod.array(zod.string()),
+  "oem": zod.array(zod.string()).nullish(),
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
+}))
+})
+
+export const SyncFavoritesResponseItem = zod.object({
+  "id": zod.string(),
+  "sku": zod.string(),
+  "name": zod.string(),
+  "brand": zod.string(),
+  "price": zod.number(),
+  "originalPrice": zod.number().nullish(),
+  "stock": zod.number().nullable(),
+  "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
+  "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "image": zod.string().nullish(),
+  "compatible": zod.boolean(),
+  "specs": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})),
+  "vehicles": zod.array(zod.string()),
+  "oem": zod.array(zod.string()).nullish(),
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
+})
+export const SyncFavoritesResponse = zod.array(SyncFavoritesResponseItem)
+
+
+/**
+ * @summary List the user's saved addresses
+ */
+export const ListAddressesResponseItem = zod.object({
+  "id": zod.number(),
+  "label": zod.string().nullish(),
+  "address": zod.object({
+  "calle": zod.string(),
+  "numExterior": zod.string(),
+  "numInterior": zod.string().nullish(),
+  "colonia": zod.string(),
+  "cp": zod.string(),
+  "municipio": zod.string().nullish(),
+  "estado": zod.string().nullish(),
+  "referencias": zod.string().nullish(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "mapsUrl": zod.string().nullish()
+}),
+  "isDefault": zod.boolean()
+})
+export const ListAddressesResponse = zod.array(ListAddressesResponseItem)
+
+
+/**
+ * @summary Save a new address
+ */
+export const CreateAddressBody = zod.object({
+  "label": zod.string().nullish(),
+  "address": zod.object({
+  "calle": zod.string(),
+  "numExterior": zod.string(),
+  "numInterior": zod.string().nullish(),
+  "colonia": zod.string(),
+  "cp": zod.string(),
+  "municipio": zod.string().nullish(),
+  "estado": zod.string().nullish(),
+  "referencias": zod.string().nullish(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "mapsUrl": zod.string().nullish()
+}),
+  "isDefault": zod.boolean().nullish()
+})
+
+
+/**
+ * @summary Update a saved address
+ */
+export const UpdateAddressParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateAddressBody = zod.object({
+  "label": zod.string().nullish(),
+  "address": zod.object({
+  "calle": zod.string(),
+  "numExterior": zod.string(),
+  "numInterior": zod.string().nullish(),
+  "colonia": zod.string(),
+  "cp": zod.string(),
+  "municipio": zod.string().nullish(),
+  "estado": zod.string().nullish(),
+  "referencias": zod.string().nullish(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "mapsUrl": zod.string().nullish()
+}),
+  "isDefault": zod.boolean().nullish()
+})
+
+export const UpdateAddressResponse = zod.object({
+  "id": zod.number(),
+  "label": zod.string().nullish(),
+  "address": zod.object({
+  "calle": zod.string(),
+  "numExterior": zod.string(),
+  "numInterior": zod.string().nullish(),
+  "colonia": zod.string(),
+  "cp": zod.string(),
+  "municipio": zod.string().nullish(),
+  "estado": zod.string().nullish(),
+  "referencias": zod.string().nullish(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "mapsUrl": zod.string().nullish()
+}),
+  "isDefault": zod.boolean()
+})
+
+
+/**
+ * @summary Delete a saved address
+ */
+export const DeleteAddressParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
+ * @summary List the signed-in user's order history
+ */
+export const ListMyOrdersResponseItem = zod.object({
+  "id": zod.string(),
+  "folio": zod.string(),
+  "date": zod.coerce.date(),
+  "total": zod.number(),
+  "entrega": zod.string(),
+  "pago": zod.string(),
+  "status": zod.string(),
+  "paymentStatus": zod.string(),
+  "lines": zod.array(zod.object({
+  "productId": zod.string(),
+  "sku": zod.string(),
+  "name": zod.string(),
+  "qty": zod.number(),
+  "price": zod.number()
+}))
+})
+export const ListMyOrdersResponse = zod.array(ListMyOrdersResponseItem)
+
+

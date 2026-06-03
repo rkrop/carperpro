@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import { getAuthToken } from "@workspace/api-client-react";
 
 // API base — same domain the generated client points at (EXPO_PUBLIC_DOMAIN is
 // the api-server's public host in dev/prod).
@@ -52,6 +53,18 @@ function apiUrl(path: string): string {
 }
 
 /**
+ * Build request headers, attaching the Clerk bearer token when a signed-in
+ * session exists so the Stripe routes can tie the order to the user. Guests
+ * send no token and the order stays anonymous.
+ */
+async function authedJsonHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = await getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+/**
  * Start a Stripe Checkout for the given lines.
  * - Native: opens the Stripe page in an auth session that returns to the app
  *   deep link, then resolves so the caller can verify.
@@ -74,7 +87,7 @@ export async function startCardCheckout(opts: {
 
   const res = await fetch(apiUrl("/api/stripe/checkout"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authedJsonHeaders(),
     body: JSON.stringify({
       entrega: opts.entrega,
       buyerName: opts.buyerName,
@@ -112,7 +125,7 @@ export async function startCardCheckout(opts: {
 export async function verifyPayment(orderId: number): Promise<VerifiedOrder | null> {
   const res = await fetch(apiUrl("/api/stripe/verify"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authedJsonHeaders(),
     body: JSON.stringify({ orderId }),
   });
   if (!res.ok) return null;

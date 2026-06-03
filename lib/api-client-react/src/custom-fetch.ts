@@ -44,6 +44,17 @@ export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
 }
 
+/**
+ * Resolve the current bearer token via the registered getter (or `null` when
+ * none is set / the user is signed out). Lets non-generated callers (e.g. raw
+ * `fetch` to the Stripe routes) attach the same `Authorization` header that
+ * `customFetch` applies automatically.
+ */
+export async function getAuthToken(): Promise<string | null> {
+  if (!_authTokenGetter) return null;
+  return await _authTokenGetter();
+}
+
 function isRequest(input: RequestInfo | URL): input is Request {
   return typeof Request !== "undefined" && input instanceof Request;
 }

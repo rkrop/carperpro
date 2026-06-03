@@ -30,6 +30,8 @@ export interface CreateCheckoutInput {
   lines: CheckoutLineInput[];
   /** Where Stripe should return the buyer (app deep link or web URL). */
   dest: string;
+  /** Clerk user id when the buyer is signed in; null for guest checkout. */
+  userId?: string | null;
 }
 
 export interface ClientOrder {
@@ -200,6 +202,7 @@ export async function createCardCheckoutSession(
     .values({
       folio,
       status: "awaiting_payment",
+      userId: input.userId ?? null,
       sucursalId,
       entrega: input.entrega,
       pago: "Tarjeta",
