@@ -35,6 +35,10 @@ export const productsTable = pgTable("products", {
   name: text("name").notNull(),
   brand: text("brand").notNull().default("SIN MARCA"),
   categoryId: text("category_id"),
+  // Admintotal "sublinea" — the second-level grouping under categoryId. NULL
+  // when the ERP product has no real (named, non-self) sublinea. Set during
+  // sync and only ever points at an existing subcategories row.
+  subcategoryId: text("subcategory_id"),
   price: doublePrecision("price").notNull().default(0),
   originalPrice: doublePrecision("original_price"),
   // Rich product description: vehicle applications, OEM codes, specs, etc.

@@ -1,4 +1,5 @@
 export * from "./categories";
+export * from "./subcategories";
 export * from "./brands";
 export * from "./sucursales";
 export * from "./products";

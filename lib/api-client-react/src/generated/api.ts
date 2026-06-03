@@ -29,11 +29,13 @@ import type {
   GetProductsAvailabilityParams,
   HealthStatus,
   ListProductsParams,
+  ListSubcategoriesParams,
   OrderInput,
   OrderResult,
   PostalCode,
   Product,
   ProductPage,
+  Subcategory,
   Sucursal,
   SyncStatus
 } from './api.schemas';
@@ -193,6 +195,90 @@ export function useListCategories<TData = Awaited<ReturnType<typeof listCategori
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListCategoriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListSubcategoriesUrl = (params?: ListSubcategoriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/subcategories?${stringifiedParams}` : `/api/subcategories`
+}
+
+/**
+ * @summary List subcategories (sublineas), optionally filtered by category
+ */
+export const listSubcategories = async (params?: ListSubcategoriesParams, options?: RequestInit): Promise<Subcategory[]> => {
+
+  return customFetch<Subcategory[]>(getListSubcategoriesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSubcategoriesQueryKey = (params?: ListSubcategoriesParams,) => {
+    return [
+    `/api/subcategories`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSubcategoriesQueryOptions = <TData = Awaited<ReturnType<typeof listSubcategories>>, TError = ErrorType<unknown>>(params?: ListSubcategoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSubcategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSubcategoriesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSubcategories>>> = ({ signal }) => listSubcategories(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSubcategories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSubcategoriesQueryResult = NonNullable<Awaited<ReturnType<typeof listSubcategories>>>
+export type ListSubcategoriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List subcategories (sublineas), optionally filtered by category
+ */
+
+export function useListSubcategories<TData = Awaited<ReturnType<typeof listSubcategories>>, TError = ErrorType<unknown>>(
+ params?: ListSubcategoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSubcategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSubcategoriesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

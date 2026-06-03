@@ -49,6 +49,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="subcategorias" />
       <Stack.Screen name="resultados" />
       <Stack.Screen name="producto/[id]" />
       <Stack.Screen name="buscar-vehiculo" />

@@ -78,7 +78,7 @@ export default function Categorias() {
                   return (
                     <Pressable
                       key={cat.id}
-                      onPress={() => router.push(`/resultados?category=${cat.id}`)}
+                      onPress={() => router.push(`/subcategorias?category=${cat.id}&name=${encodeURIComponent(cat.name)}`)}
                       style={({ pressed }) => ({ width: "33.333%", aspectRatio: 1, borderRightWidth: 1, borderBottomWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", gap: 8, padding: 8, backgroundColor: pressed ? c.neutral50 : c.background })}
                     >
                       {iconAsset ? (
@@ -106,7 +106,7 @@ export default function Categorias() {
             return (
               <Pressable
                 key={cat.id}
-                onPress={() => router.push(`/resultados?category=${cat.id}`)}
+                onPress={() => router.push(`/subcategorias?category=${cat.id}&name=${encodeURIComponent(cat.name)}`)}
                 style={({ pressed }) => ({
                   flexDirection: "row",
                   alignItems: "center",

@@ -2,6 +2,7 @@ import { sql, notInArray, eq, lt } from "drizzle-orm";
 import {
   db,
   categoriesTable,
+  subcategoriesTable,
   brandsTable,
   sucursalesTable,
   productsTable,
@@ -10,7 +11,7 @@ import {
 import { logger } from "../logger";
 import { AdmintotalClient } from "./client";
 import { isAdmintotalConfigured, missingConfigMessage } from "./config";
-import { mapCategory, mapSucursal, mapProduct } from "./mapper";
+import { mapCategory, mapSubcategory, mapSucursal, mapProduct } from "./mapper";
 
 const SYNC_KEY = "catalog";
 
@@ -132,6 +133,41 @@ export async function runInboundSync(): Promise<SyncResult> {
     }
     logger.info({ count: categories.length }, "Admintotal: categorías sincronizadas");
 
+    // 1b) Sublineas -> subcategories. Only keep named, non-self sublineas whose
+    // parent linea still exists, so the second-level nav never points at an
+    // orphan category. `validSubIds` is used below to keep products.subcategoryId
+    // referentially clean (a product whose sublinea was dropped here is stored
+    // with a NULL subcategory rather than a dangling id).
+    const categoryIdSet = new Set(categoryIds);
+    const rawSublineas = await client.getSublineas();
+    const subcategories = rawSublineas
+      .map(mapSubcategory)
+      .filter((s): s is NonNullable<typeof s> => s !== null)
+      .filter((s) => categoryIdSet.has(s.categoryId));
+    const subcategoryIds = subcategories.map((s) => s.id);
+    const validSubIds = new Set(subcategoryIds);
+    for (const s of subcategories) {
+      await db
+        .insert(subcategoriesTable)
+        .values(s)
+        .onConflictDoUpdate({
+          target: subcategoriesTable.id,
+          set: { categoryId: s.categoryId, name: s.name },
+        });
+    }
+    // Remove subcategories no longer in ERP.
+    if (subcategoryIds.length > 0) {
+      await db
+        .delete(subcategoriesTable)
+        .where(notInArray(subcategoriesTable.id, subcategoryIds));
+    } else {
+      await db.delete(subcategoriesTable);
+    }
+    logger.info(
+      { count: subcategories.length },
+      "Admintotal: subcategorías sincronizadas",
+    );
+
     // 2) Almacenes -> sucursales
     const rawAlmacenes = await client.getAlmacenes();
     const sucursales = rawAlmacenes
@@ -182,6 +218,12 @@ export async function runInboundSync(): Promise<SyncResult> {
           const mapped = mapProduct(raw);
           if (!mapped) continue;
           const { product, stockQty } = mapped;
+          // Keep subcategoryId referentially clean: only persist it when the
+          // sublinea survived as a real subcategories row this cycle.
+          const subcategoryId =
+            product.subcategoryId && validSubIds.has(product.subcategoryId)
+              ? product.subcategoryId
+              : null;
           // Stamp every touched row so the cycle-completion prune (which deletes
           // rows untouched since `cycleStartedAt`) keeps everything we saw —
           // even across the multiple ticks a full pass now spans. Relying on the
@@ -208,7 +250,7 @@ export async function runInboundSync(): Promise<SyncResult> {
 
           await db
             .insert(productsTable)
-            .values({ ...product, ...stockSet, updatedAt: touchedAt })
+            .values({ ...product, subcategoryId, ...stockSet, updatedAt: touchedAt })
             .onConflictDoUpdate({
               target: productsTable.id,
               set: {
@@ -216,6 +258,7 @@ export async function runInboundSync(): Promise<SyncResult> {
                 name: product.name,
                 brand: product.brand,
                 categoryId: product.categoryId,
+                subcategoryId,
                 price: product.price,
                 costo: product.costo,
                 originalPrice: product.originalPrice,
@@ -330,6 +373,21 @@ export async function runInboundSync(): Promise<SyncResult> {
         group by ${productsTable.categoryId}
       ) sub
       where c.id = sub.category_id
+    `);
+
+    // Subcategory counts — same table-derived recompute as categories above, so
+    // partial (multi-tick) passes keep correct counts instead of clobbering them.
+    await db.update(subcategoriesTable).set({ count: 0 });
+    await db.execute(sql`
+      update ${subcategoriesTable} sc
+      set count = sub.cnt
+      from (
+        select ${productsTable.subcategoryId} as subcategory_id, count(*)::int as cnt
+        from ${productsTable}
+        where ${productsTable.subcategoryId} is not null
+        group by ${productsTable.subcategoryId}
+      ) sub
+      where sc.id = sub.subcategory_id
     `);
 
     // Observability: catalog-wide stock coverage AFTER this run, so we can see

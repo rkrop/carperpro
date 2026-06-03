@@ -5,14 +5,17 @@ import {
   useCreateOrder,
   useGetDeals,
   getGetProductsAvailabilityQueryKey,
+  getListSubcategoriesQueryKey,
   useGetProduct,
   useGetProductsAvailability,
   useGetSyncStatus,
   useListBrands,
   useListCategories,
+  useListSubcategories,
   useListProducts,
   useListSucursales,
   type Category as ApiCategory,
+  type Subcategory as ApiSubcategory,
   type ListProductsParams,
   type Product as ApiProduct,
   type Spec,
@@ -26,6 +29,14 @@ export interface Category {
   id: string;
   name: string;
   icon: string; // MaterialCommunityIcons name
+  count: number;
+}
+
+/** Catalog subcategory (Admintotal "sublínea") under a parent category. */
+export interface Subcategory {
+  id: string;
+  categoryId: string;
+  name: string;
   count: number;
 }
 
@@ -114,6 +125,10 @@ function mapCategory(c: ApiCategory): Category {
   return { id: c.id, name: c.name, icon: iconForCategory(c.name), count: c.count };
 }
 
+function mapSubcategory(s: ApiSubcategory): Subcategory {
+  return { id: s.id, categoryId: s.categoryId, name: s.name, count: s.count };
+}
+
 // ---------------------------------------------------------------------------
 // Data hooks (React Query wrappers around the generated client)
 // ---------------------------------------------------------------------------
@@ -121,6 +136,25 @@ function mapCategory(c: ApiCategory): Category {
 export function useCategories() {
   const query = useListCategories();
   const data = useMemo(() => query.data?.map(mapCategory), [query.data]);
+  return { ...query, data };
+}
+
+/**
+ * Subcategories for a given category (Admintotal sublíneas with sellable
+ * products). Disabled until a categoryId is provided so the categorías screen
+ * doesn't fetch the full list before a category is picked.
+ */
+export function useSubcategories(categoryId: string | undefined) {
+  const query = useListSubcategories(
+    categoryId ? { categoryId } : undefined,
+    {
+      query: {
+        queryKey: getListSubcategoriesQueryKey(categoryId ? { categoryId } : undefined),
+        enabled: !!categoryId,
+      },
+    },
+  );
+  const data = useMemo(() => query.data?.map(mapSubcategory), [query.data]);
   return { ...query, data };
 }
 

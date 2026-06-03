@@ -45,7 +45,11 @@ export default function BuscarVehiculo() {
   const finish = () => {
     if (marca && modelo && anio && motor) {
       setVehicle({ marca, modelo, anio, motor });
-      router.replace("/resultados?compat=1");
+      // Search the catalog by marca + modelo via full-text search. Año/motor are
+      // saved on the vehicle for context but kept out of the query: descriptions
+      // store year RANGES (e.g. "1992-2017"), so forcing a literal year would
+      // wrongly exclude matching parts.
+      router.replace(`/resultados?q=${encodeURIComponent(`${marca} ${modelo}`)}`);
     }
   };
 

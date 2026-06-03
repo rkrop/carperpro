@@ -9,6 +9,7 @@
 export type ListProductsParams = {
 q?: string;
 categoryId?: string;
+subcategoryId?: string;
 brand?: string;
 /**
  * When set, stock is reported for this sucursal only.

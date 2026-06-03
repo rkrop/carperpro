@@ -30,6 +30,22 @@ export const ListCategoriesResponse = zod.array(ListCategoriesResponseItem)
 
 
 /**
+ * @summary List subcategories (sublineas), optionally filtered by category
+ */
+export const ListSubcategoriesQueryParams = zod.object({
+  "categoryId": zod.coerce.string().optional().describe('When set, only subcategories under this category (linea).')
+})
+
+export const ListSubcategoriesResponseItem = zod.object({
+  "id": zod.string(),
+  "categoryId": zod.string(),
+  "name": zod.string(),
+  "count": zod.number()
+})
+export const ListSubcategoriesResponse = zod.array(ListSubcategoriesResponseItem)
+
+
+/**
  * @summary List brands (marcas)
  */
 export const ListBrandsResponseItem = zod.string()
@@ -55,6 +71,7 @@ export const ListSucursalesResponse = zod.array(ListSucursalesResponseItem)
 export const ListProductsQueryParams = zod.object({
   "q": zod.coerce.string().optional(),
   "categoryId": zod.coerce.string().optional(),
+  "subcategoryId": zod.coerce.string().optional(),
   "brand": zod.coerce.string().optional(),
   "sucursalId": zod.coerce.string().optional().describe('When set, stock is reported for this sucursal only.'),
   "limit": zod.coerce.number().optional(),
@@ -72,6 +89,7 @@ export const ListProductsResponse = zod.object({
   "stock": zod.number().nullable(),
   "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
   "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
   "image": zod.string().nullish(),
   "compatible": zod.boolean(),
   "specs": zod.array(zod.object({
@@ -125,6 +143,7 @@ export const GetProductResponse = zod.object({
   "stock": zod.number().nullable(),
   "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
   "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
   "image": zod.string().nullish(),
   "compatible": zod.boolean(),
   "specs": zod.array(zod.object({
@@ -156,6 +175,7 @@ export const GetDealsResponse = zod.object({
   "stock": zod.number().nullable(),
   "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
   "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
   "image": zod.string().nullish(),
   "compatible": zod.boolean(),
   "specs": zod.array(zod.object({
@@ -177,6 +197,7 @@ export const GetDealsResponse = zod.object({
   "stock": zod.number().nullable(),
   "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
   "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
   "image": zod.string().nullish(),
   "compatible": zod.boolean(),
   "specs": zod.array(zod.object({

@@ -20,6 +20,13 @@ export interface Category {
   count: number;
 }
 
+export interface Subcategory {
+  id: string;
+  categoryId: string;
+  name: string;
+  count: number;
+}
+
 export interface Sucursal {
   id: string;
   name: string;
@@ -55,6 +62,8 @@ export interface Product {
   stockState: ProductStockState;
   /** @nullable */
   categoryId?: string | null;
+  /** @nullable */
+  subcategoryId?: string | null;
   /** @nullable */
   image?: string | null;
   compatible: boolean;
@@ -177,9 +186,17 @@ export interface OrderResult {
   admintotalPedidoId?: string | null;
 }
 
+export type ListSubcategoriesParams = {
+/**
+ * When set, only subcategories under this category (linea).
+ */
+categoryId?: string;
+};
+
 export type ListProductsParams = {
 q?: string;
 categoryId?: string;
+subcategoryId?: string;
 brand?: string;
 /**
  * When set, stock is reported for this sucursal only.

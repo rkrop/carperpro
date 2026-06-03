@@ -10,6 +10,7 @@
 - [Carper asset strategy](carper-asset-strategy.md) — brand logos = non-tappable credibility wall (catalog mostly SIN MARCA); deep links via ?q=/?category=, never ?brand=; icons match accent-insensitive.
 - [TS project references vs typecheck](ts-project-references.md) — after editing lib/db schema types, run `npx tsc -b lib/db` before api-server typecheck; it reads dist .d.ts, not source.
 - [Stripe integration](stripe-integration.md) — card-only Checkout Sessions w/ dynamic price_data; awaiting_payment status skips ERP queue; MUST externalize stripe-replit-sync in esbuild or migrations silently no-op.
+- [Sublíneas & vehicle search](sublineas-vehicle-search.md) — 2-level Línea→Sublínea (subcategories table fills over time like stock; always show "Ver todo"); vehicle search = ?q=marca+modelo via FTS (omit año: ranges), ?compat=1 was dead.
 - [Query caching & list perf](carper-query-caching.md) — global staleTime 60s safe (stock freshness lives in cart availability + server checkout, not global); results list is FlatList, keep filter ScrollView un-nested.
 - [Checkout shipping address](checkout-shipping-address.md) — envío address must reach BOTH order paths + be server-validated (CP ^\d{5}$); CP→colonia via zippopotam proxy (zod schema is GetPostalCodeResponse, NOT type-only PostalCode).
 - [Carper Tienda web showcase](carper-tienda-web.md) — react-vite catalog showcase (artifact slug tienda, /tienda/); reuses api-server via generated hooks, same-origin /api (no setBaseUrl); WhatsApp-only, NO cart/checkout.

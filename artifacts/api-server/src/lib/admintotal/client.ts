@@ -348,6 +348,10 @@ export class AdmintotalClient {
     return this.fetchAll<Record<string, unknown>>("lineas/");
   }
 
+  async getSublineas(): Promise<Record<string, unknown>[]> {
+    return this.fetchAll<Record<string, unknown>>("sublineas/");
+  }
+
   // Create a pedido in Admintotal from a mapped payload.
   async createPedido(
     payload: Record<string, unknown>,

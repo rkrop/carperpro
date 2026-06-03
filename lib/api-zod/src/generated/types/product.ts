@@ -22,6 +22,8 @@ export interface Product {
   /** @nullable */
   categoryId?: string | null;
   /** @nullable */
+  subcategoryId?: string | null;
+  /** @nullable */
   image?: string | null;
   compatible: boolean;
   specs: Spec[];

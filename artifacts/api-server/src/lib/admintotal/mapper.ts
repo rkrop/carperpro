@@ -1,6 +1,7 @@
 import type {
   InsertProduct,
   InsertCategory,
+  InsertSubcategory,
   InsertSucursal,
   ProductSpec,
 } from "@workspace/db";
@@ -47,6 +48,27 @@ function lineaId(raw: Raw): string | undefined {
     return asId(pick(linea as Raw, ["id", "pk", "clave"]));
   }
   return asId(linea);
+}
+
+// sublinea -> subcategory id (string). Handles a nested object or a scalar id.
+function sublineaId(raw: Raw): string | undefined {
+  const sub = pick(raw, ["sublinea", "sub_linea", "sublinea_id", "id_sublinea"]);
+  if (sub && typeof sub === "object") {
+    return asId(pick(sub as Raw, ["id", "pk", "clave"]));
+  }
+  return asId(sub);
+}
+
+// Map an Admintotal "sublinea" row into a subcategory. Returns null for rows we
+// don't surface: missing id/parent/name, or the ERP's "self/default" sublinea
+// whose id equals its parent linea (these carry no meaningful grouping).
+export function mapSubcategory(raw: Raw): InsertSubcategory | null {
+  const id = asId(pick(raw, ["id", "pk", "clave", "codigo"]));
+  const categoryId = lineaId(raw);
+  const name = asString(pick(raw, ["nombre", "descripcion", "name"]));
+  if (!id || !categoryId || !name) return null;
+  if (id === categoryId) return null;
+  return { id, categoryId, name, count: 0 };
 }
 
 export function mapCategory(raw: Raw): InsertCategory | null {
@@ -178,6 +200,11 @@ export function mapProduct(raw: Raw): MappedProduct | null {
   const brand =
     asString(pick(raw, ["marca", "brand", "fabricante"])) ?? "SIN MARCA";
   const categoryId = lineaId(raw) ?? null;
+  // Second-level grouping. Null when the ERP product has no sublinea or its
+  // sublinea is the "self/default" one (same id as its linea). The sync further
+  // narrows this to ids that actually exist in the subcategories table.
+  const subRaw = sublineaId(raw) ?? null;
+  const subcategoryId = subRaw && subRaw !== categoryId ? subRaw : null;
   const price = asNumber(pick(raw, ["precio", "precio_publico", "precio1"])) ?? 0;
   const costo =
     asNumber(pick(raw, ["costo", "precio_costo", "costo_promedio"])) ?? null;
@@ -211,6 +238,7 @@ export function mapProduct(raw: Raw): MappedProduct | null {
     name,
     brand,
     categoryId,
+    subcategoryId,
     price,
     costo,
     originalPrice:

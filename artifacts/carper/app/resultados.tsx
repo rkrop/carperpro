@@ -7,19 +7,20 @@ import { Chip, EmptyState, Hairline, IconBox, Skeleton } from "@/components/Carp
 import { ProductRow } from "@/components/ProductRow";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts } from "@/constants/fonts";
-import { useBrands, useCategories, useProducts } from "@/data/catalog";
+import { useBrands, useCategories, useProducts, useSubcategories } from "@/data/catalog";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 
 export default function Resultados() {
   const c = useColors();
-  const params = useLocalSearchParams<{ q?: string; category?: string; compat?: string }>();
+  const params = useLocalSearchParams<{ q?: string; category?: string; subcategory?: string }>();
   const { sucursal } = useApp();
   const [brand, setBrand] = useState<string | null>(null);
   const [availOnly, setAvailOnly] = useState(false);
   const [priceSort, setPriceSort] = useState<"asc" | "desc" | null>(null);
 
   const { data: categories } = useCategories();
+  const { data: subcategories } = useSubcategories(params.category);
   const { data: allBrands } = useBrands();
   const {
     data,
@@ -29,17 +30,15 @@ export default function Resultados() {
   } = useProducts({
     q: params.q || undefined,
     categoryId: params.category || undefined,
+    subcategoryId: params.subcategory || undefined,
     sucursalId: sucursal.id || undefined,
     limit: 200,
   });
 
   const category = params.category ? categories?.find((cat) => cat.id === params.category) : undefined;
+  const subcategory = params.subcategory ? subcategories?.find((s) => s.id === params.subcategory) : undefined;
 
-  const base = useMemo(() => {
-    let list = data?.items ?? [];
-    if (params.compat === "1") list = list.filter((p) => p.compatible);
-    return list;
-  }, [data?.items, params.compat]);
+  const base = data?.items ?? [];
 
   const filtered = useMemo(() => {
     let list = brand ? base.filter((p) => p.brand === brand) : base;
@@ -53,12 +52,14 @@ export default function Resultados() {
   const renderItem = useCallback(({ item }: { item: (typeof filtered)[number] }) => <ProductRow product={item} />, []);
   const keyExtractor = useCallback((item: (typeof filtered)[number]) => item.id, []);
 
-  const title = category ? category.name : params.compat === "1" ? "Compatibles" : "Resultados";
+  const title = subcategory?.name ?? category?.name ?? "Resultados";
   const subtitle = params.q
     ? `Resultados para "${params.q}"`
-    : category
-      ? `${category.count.toLocaleString("en-US")} refacciones en catálogo`
-      : "Refacciones compatibles con tu vehículo";
+    : subcategory
+      ? `${subcategory.count.toLocaleString("en-US")} refacciones`
+      : category
+        ? `${category.count.toLocaleString("en-US")} refacciones en catálogo`
+        : "Refacciones";
 
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>

@@ -4,6 +4,7 @@ import {
   db,
   productsTable,
   categoriesTable,
+  subcategoriesTable,
   brandsTable,
   sucursalesTable,
   syncStateTable,
@@ -11,6 +12,7 @@ import {
 } from "@workspace/db";
 import {
   ListCategoriesResponse,
+  ListSubcategoriesResponse,
   ListBrandsResponse,
   ListSucursalesResponse,
   ListProductsResponse,
@@ -87,6 +89,7 @@ function serializeProduct(row: DbProduct): Record<string, unknown> {
     stock: qty ?? null,
     stockState,
     categoryId: row.categoryId ?? null,
+    subcategoryId: row.subcategoryId ?? null,
     image: row.image ?? null,
     compatible: row.compatible,
     specs: row.specs ?? [],
@@ -101,6 +104,29 @@ router.get("/categories", async (_req: Request, res: Response): Promise<void> =>
   const rows = await db.select().from(categoriesTable).orderBy(categoriesTable.name);
   const data = ListCategoriesResponse.parse(
     rows.map((r) => ({ id: r.id, name: r.name, icon: r.icon, count: r.count })),
+  );
+  res.json(data);
+});
+
+router.get("/subcategories", async (req: Request, res: Response): Promise<void> => {
+  const categoryId =
+    typeof req.query.categoryId === "string" ? req.query.categoryId : undefined;
+  // Only surface subcategories that actually have sellable products in them, so
+  // the second-level nav never shows an empty grouping.
+  const conditions: SQL[] = [sql`${subcategoriesTable.count} > 0`];
+  if (categoryId) conditions.push(eq(subcategoriesTable.categoryId, categoryId));
+  const rows = await db
+    .select()
+    .from(subcategoriesTable)
+    .where(and(...conditions))
+    .orderBy(subcategoriesTable.name);
+  const data = ListSubcategoriesResponse.parse(
+    rows.map((r) => ({
+      id: r.id,
+      categoryId: r.categoryId,
+      name: r.name,
+      count: r.count,
+    })),
   );
   res.json(data);
 });
@@ -133,6 +159,8 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const categoryId =
     typeof req.query.categoryId === "string" ? req.query.categoryId : undefined;
+  const subcategoryId =
+    typeof req.query.subcategoryId === "string" ? req.query.subcategoryId : undefined;
   const brand = typeof req.query.brand === "string" ? req.query.brand : undefined;
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const offset = Number(req.query.offset) || 0;
@@ -210,6 +238,7 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
     }
   }
   if (categoryId) conditions.push(eq(productsTable.categoryId, categoryId));
+  if (subcategoryId) conditions.push(eq(productsTable.subcategoryId, subcategoryId));
   if (brand) conditions.push(eq(productsTable.brand, brand));
   const where = and(...conditions);
 
