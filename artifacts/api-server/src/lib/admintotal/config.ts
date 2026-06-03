@@ -76,6 +76,40 @@ export function getSyncIntervalMs(): number {
   return 15 * 60 * 1000;
 }
 
+// Interval for the lightweight TARGETED stock refresh that keeps the most
+// important (recently ordered / stalest-known) products fresher than the full
+// resumable pass can. Defaults to ~3 minutes; clamped to a 30s floor so it can
+// never hammer the ERP. Set ADMINTOTAL_TARGETED_REFRESH_INTERVAL_MS to tune.
+export function getTargetedRefreshIntervalMs(): number {
+  const raw = process.env.ADMINTOTAL_TARGETED_REFRESH_INTERVAL_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isNaN(parsed) && parsed >= 30_000) return parsed;
+  return 3 * 60 * 1000;
+}
+
+// How many products the targeted refresh touches per tick via the per-product
+// detail endpoint. Kept small (default 25) so it coexists with the full pass
+// without fighting the same rate-limit budget. Clamped to 1..200.
+export function getTargetedRefreshBatchSize(): number {
+  const raw = process.env.ADMINTOTAL_TARGETED_REFRESH_BATCH;
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= 200) {
+    return Math.floor(parsed);
+  }
+  return 25;
+}
+
+// Lookback window (days) for "recently ordered" products the targeted refresh
+// prioritizes. Defaults to 30 days. Clamped to 1..365.
+export function getTargetedRefreshOrderLookbackDays(): number {
+  const raw = process.env.ADMINTOTAL_TARGETED_REFRESH_ORDER_DAYS;
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= 365) {
+    return Math.floor(parsed);
+  }
+  return 30;
+}
+
 // Shared secret used to authenticate inbound Admintotal webhook requests.
 // Admintotal sends it in the "Api-key" header (or as the HTTP Basic password).
 // Optional but strongly recommended — when unset the webhook accepts anonymous

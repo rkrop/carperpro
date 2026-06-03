@@ -99,3 +99,25 @@ but the defensive rule still holds — a *missing* field must never zero/hide st
 **Tradeoff:** the catalog query hides 0-stock (`coalesce(erpStockQty,1)>0`), so
 faithfully persisting 0 HIDES products that previously showed as "Consultar".
 Possible follow-up: show "Agotado" in listings instead of hiding.
+
+## Two-tier stock refresh: full pass + targeted high-frequency pass
+Two SEPARATE scheduler timers run independently (`scheduler.ts`): the ~15min full
+resumable `productos` pass, and a ~3min lightweight TARGETED refresh
+(`targetedRefresh.ts`). The targeted pass keeps the most important quantities
+fresh between full passes. Per-tick it picks a small batch (`getTargetedRefreshBatchSize`,
+default 25): recently-ordered product ids (parsed from `outbound_orders.lines`
+jsonb, last `getTargetedRefreshOrderLookbackDays` days) first, then backfilled with
+the stalest known-stock rows (`erp_stock_qty is not null` ordered by
+`stock_updated_at asc nulls first`). Each id is refreshed via `getProductoById`
+(detail endpoint), stock recomputed with the shared `mapProduct` → `stockQty`.
+
+**Why coexist, not compete:** the targeted pass SKIPS entirely while `isSyncing()`
+is true (full pass mid-flight) so the two never fight the same ERP rate-limit
+budget; CONCURRENCY=3, small batch. 404 from the detail endpoint → stock set 0
+(off-shelf; the full pass prunes it later). `stockQty===undefined` (no signal) →
+leave untouched (same defensive rule as the full sync).
+
+**How to apply (the trap):** Drizzle `asc(sql\`col nulls first\`)` emits invalid
+`col nulls first asc`; write the whole clause as one raw `sql\`col asc nulls first\``.
+Config knobs: `ADMINTOTAL_TARGETED_REFRESH_INTERVAL_MS` (30s floor),
+`ADMINTOTAL_TARGETED_REFRESH_BATCH` (1..200), `ADMINTOTAL_TARGETED_REFRESH_ORDER_DAYS`.
