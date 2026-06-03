@@ -151,6 +151,20 @@ export function getWebhookToken(): string | undefined {
   return t && t.trim() ? t.trim() : undefined;
 }
 
+// Warehouses whose `disponible` counts as sellable stock for the catalog.
+// Admintotal exposes per-warehouse stock in `info_almacenes[].almacen.id`; we
+// only sell from the main store and its backing warehouse, so stock in other
+// branches (California, Costera, Navojoa, IMSS) and damaged goods (MAL ESTADO)
+// must NOT make a product appear available. Defaults to Matriz (9) + Bodega
+// (1533). Override with a comma-separated ADMINTOTAL_SELLABLE_WAREHOUSE_IDS.
+export function getSellableWarehouseIds(): Set<string> {
+  const raw = process.env.ADMINTOTAL_SELLABLE_WAREHOUSE_IDS;
+  const ids = (raw && raw.trim() ? raw.split(",") : ["9", "1533"])
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return new Set(ids);
+}
+
 // Sucursal (almacen) under which webhook stock is recorded. Admintotal's
 // price/stock webhook sends a single aggregate `stock` per SKU (summed across
 // the almacenes configured in the webhook), so we store it on one sucursal.

@@ -28,22 +28,49 @@ the background.
 ## Stock lives in `info_almacenes[].disponible` (not `existencias`)
 The ERP `productos/` payload carries per-warehouse stock under the key
 **`info_almacenes`**, an array of `{ almacen: { id, nombre }, disponible }`.
-Quantity is `disponible`; the warehouse id is `almacen.id` (e.g. 1533 "Bodega",
-9 "Matriz", 1535 "MAL ESTADO"). The mapper sums sellable `disponible` across
-warehouses into a single `stockQty`, written to `products.erpStockQty` on the
-product row (the `inventory` table is no longer used) — see [stock-model.md](stock-model.md).
+Quantity is `disponible`; the warehouse id is `almacen.id`. Confirmed warehouse
+ids: Bodega 1533, Matriz 9, California 1530, Costera 1531, Navojoa 1532, IMSS
+1534, MAL ESTADO 1535. The mapper sums sellable `disponible` into a single
+`stockQty`, written to `products.erpStockQty` (the `inventory` table is no longer
+used) — see [stock-model.md](stock-model.md).
 
 **Why:** The sync mapper originally only checked `existencias`/`almacenes` +
 `cantidad`/`stock`, so it silently dropped every stock value — a full 32k-product
 sync left `inventory` EMPTY and the whole app showed *Agotado*. Stock is real but
-sparse (~1% of catalog rows have any). The "MAL ESTADO" warehouse is
-damaged/unsellable goods and is excluded by name (`/mal\s*estado/i`).
+sparse (~1% of catalog rows have any).
+
+**Sellable-warehouse filter (Matriz + Bodega only):** parseInventory now counts
+`disponible` ONLY from the ids in `getSellableWarehouseIds()` (config; default
+`9,1533`, override `ADMINTOTAL_SELLABLE_WAREHOUSE_IDS`). Everything else —
+other branches (California/Costera/Navojoa), IMSS, MAL ESTADO — is dropped, so a
+product reads available only when it has units in a store we sell from. This is
+what narrows the visible catalog to the ~13,906 in-stock-in-Bodega/Matriz set
+the merchant also scoped their webhooks to. **Why:** the business is single-store
+(Matriz) + its Bodega; the old rule summed every warehouse except MAL ESTADO, so
+a part with stock only in another branch wrongly showed as available. A product
+with `info_almacenes` present but no sellable entry collapses to a confirmed 0
+(hidden), per the empty-array rule below.
 
 **How to apply:** If everything shows *unknown / Consultar*, check `select count(*)
 from products where erp_stock_qty is not null` — if 0, no stock has synced yet
 (mapper not reading ERP field names, or no sync/webhook has run). The
 precios-existencias webhook sends a single aggregate `stock` per sku; it only
 covers changed SKUs, so the full `productos` sync is what bulk-loads initial stock.
+
+## `activo=1` is the ONLY honored server-side filter on `productos/`
+Probed live: the API SILENTLY IGNORES warehouse/existencia filters — `almacen=`,
+`almacen_id=`, `con_existencia=`, `existencia__gt=0`, `disponible__gt=0`, `stock=1`
+all return the full `count` (32,553). Stock-oriented endpoints (`existencias/`,
+`inventario/`, `almacenes/{id}/productos/`, `kardex/`) all 404. The one filter
+that works is **`activo=1`** → 22,496 (drops ~10k inactive/discontinued). Also
+honored: exact `?codigo=` (see client.ts detail-lookup note). streamProductos
+sends `activo=1` so each pass fetches ~31% fewer pages under the rate limit.
+
+**Why it matters:** you CANNOT make the ERP return only the in-stock or
+single-warehouse subset — narrowing to Bodega/Matriz happens client-side in the
+mapper, which does NOT speed the fetch (still pages through all active products);
+`activo=1` is the only thing that actually shrinks the pull. Don't re-probe
+warehouse filters hoping they work — they're silently dropped.
 
 ## Productos sync MUST stream-and-write per page (never buffer-then-write)
 The product pull streams pages and upserts each page as it arrives, gracefully

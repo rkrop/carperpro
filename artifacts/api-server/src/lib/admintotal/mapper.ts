@@ -5,6 +5,17 @@ import type {
   InsertSucursal,
   ProductSpec,
 } from "@workspace/db";
+import { getSellableWarehouseIds } from "./config";
+
+// Resolved once: the warehouse ids whose `disponible` counts as sellable stock
+// (Matriz + Bodega by default). Anything outside this set — other branches,
+// IMSS, MAL ESTADO — is ignored so a product is "available" only when it has
+// units in the stores we actually sell from.
+let _sellableWarehouseIds: Set<string> | null = null;
+function sellableWarehouseIds(): Set<string> {
+  if (!_sellableWarehouseIds) _sellableWarehouseIds = getSellableWarehouseIds();
+  return _sellableWarehouseIds;
+}
 
 // Admintotal's exact field names are not documented to us, so every mapper is
 // DEFENSIVE: it tries a list of plausible keys for each field and falls back to
@@ -161,8 +172,12 @@ function parseInventory(raw: Raw): {
       } else {
         sucursalId = asId(almacen);
       }
-      // Skip damaged-goods warehouses (e.g. "MAL ESTADO") — not sellable.
-      if (almacenNombre && /mal\s*estado/i.test(almacenNombre)) continue;
+      // Only count warehouses we actually sell from (Matriz + Bodega by
+      // default). This excludes other branches (California/Costera/Navojoa/IMSS)
+      // and damaged goods (MAL ESTADO), so a product reads as available only
+      // when it has units in a sellable store. When the breakdown carries no
+      // sellable entry the caller treats it as a confirmed 0 (hidden).
+      if (!sucursalId || !sellableWarehouseIds().has(sucursalId)) continue;
       const qty = asNumber(
         pick(e, [
           "disponible",
@@ -217,10 +232,11 @@ export function mapProduct(raw: Raw): MappedProduct | null {
   const { inventory, flat, hasInventoryArray } = parseInventory(raw);
 
   // Collapse to a single on-hand number. Prefer the per-sucursal breakdown (sum
-  // of sellable warehouses; the mapper already drops "MAL ESTADO"). When the
-  // breakdown key was present but yielded no sellable units (empty array, or only
-  // damaged-goods warehouses) treat it as a definitive 0 — the ERP reported the
-  // breakdown and it has nothing available. Fall back to a flat existencia when
+  // of sellable warehouses only — Matriz + Bodega; parseInventory drops every
+  // other warehouse). When the breakdown key was present but yielded no sellable
+  // units (empty array, or stock only in non-sellable warehouses) treat it as a
+  // definitive 0 — the ERP reported the breakdown and nothing is available in a
+  // store we sell from. Fall back to a flat existencia when
   // there's no breakdown at all. `undefined` ONLY when the payload carried NO
   // stock signal whatsoever, so the caller leaves the stored value untouched.
   const stockQty =

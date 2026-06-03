@@ -404,9 +404,16 @@ export class AdmintotalClient {
     complete: boolean;
     nextUrl: string | null;
   }> {
+    // `activo=1` is the ONE server-side filter the ERP actually honors on
+    // `productos/` (warehouse/existencia filters are silently ignored — they
+    // return the full catalog). It drops ~10k inactive/discontinued products
+    // (32.5k -> ~22.5k), so each pass fetches ~31% fewer pages and finishes
+    // sooner under the heavy rate limit. The resume URL carries this param
+    // forward across ticks. Reaching only the in-stock Bodega/Matriz subset is
+    // NOT possible here; that narrowing happens in the mapper (parseInventory).
     return this.fetchPagesWithCallback<Record<string, unknown>>(
       "productos/",
-      undefined,
+      { activo: 1 },
       onPage,
       startUrl,
     );

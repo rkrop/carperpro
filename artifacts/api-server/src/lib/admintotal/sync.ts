@@ -85,7 +85,14 @@ export async function runInboundSync(): Promise<SyncResult> {
     .where(eq(syncStateTable.key, SYNC_KEY))
     .limit(1);
   const prev = prevRows[0];
-  const resumeUrl = prev?.cursorUrl ?? null;
+  // Discard a stale resume cursor saved before the `activo=1` filter was added:
+  // the productos pull now requests `activo=1`, but a saved `next` URL from an
+  // older, unfiltered cycle would resume WITHOUT it and keep pulling the full
+  // catalog (and skip pruning the now-inactive rows) until that cycle ended.
+  // Dropping it forces one fresh, already-filtered pass — a one-time migration.
+  const savedCursor = prev?.cursorUrl ?? null;
+  const resumeUrl =
+    savedCursor && savedCursor.includes("activo=1") ? savedCursor : null;
   const freshCycle = !resumeUrl;
   // A "cycle" is one full pass over the catalog; it may span several ticks. We
   // stamp when it began so that, once it completes, we can prune products no
