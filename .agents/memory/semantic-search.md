@@ -36,12 +36,18 @@ the next boot.
 up, so the backfill self-paces at ~100/min. Full ~4k catalog takes ~40+ min in
 the background. A paid key removes the wait.
 
-## Auto re-embed (no hot-path cost)
-A `BEFORE UPDATE` trigger `products_embedding_reset_trigger` NULLs `embedding`
-only when searchable content changes (name/brand/descripcion/specs/vehicles/oem/
-category). Price/stock updates from ERP sync + webhooks do NOT re-embed. The
-boot-time backfill then re-embeds the NULLed rows. The backfill's own
-embedding-only UPDATE doesn't self-trigger (content unchanged).
+## Auto re-embed (no hot-path cost) — boot is NOT enough
+A `BEFORE UPDATE` trigger NULLs `embedding` only when searchable content changes
+(name/brand/descripcion/specs/vehicles/oem/category); price/stock churn from ERP
+sync + webhooks does NOT re-embed. The backfill's own embedding-only UPDATE
+doesn't self-trigger (content unchanged).
+**Why:** re-embedding ONLY at server boot is a correctness gap — products
+created/content-changed by the recurring sync or webhooks would stay unembedded
+until the next restart. The fix: the Admintotal scheduler tick calls
+`backfillEmbeddings()` after each inbound sync, so NULLed/new rows are picked up
+within one cycle. `backfillEmbeddings()` therefore has a module-level `running`
+guard so the long (~40 min) boot pass and the periodic tick can never run
+concurrently and double-spend the per-minute quota.
 
 ## Perf footgun
 The 768-float `embedding` column must be EXCLUDED from catalog selects

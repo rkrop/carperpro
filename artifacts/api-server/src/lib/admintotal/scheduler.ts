@@ -9,6 +9,7 @@ import { runInboundSync } from "./sync";
 import { runTargetedStockRefresh } from "./targetedRefresh";
 import { processOutboundQueue } from "./outbound";
 import { reconcilePendingStripeOrders } from "../stripe/service";
+import { backfillEmbeddings } from "../embedding-backfill";
 
 let started = false;
 let timer: NodeJS.Timeout | null = null;
@@ -19,6 +20,15 @@ async function tick(): Promise<void> {
     await runInboundSync();
   } catch (err) {
     logger.error({ err }, "Admintotal: error inesperado en sync programado");
+  }
+  // Re-embed anything the sync (or webhooks) created or content-changed since the
+  // last pass: the reset trigger NULLs `embedding` on content change, and new
+  // rows arrive NULL, so this keeps the semantic index current without a restart.
+  // backfillEmbeddings() no-ops when no key is set or a run is already in flight.
+  try {
+    await backfillEmbeddings();
+  } catch (err) {
+    logger.error({ err }, "embeddings: error inesperado en catch-up programado");
   }
   try {
     await processOutboundQueue();

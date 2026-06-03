@@ -62,10 +62,17 @@ const BATCH = 95;
 // any realistic sellable catalog size (~4k) / BATCH.
 const MAX_ITER = 1000;
 
+// Guards against overlapping runs: the boot backfill can take ~40 min on the
+// free tier, and the periodic catch-up tick fires every few minutes — without
+// this flag a tick could start a second concurrent pass over the same NULL rows
+// and burn the per-minute quota twice. Concurrent calls simply no-op.
+let running = false;
+
 // Embed every sellable, non-test product that has no embedding yet. Self-healing
 // and idempotent like backfillSearchVectors: only touches rows where
 // `embedding IS NULL`, so after the first full pass it's a single cheap check;
 // rows re-NULLed by the reset trigger (content changed) get picked up here too.
+// Safe to call repeatedly (boot + periodic catch-up): overlapping calls no-op.
 // No-ops with a log when no embedding provider is configured.
 export async function backfillEmbeddings(): Promise<void> {
   if (!isEmbeddingsConfigured()) {
@@ -74,6 +81,11 @@ export async function backfillEmbeddings(): Promise<void> {
     );
     return;
   }
+  if (running) {
+    logger.debug("embeddings: backfill ya en curso, se omite esta ejecución");
+    return;
+  }
+  running = true;
   try {
     logger.info(
       "embeddings: iniciando backfill (free tier ~100/min, se reanuda tras reinicios)",
@@ -150,5 +162,7 @@ export async function backfillEmbeddings(): Promise<void> {
     }
   } catch (err) {
     logger.error({ err }, "embeddings: backfill falló (no fatal)");
+  } finally {
+    running = false;
   }
 }
