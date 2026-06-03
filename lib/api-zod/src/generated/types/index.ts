@@ -6,17 +6,21 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './availabilityPage';
 export * from './category';
 export * from './deals';
 export * from './errorResponse';
 export * from './getDealsParams';
 export * from './getProductParams';
+export * from './getProductsAvailabilityParams';
 export * from './healthStatus';
 export * from './listProductsParams';
 export * from './orderInput';
 export * from './orderLineInput';
 export * from './orderResult';
 export * from './product';
+export * from './productAvailability';
+export * from './productAvailabilityStockState';
 export * from './productPage';
 export * from './productStockState';
 export * from './spec';

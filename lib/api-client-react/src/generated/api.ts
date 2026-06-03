@@ -20,11 +20,13 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AvailabilityPage,
   Category,
   Deals,
   ErrorResponse,
   GetDealsParams,
   GetProductParams,
+  GetProductsAvailabilityParams,
   HealthStatus,
   ListProductsParams,
   OrderInput,
@@ -428,6 +430,91 @@ export function useListProducts<TData = Awaited<ReturnType<typeof listProducts>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListProductsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetProductsAvailabilityUrl = (params: GetProductsAvailabilityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/products/availability?${stringifiedParams}` : `/api/products/availability`
+}
+
+/**
+ * Lightweight stock lookup used to refresh a saved cart. Reports the current stock/stockState for each requested id from the local ERP-mirrored count. Ids that no longer exist (deleted/test) are reported as out_of_stock.
+ * @summary Batch current stock/availability for a set of product ids
+ */
+export const getProductsAvailability = async (params: GetProductsAvailabilityParams, options?: RequestInit): Promise<AvailabilityPage> => {
+
+  return customFetch<AvailabilityPage>(getGetProductsAvailabilityUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProductsAvailabilityQueryKey = (params?: GetProductsAvailabilityParams,) => {
+    return [
+    `/api/products/availability`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetProductsAvailabilityQueryOptions = <TData = Awaited<ReturnType<typeof getProductsAvailability>>, TError = ErrorType<unknown>>(params: GetProductsAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProductsAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProductsAvailabilityQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductsAvailability>>> = ({ signal }) => getProductsAvailability(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProductsAvailability>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProductsAvailabilityQueryResult = NonNullable<Awaited<ReturnType<typeof getProductsAvailability>>>
+export type GetProductsAvailabilityQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Batch current stock/availability for a set of product ids
+ */
+
+export function useGetProductsAvailability<TData = Awaited<ReturnType<typeof getProductsAvailability>>, TError = ErrorType<unknown>>(
+ params: GetProductsAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProductsAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProductsAvailabilityQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

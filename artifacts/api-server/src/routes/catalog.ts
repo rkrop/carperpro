@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, desc, eq, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   db,
   productsTable,
@@ -15,6 +15,7 @@ import {
   ListSucursalesResponse,
   ListProductsResponse,
   GetProductResponse,
+  GetProductsAvailabilityResponse,
   GetDealsResponse,
   GetSyncStatusResponse,
 } from "@workspace/api-zod";
@@ -230,6 +231,53 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
     items: rows.map((r) => serializeProduct(r)),
     total,
   });
+  res.json(data);
+});
+
+// Batch stock refresh for a saved cart. Reports the CURRENT (stock, stockState)
+// for each requested id from the local ERP-mirrored count — the same source the
+// catalog display and the cash/SPEI checkout guard use, so what the shopper sees
+// here matches what the order endpoint will allow. Unlike the listing/detail
+// routes this intentionally does NOT apply sellableProduct(): a cart line whose
+// product is now confirmed-0, deleted, or test-flagged must still be reported
+// (as out_of_stock) so the cart can surface it as unavailable instead of letting
+// it fail silently at checkout.
+router.get("/products/availability", async (req: Request, res: Response): Promise<void> => {
+  const raw = typeof req.query.ids === "string" ? req.query.ids : "";
+  const ids = Array.from(
+    new Set(
+      raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  );
+
+  if (ids.length === 0) {
+    res.json(GetProductsAvailabilityResponse.parse({ items: [] }));
+    return;
+  }
+
+  const rows = await db
+    .select({ id: productsTable.id, stock: productsTable.erpStockQty })
+    .from(productsTable)
+    .where(inArray(productsTable.id, ids));
+
+  const stockById = new Map(rows.map((r) => [r.id, r.stock]));
+
+  const items = ids.map((id) => {
+    // Missing row → the product no longer exists in the catalog: unavailable.
+    const qty = stockById.has(id) ? stockById.get(id)! : 0;
+    const stockState =
+      qty === null || qty === undefined
+        ? "unknown"
+        : qty > 0
+          ? "in_stock"
+          : "out_of_stock";
+    return { id, stock: qty ?? null, stockState };
+  });
+
+  const data = GetProductsAvailabilityResponse.parse({ items });
   res.json(data);
 });
 

@@ -88,6 +88,23 @@ export const ListProductsResponse = zod.object({
 
 
 /**
+ * Lightweight stock lookup used to refresh a saved cart. Reports the current stock/stockState for each requested id from the local ERP-mirrored count. Ids that no longer exist (deleted/test) are reported as out_of_stock.
+ * @summary Batch current stock/availability for a set of product ids
+ */
+export const GetProductsAvailabilityQueryParams = zod.object({
+  "ids": zod.coerce.string().describe('Comma-separated product ids')
+})
+
+export const GetProductsAvailabilityResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "stock": zod.number().nullable(),
+  "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown'])
+}))
+})
+
+
+/**
  * @summary Get a single product
  */
 export const GetProductParams = zod.object({

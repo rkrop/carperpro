@@ -28,3 +28,17 @@ must always stay orderable; only confirmed counts cap.
 - Both server paths sum qty per product across lines and MUST normalize qty to a
   positive integer (`Math.max(1, Math.floor(qty))`) BEFORE the stock sum, or a
   negative/fractional line can offset a positive one and bypass the check.
+
+## Cart-open stock refresh (warn before checkout)
+- `GET /products/availability?ids=a,b,c` is the lightweight batch stock refresh
+  for a saved cart. It reads the LOCAL mirror `erpStockQty` (same source as the
+  /orders soft gate & catalog display) — NOT live ERP — so cart-open stays fast
+  and avoids Admintotal rate limits.
+- It intentionally does NOT apply `sellableProduct()`: a now-confirmed-0 /
+  deleted / test product MUST still be reported (out_of_stock); missing ids →
+  out_of_stock too. The listing/detail routes DO filter, so don't reuse them.
+- Must be registered BEFORE `/products/:id` in catalog.ts or `:id` swallows it.
+- Client: `CartContext.refreshStock(updates)` refreshes caps, clamps over-limit
+  lines, drops confirmed-0 lines, returns `{clamped, removed}`; carrito.tsx runs
+  it once on open (snapshot ids first — cart hydrates async) and surfaces a
+  banner + per-line "Ajustamos la cantidad" flag.

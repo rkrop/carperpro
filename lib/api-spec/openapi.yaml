@@ -114,6 +114,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProductPage"
+  /products/availability:
+    get:
+      operationId: getProductsAvailability
+      tags: [catalog]
+      summary: Batch current stock/availability for a set of product ids
+      description: >-
+        Lightweight stock lookup used to refresh a saved cart. Reports the
+        current stock/stockState for each requested id from the local
+        ERP-mirrored count. Ids that no longer exist (deleted/test) are reported
+        as out_of_stock.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated product ids
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Availability list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailabilityPage"
   /products/{id}:
     get:
       operationId: getProduct
@@ -285,6 +309,25 @@ components:
           items:
             type: string
         descripcion: { type: ["string", "null"] }
+    ProductAvailability:
+      type: object
+      required: [id, stock, stockState]
+      properties:
+        id: { type: string }
+        # On-hand units. null means availability is UNKNOWN (not yet reported by
+        # the ERP); a number is the real confirmed count.
+        stock: { type: ["integer", "null"] }
+        stockState:
+          type: string
+          enum: [in_stock, out_of_stock, unknown]
+    AvailabilityPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductAvailability"
     ProductPage:
       type: object
       required: [items, total]

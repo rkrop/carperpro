@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { ImageSourcePropType } from "react-native";
 
 /** A denormalized cart line — carries everything needed to render and total
@@ -21,6 +21,29 @@ export interface CartItem {
 /** The product fields required to add something to the cart. */
 export type CartProduct = Omit<CartItem, "qty">;
 
+/** A line whose quantity was clamped down because stock dropped. */
+export interface ClampedLine {
+  id: string;
+  name: string;
+  available: number;
+  previousQty: number;
+}
+
+/** A line removed because its product is now confirmed out of stock / gone. */
+export interface RemovedLine {
+  id: string;
+  name: string;
+}
+
+/** What changed when refreshing the cart against current stock. */
+export interface StockRefreshResult {
+  clamped: ClampedLine[];
+  removed: RemovedLine[];
+}
+
+/** Current stock per product id: a number (cap), or null = unknown (no cap). */
+export type StockUpdates = Record<string, number | null>;
+
 interface CartState {
   items: CartItem[];
   count: number;
@@ -28,6 +51,9 @@ interface CartState {
   remove: (id: string) => void;
   setQty: (id: string, qty: number) => void;
   clear: () => void;
+  /** Re-apply current stock to saved lines: refresh caps, clamp over-limit
+   * lines, drop confirmed-0 lines. Returns what changed so the UI can warn. */
+  refreshStock: (updates: StockUpdates) => StockRefreshResult;
   subtotal: number; // IVA incluido
   iva: number;
   base: number; // subtotal sin IVA
@@ -41,6 +67,10 @@ const CartContext = createContext<CartState | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
+  // Mirror of `items` for reads inside refreshStock, which must compute the diff
+  // (clamped/removed) from the latest list without relying on a stale closure.
+  const itemsRef = useRef<CartItem[]>([]);
+  itemsRef.current = items;
 
   useEffect(() => {
     (async () => {
@@ -110,6 +140,45 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const refreshStock = (updates: StockUpdates): StockRefreshResult => {
+    const current = itemsRef.current;
+    const clamped: ClampedLine[] = [];
+    const removed: RemovedLine[] = [];
+    const next: CartItem[] = [];
+
+    for (const item of current) {
+      // An id we didn't get fresh stock for keeps its existing cap untouched.
+      if (!(item.id in updates)) {
+        next.push(item);
+        continue;
+      }
+      const stock = updates[item.id];
+      // Unknown availability (null) → no cap; clear any stale numeric cap.
+      if (stock == null) {
+        next.push({ ...item, stock: null });
+        continue;
+      }
+      // Confirmed out of stock (0 or less) → drop the line and report it.
+      if (stock <= 0) {
+        removed.push({ id: item.id, name: item.name });
+        continue;
+      }
+      // Stock dropped below the saved quantity → clamp and report it.
+      if (item.qty > stock) {
+        clamped.push({ id: item.id, name: item.name, available: stock, previousQty: item.qty });
+        next.push({ ...item, stock, qty: stock });
+        continue;
+      }
+      // Still enough stock; just refresh the cap.
+      next.push({ ...item, stock });
+    }
+
+    setItems(next);
+    save(next);
+    itemsRef.current = next;
+    return { clamped, removed };
+  };
+
   const clear = () => {
     setItems([]);
     save([]);
@@ -121,7 +190,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const iva = total - base;
 
   return (
-    <CartContext.Provider value={{ items, count, add, remove, setQty, clear, subtotal: total, iva, base, total }}>
+    <CartContext.Provider value={{ items, count, add, remove, setQty, clear, refreshStock, subtotal: total, iva, base, total }}>
       {children}
     </CartContext.Provider>
   );

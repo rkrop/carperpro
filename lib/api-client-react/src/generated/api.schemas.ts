@@ -68,6 +68,26 @@ export interface Product {
   descripcion?: string | null;
 }
 
+export type ProductAvailabilityStockState = typeof ProductAvailabilityStockState[keyof typeof ProductAvailabilityStockState];
+
+
+export const ProductAvailabilityStockState = {
+  in_stock: 'in_stock',
+  out_of_stock: 'out_of_stock',
+  unknown: 'unknown',
+} as const;
+
+export interface ProductAvailability {
+  id: string;
+  /** @nullable */
+  stock: number | null;
+  stockState: ProductAvailabilityStockState;
+}
+
+export interface AvailabilityPage {
+  items: ProductAvailability[];
+}
+
 export interface ProductPage {
   items: Product[];
   total: number;
@@ -134,6 +154,13 @@ brand?: string;
 sucursalId?: string;
 limit?: number;
 offset?: number;
+};
+
+export type GetProductsAvailabilityParams = {
+/**
+ * Comma-separated product ids
+ */
+ids: string;
 };
 
 export type GetProductParams = {

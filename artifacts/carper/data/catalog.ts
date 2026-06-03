@@ -4,7 +4,9 @@ import { ImageSourcePropType } from "react-native";
 import {
   useCreateOrder,
   useGetDeals,
+  getGetProductsAvailabilityQueryKey,
   useGetProduct,
+  useGetProductsAvailability,
   useGetSyncStatus,
   useListBrands,
   useListCategories,
@@ -142,6 +144,42 @@ export function useProducts(params?: ListProductsParams) {
 export function useProduct(id: string | undefined, sucursalId?: string) {
   const query = useGetProduct(id ?? "", sucursalId ? { sucursalId } : undefined);
   const data = useMemo(() => (query.data ? mapProduct(query.data) : undefined), [query.data]);
+  return { ...query, data };
+}
+
+/** Availability state for a single product id, as reported live by the API. */
+export type AvailabilityState = "in_stock" | "out_of_stock" | "unknown";
+
+export interface ProductAvailability {
+  id: string;
+  /** Current on-hand count, or null when availability is unknown. */
+  stock: number | null;
+  stockState: AvailabilityState;
+}
+
+/**
+ * Refresh current stock for a fixed set of product ids (used by the cart to
+ * detect when availability dropped after items were saved). The id list should
+ * be stable — pass a snapshot, not a live-changing array — so the query key and
+ * one-shot apply behave predictably. Disabled when there are no ids.
+ */
+export function useProductsAvailability(ids: string[]) {
+  const idsParam = ids.join(",");
+  const query = useGetProductsAvailability(
+    { ids: idsParam },
+    {
+      query: {
+        queryKey: getGetProductsAvailabilityQueryKey({ ids: idsParam }),
+        enabled: ids.length > 0,
+        staleTime: 0,
+        gcTime: 0,
+      },
+    },
+  );
+  const data = useMemo<ProductAvailability[] | undefined>(
+    () => query.data?.items.map((i) => ({ id: i.id, stock: i.stock, stockState: i.stockState })),
+    [query.data],
+  );
   return { ...query, data };
 }
 
