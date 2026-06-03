@@ -9,7 +9,7 @@ import {
   syncStateTable,
 } from "@workspace/db";
 import { logger } from "../logger";
-import { AdmintotalClient } from "./client";
+import { getAdmintotalClient } from "./client";
 import { isAdmintotalConfigured, missingConfigMessage } from "./config";
 import { mapCategory, mapSubcategory, mapSucursal, mapProduct } from "./mapper";
 
@@ -110,7 +110,7 @@ export async function runInboundSync(): Promise<SyncResult> {
   );
 
   try {
-    const client = new AdmintotalClient();
+    const client = getAdmintotalClient();
 
     // 1) Lineas -> categories
     const rawLineas = await client.getLineas();

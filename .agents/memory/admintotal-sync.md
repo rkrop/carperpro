@@ -150,3 +150,31 @@ the extra photos a merchant sees in the web admin are attachments in the product
 (rich text, e.g. "APLICACIONES: Cummins / Freightliner / Kenworth / Mack" — the
 vehicle fitment list), `marca`, `porcentaje_iva`/`porcentaje_ieps`, `precio_neto`.
 We currently don't map `descripcion_ecommerce`; it's a quick catalog-quality win.
+
+## Global request limiter + per-fetch wrapping (deadlock trap)
+Every Admintotal HTTP call funnels through ONE process-wide `RequestLimiter`
+(`client.ts`): a concurrency cap (`ADMINTOTAL_MAX_CONCURRENCY`, default 5), optional
+min spacing between starts (`ADMINTOTAL_MIN_INTERVAL_MS`), and a global 429 pause
+(`pauseFor`/`pausedUntil`) so one 429 backs the WHOLE process off, not just the
+caller that hit it. Use the lazy `getAdmintotalClient()` singleton everywhere
+(sync/targetedRefresh/outbound/liveStock) — not `new AdmintotalClient()` — so the
+api_key is logged in once and all callers share the limiter. Local per-call
+CONCURRENCY (e.g. liveStock's 5) is now subordinate to this global cap.
+
+**Why (the trap):** `request()` is RECURSIVE on retry. Wrap ONLY the `fetch` in
+`limiter.run()`, never the whole `request()` — `run()` releases its slot in
+`finally` before the backoff `sleep`/recursive retry, so sleeping callers don't
+occupy a slot and recursion never re-enters while holding one. Wrapping all of
+`request()` would deadlock (slot held across the sleep + recursive acquire).
+Spacing is reserved synchronously in `acquire()` (read+write `nextSlotAt` with no
+await between) so concurrent acquirers space out; the wait loop re-checks
+`pausedUntil` so a 429 pause set AFTER reservation still delays. Backoff is
+`backoffWithJitter` (50–100% of exponential, capped 15s) on network + 429/5xx (NOT
+401 reauth) to avoid thundering-herd reconvergence.
+
+**How to apply:** live stock has a short TTL cache (`ADMINTOTAL_STOCK_TTL_MS`,
+default 30s) keyed by productId. Pass `{ force: true }` to
+`getLiveSellableStock`/`getAvailableStock` whenever the result CONFIRMS a sale
+(post-payment `fulfillPaidOrder`) — never confirm a sale on cached stock. The
+pre-payment gate may use the cache (the forced post-payment re-check is the real
+guard). `unverified → local DB mirror` degradation is unchanged.

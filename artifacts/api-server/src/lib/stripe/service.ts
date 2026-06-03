@@ -400,7 +400,10 @@ async function fulfillPaidOrder(
   let available = new Map<string, number>();
   let unverified: string[] = [];
   try {
-    const res = await getLiveSellableStock(order.lines.map((l) => l.productId));
+    const res = await getLiveSellableStock(
+      order.lines.map((l) => l.productId),
+      { force: true },
+    );
     available = res.available;
     unverified = res.unverified;
   } catch (err) {

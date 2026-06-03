@@ -1,6 +1,8 @@
 import { logger } from "../logger";
 import {
   getAdmintotalConfig,
+  getAdmintotalMaxConcurrency,
+  getAdmintotalMinIntervalMs,
   type AdmintotalConfig,
 } from "./config";
 
@@ -37,12 +39,90 @@ interface PaginatedResponse<T> {
 // records where to resume and the next scheduler tick continues from there.
 const MAX_RETRIES = 8;
 const BASE_BACKOFF_MS = 1000;
-const MAX_BACKOFF_MS = 30_000;
+const MAX_BACKOFF_MS = 15_000;
 const PAGE_LIMIT = 100;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// Exponential backoff with jitter (50–100% of the exponential window) so several
+// callers retrying after the same 429 don't reconverge into a thundering herd.
+// Capped at MAX_BACKOFF_MS so a high attempt count can't sleep absurdly long.
+function backoffWithJitter(attempt: number): number {
+  const exp = BASE_BACKOFF_MS * 2 ** attempt;
+  const jittered = exp * (0.5 + Math.random() * 0.5);
+  return Math.min(jittered, MAX_BACKOFF_MS);
+}
+
+// Process-wide limiter shared by EVERY Admintotal request (sync, live stock,
+// pedidos). Two knobs: a hard cap on concurrent in-flight requests and a minimum
+// spacing between request starts. A 429 anywhere trips a global pause that every
+// queued/in-flight request honors, so one rate-limit signal backs the WHOLE
+// process off instead of just the unlucky caller.
+class RequestLimiter {
+  private active = 0;
+  private waiters: Array<() => void> = [];
+  private nextSlotAt = 0;
+  private pausedUntil = 0;
+
+  constructor(
+    private readonly maxConcurrency: number,
+    private readonly minIntervalMs: number,
+  ) {}
+
+  // Back the whole process off for `ms` (used on a 429 Retry-After). Only ever
+  // extends an existing pause, never shortens it.
+  pauseFor(ms: number): void {
+    if (ms <= 0) return;
+    const until = Date.now() + ms;
+    if (until > this.pausedUntil) this.pausedUntil = until;
+  }
+
+  private async acquire(): Promise<void> {
+    // Wait for a free concurrency slot. `while` (not `if`) re-checks after a
+    // wake-up so a slot freed concurrently can't be double-claimed.
+    while (this.active >= this.maxConcurrency) {
+      await new Promise<void>((resolve) => this.waiters.push(resolve));
+    }
+    this.active += 1;
+    // Reserve a spaced start slot synchronously (no await between read+write) so
+    // concurrent acquirers each get their own slot minIntervalMs apart.
+    const earliest = Math.max(Date.now(), this.nextSlotAt);
+    this.nextSlotAt = earliest + this.minIntervalMs;
+    // Wait until our slot, and keep waiting while a global 429 pause is active —
+    // re-checked each loop so a pause set AFTER we reserved still delays us.
+    for (;;) {
+      const now = Date.now();
+      const wait = Math.max(earliest - now, this.pausedUntil - now);
+      if (wait <= 0) break;
+      await sleep(wait);
+    }
+  }
+
+  private release(): void {
+    this.active -= 1;
+    const next = this.waiters.shift();
+    if (next) next();
+  }
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+}
+
+// One limiter for the whole process. Even if a stray `new AdmintotalClient()`
+// survives somewhere, every client funnels its network calls through THIS shared
+// limiter, so the concurrency cap and 429 pause are truly global.
+const limiter = new RequestLimiter(
+  getAdmintotalMaxConcurrency(),
+  getAdmintotalMinIntervalMs(),
+);
 
 export class AdmintotalClient {
   private config: AdmintotalConfig;
@@ -55,14 +135,16 @@ export class AdmintotalClient {
 
   private async login(): Promise<string> {
     const url = `${this.config.baseUrl}/usuarios/login_usuario/`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: this.config.username,
-        password: this.config.password,
+    const res = await limiter.run(() =>
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: this.config.username,
+          password: this.config.password,
+        }),
       }),
-    });
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new AdmintotalError(
@@ -114,18 +196,23 @@ export class AdmintotalClient {
     const key = await this.ensureKey();
     let res: Response;
     try {
-      res = await fetch(url, {
-        method,
-        headers: {
-          "Api-key": key,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: body != null ? JSON.stringify(body) : undefined,
-      });
+      // The actual network call runs THROUGH the shared limiter, so its slot is
+      // held only while in flight and released (even on throw) before any backoff
+      // sleep below — sleeping callers never occupy a concurrency slot.
+      res = await limiter.run(() =>
+        fetch(url, {
+          method,
+          headers: {
+            "Api-key": key,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: body != null ? JSON.stringify(body) : undefined,
+        }),
+      );
     } catch (err) {
       if (attempt < MAX_RETRIES) {
-        const wait = Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS);
+        const wait = backoffWithJitter(attempt);
         logger.warn(
           { err, url, attempt, wait },
           "Admintotal: error de red, reintentando",
@@ -149,8 +236,12 @@ export class AdmintotalClient {
       if (attempt < MAX_RETRIES) {
         const retryAfter = Number(res.headers.get("retry-after"));
         const wait = Number.isNaN(retryAfter)
-          ? Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS)
+          ? backoffWithJitter(attempt)
           : retryAfter * 1000;
+        // A 429 means the whole account is being throttled, not just this call.
+        // Trip the GLOBAL pause so every other in-flight/queued request also
+        // holds off for the same window instead of piling on.
+        if (res.status === 429) limiter.pauseFor(wait);
         logger.warn(
           { status: res.status, url, attempt, wait },
           "Admintotal: respuesta transitoria, reintentando",
@@ -359,4 +450,14 @@ export class AdmintotalClient {
     const url = this.buildUrl("movimientos/pedidos/");
     return this.request<Record<string, unknown>>("POST", url, payload);
   }
+}
+
+// Lazy process-wide singleton. Sharing ONE client means the api_key is logged in
+// once for the whole process (no re-login per checkout) and every caller funnels
+// through the same global RequestLimiter above. Prefer this over
+// `new AdmintotalClient()` everywhere outside tests.
+let sharedClient: AdmintotalClient | null = null;
+export function getAdmintotalClient(): AdmintotalClient {
+  if (!sharedClient) sharedClient = new AdmintotalClient();
+  return sharedClient;
 }

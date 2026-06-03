@@ -1,7 +1,7 @@
 import { asc, desc, gt, isNotNull, sql } from "drizzle-orm";
 import { db, productsTable, outboundOrdersTable } from "@workspace/db";
 import { logger } from "../logger";
-import { AdmintotalClient } from "./client";
+import { getAdmintotalClient } from "./client";
 import { mapProduct } from "./mapper";
 import { isAdmintotalConfigured } from "./config";
 import {
@@ -168,7 +168,7 @@ export async function runTargetedStockRefresh(): Promise<TargetedRefreshResult> 
       return empty;
     }
 
-    const client = new AdmintotalClient();
+    const client = getAdmintotalClient();
     let updated = 0;
     let confirmedZero = 0;
     let notFound = 0;

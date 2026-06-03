@@ -110,6 +110,38 @@ export function getTargetedRefreshOrderLookbackDays(): number {
   return 30;
 }
 
+// Global cap on how many Admintotal requests may be in flight at once across the
+// WHOLE process (sync, live stock, pedidos all share it). Clamped to 1..100.
+export function getAdmintotalMaxConcurrency(): number {
+  const raw = process.env.ADMINTOTAL_MAX_CONCURRENCY;
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= 100) {
+    return Math.floor(parsed);
+  }
+  return 5;
+}
+
+// Minimum spacing (ms) between Admintotal request *starts*, applied globally by
+// the shared limiter. Default 0 (no extra spacing — concurrency is the only
+// throttle). Clamped to >= 0.
+export function getAdmintotalMinIntervalMs(): number {
+  const raw = process.env.ADMINTOTAL_MIN_INTERVAL_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isNaN(parsed) && parsed >= 0) return Math.floor(parsed);
+  return 0;
+}
+
+// TTL (ms) for the short in-memory live-stock cache in liveStock.ts, so repeated
+// product views/checkouts of the same part don't fire a detail request each
+// time. The post-payment re-check bypasses it (force). Default 30s. Clamped >= 0
+// (0 disables the cache).
+export function getAdmintotalStockTtlMs(): number {
+  const raw = process.env.ADMINTOTAL_STOCK_TTL_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isNaN(parsed) && parsed >= 0) return Math.floor(parsed);
+  return 30_000;
+}
+
 // Shared secret used to authenticate inbound Admintotal webhook requests.
 // Admintotal sends it in the "Api-key" header (or as the HTTP Basic password).
 // Optional but strongly recommended — when unset the webhook accepts anonymous

@@ -1,7 +1,7 @@
 import { and, eq, lt } from "drizzle-orm";
 import { db, outboundOrdersTable, type OutboundOrder } from "@workspace/db";
 import { logger } from "../logger";
-import { AdmintotalClient } from "./client";
+import { getAdmintotalClient } from "./client";
 import { isAdmintotalConfigured } from "./config";
 import { buildAddressObservaciones } from "../shippingAddress";
 
@@ -46,7 +46,7 @@ export async function pushOrder(order: OutboundOrder): Promise<void> {
   pushingIds.add(order.id);
   const payload = buildPedidoPayload(order);
   try {
-    const client = new AdmintotalClient();
+    const client = getAdmintotalClient();
     const res = await client.createPedido(payload);
     const pedidoId =
       (res.id != null ? String(res.id) : undefined) ??

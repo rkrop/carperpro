@@ -1,13 +1,28 @@
 import { inArray } from "drizzle-orm";
 import { db, productsTable } from "@workspace/db";
-import { AdmintotalClient } from "./client";
+import { getAdmintotalClient } from "./client";
 import { mapProduct } from "./mapper";
-import { isAdmintotalConfigured } from "./config";
+import { getAdmintotalStockTtlMs, isAdmintotalConfigured } from "./config";
 import { logger } from "../logger";
 
-// How many product detail lookups to run against the ERP at once. Kept small to
-// stay well under Admintotal's aggressive rate limiting.
+// How many product detail workers this function spawns. This is SUBORDINATE to
+// the client's global RequestLimiter (ADMINTOTAL_MAX_CONCURRENCY): every lookup
+// funnels through that shared limiter, so this never adds to the global budget —
+// it just bounds how many ids this one call tries to push through at once.
 const CONCURRENCY = 5;
+
+// Short-lived in-memory cache of confirmed sellable stock per product id, so
+// repeated views/checkouts of the same part within the TTL don't fire a fresh
+// detail request every time. Read at TTL granularity (getAdmintotalStockTtlMs);
+// the post-payment re-check passes `force` to bypass it — we never confirm a
+// sale on cached stock.
+const liveStockCache = new Map<string, { value: number; at: number }>();
+
+export interface LiveStockOptions {
+  // Skip the cache entirely (read AND treat as a fresh confirmation). Used by the
+  // post-payment verification so a sale is never confirmed on cached stock.
+  force?: boolean;
+}
 
 export interface LiveStockResult {
   // productId -> sellable units, ONLY for ids we could confirm live (a 404 is a
@@ -44,7 +59,9 @@ function sellableFromRaw(raw: Record<string, unknown>): number {
  */
 export async function getLiveSellableStock(
   productIds: string[],
+  opts: LiveStockOptions = {},
 ): Promise<LiveStockResult> {
+  const { force = false } = opts;
   const ids = Array.from(new Set(productIds.filter(Boolean)));
   const available = new Map<string, number>();
   const unverified: string[] = [];
@@ -54,15 +71,33 @@ export async function getLiveSellableStock(
     return { available, unverified: ids };
   }
 
-  const client = new AdmintotalClient();
+  // Serve fresh cache hits first (unless forced); only the misses hit the ERP.
+  const ttl = getAdmintotalStockTtlMs();
+  const toFetch: string[] = [];
+  const now = Date.now();
+  for (const id of ids) {
+    if (!force && ttl > 0) {
+      const hit = liveStockCache.get(id);
+      if (hit && now - hit.at < ttl) {
+        available.set(id, hit.value);
+        continue;
+      }
+    }
+    toFetch.push(id);
+  }
+  if (toFetch.length === 0) return { available, unverified };
+
+  const client = getAdmintotalClient();
   let cursor = 0;
   async function worker(): Promise<void> {
-    while (cursor < ids.length) {
-      const id = ids[cursor++];
+    while (cursor < toFetch.length) {
+      const id = toFetch[cursor++];
       try {
         const raw = await client.getProductoById(id);
         // 404 -> the product no longer exists in the ERP: treat as unavailable.
-        available.set(id, raw ? sellableFromRaw(raw) : 0);
+        const value = raw ? sellableFromRaw(raw) : 0;
+        available.set(id, value);
+        liveStockCache.set(id, { value, at: Date.now() });
       } catch (err) {
         logger.warn(
           { id, err },
@@ -73,7 +108,7 @@ export async function getLiveSellableStock(
     }
   }
   await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, ids.length) }, () => worker()),
+    Array.from({ length: Math.min(CONCURRENCY, toFetch.length) }, () => worker()),
   );
   return { available, unverified };
 }
@@ -103,9 +138,10 @@ async function getDbStock(productIds: string[]): Promise<Map<string, number>> {
  */
 export async function getAvailableStock(
   productIds: string[],
+  opts: LiveStockOptions = {},
 ): Promise<Map<string, number>> {
   const ids = Array.from(new Set(productIds.filter(Boolean)));
-  const { available, unverified } = await getLiveSellableStock(ids);
+  const { available, unverified } = await getLiveSellableStock(ids, opts);
   if (unverified.length > 0) {
     const dbStock = await getDbStock(unverified);
     for (const id of unverified) available.set(id, dbStock.get(id) ?? 0);
