@@ -121,3 +121,20 @@ leave untouched (same defensive rule as the full sync).
 `col nulls first asc`; write the whole clause as one raw `sql\`col asc nulls first\``.
 Config knobs: `ADMINTOTAL_TARGETED_REFRESH_INTERVAL_MS` (30s floor),
 `ADMINTOTAL_TARGETED_REFRESH_BATCH` (1..200), `ADMINTOTAL_TARGETED_REFRESH_ORDER_DAYS`.
+
+## The v2 API exposes only ONE image per product (`imagen_url`)
+The `productos/{id}/` detail payload carries a single `imagen_url` string and no
+image array. Probed sub-resources (`productos/{id}/imagenes|documentos|archivos|
+galeria/`, `documentos/?producto=`, `producto_imagenes/?producto=`) ALL 404.
+
+**Why it matters:** Merchants see multiple photos per product in the Admintotal
+WEB ADMIN, but those extra images are not reachable through the v2 REST API we
+sync from — so the catalog (web + app) can only ever show the one `imagen_url`.
+Don't promise a multi-image gallery sourced from the ERP; the data isn't there.
+
+**How to apply:** To show more than one photo, the images must come from elsewhere
+(staff uploading extra photos to object storage, or a different/ecommerce
+Admintotal API if one is ever enabled). The mobile app renders photos via
+`artifacts/carper/components/ProductImage.tsx` — which uses **expo-image** with
+`cachePolicy="memory-disk"` so a photo downloads once and repeat views are
+instant (the old RN `Image` had no disk cache → it re-fetched every time).

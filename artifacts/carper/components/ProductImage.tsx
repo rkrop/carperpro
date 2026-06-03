@@ -1,18 +1,22 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Image, type ImageSource } from "expo-image";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Image, ImageSourcePropType, StyleProp, View, ViewStyle } from "react-native";
+import { ActivityIndicator, ImageSourcePropType, StyleProp, View, ViewStyle } from "react-native";
 
 import { useCategoryIcon } from "@/data/catalog";
 import { useColors } from "@/hooks/useColors";
 
 /**
  * Renders the product photo when present, otherwise a clean line-icon
- * placeholder keyed off the product's category. Photos use `mix-blend`-style
- * white trimming via `contain` on a white field.
+ * placeholder keyed off the product's category. Photos are trimmed against a
+ * white field via `contentFit="contain"`.
  *
- * While a remote image loads, a subtle spinner is shown; if the URL fails to
- * load (404, expired, network), it falls back to the category icon so the UI
- * never shows a broken image.
+ * Uses `expo-image` for a memory + disk cache (`cachePolicy="memory-disk"`), so
+ * a photo only downloads once — revisiting a product or scrolling back through
+ * a list shows it instantly instead of re-fetching from the ERP each time. A
+ * subtle spinner shows during the first load and a short fade smooths it in; if
+ * the URL fails (404, expired, network) it falls back to the category icon so
+ * the UI never shows a broken image.
  */
 export function ProductImage({
   image,
@@ -21,7 +25,7 @@ export function ProductImage({
   iconSize = 28,
   style,
 }: {
-  image: ImageSourcePropType | null;
+  image: ImageSource | ImageSourcePropType | string | null | undefined;
   categoryId: string | null;
   pad?: number;
   iconSize?: number;
@@ -34,7 +38,12 @@ export function ProductImage({
 
   // Reset transient state when the source changes — list rows are recycled
   // across products, so a previous failure/load must not leak into the next.
-  const imageKey = image && typeof image === "object" && "uri" in image ? image.uri : JSON.stringify(image);
+  const imageKey =
+    typeof image === "string"
+      ? image
+      : image && typeof image === "object" && "uri" in image
+        ? image.uri
+        : JSON.stringify(image);
   useEffect(() => {
     setFailed(false);
     setLoading(!!image);
@@ -44,11 +53,14 @@ export function ProductImage({
     return (
       <View style={[{ backgroundColor: c.background, padding: pad, position: "relative" }, style]}>
         <Image
-          source={image}
-          resizeMode="contain"
+          source={image as ImageSource}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          transition={150}
+          recyclingKey={imageKey}
           style={{ width: "100%", height: "100%" }}
           onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => setLoading(false)}
+          onLoad={() => setLoading(false)}
           onError={() => {
             setLoading(false);
             setFailed(true);
