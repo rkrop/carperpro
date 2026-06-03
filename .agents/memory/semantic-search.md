@@ -54,3 +54,18 @@ The 768-float `embedding` column must be EXCLUDED from catalog selects
 (`getTableColumns(productsTable)` minus embedding → `productColumns`), or every
 listing drags the vectors over the wire. `serializeProduct` is typed
 `Omit<Product,"embedding">` to enforce this.
+
+## Publish blocker — pgvector must pre-exist in PROD
+The `embedding vector(768)` column makes the publish-time DB migration FAIL with
+"Failed to validate database migrations" whenever production lacks the `vector`
+extension. **Why:** dev enables `vector`+`unaccent` via `ensure-extensions.mjs`
+(runs before `drizzle-kit push`), but the PUBLISH flow does NOT run that script
+and cannot `CREATE EXTENSION` itself — and `executeSql({environment:"production"})`
+is read-only, so the agent cannot enable it either. Replit prod DB is Neon-backed
+(supports pgvector) but the prod data pane only edits DATA, not DDL.
+**How to apply:** if a Drizzle column uses an extension-backed type (pgvector
+`vector`, etc.), that extension must already be enabled in the PROD database
+before republishing. The supported path is Replit Support enabling it once; then
+republish (the migration adds the column cleanly). The only agent-side alternative
+is dropping the extension-typed column from the schema (loses the feature). Carper
+chose to keep semantic search and enable pgvector in prod via Support.
