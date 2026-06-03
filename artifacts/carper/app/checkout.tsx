@@ -1,11 +1,13 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useCreateOrder } from "@workspace/api-client-react";
+import { getPostalCode, useCreateOrder } from "@workspace/api-client-react";
+import type { ShippingAddressInput } from "@/lib/stripeCheckout";
 
 import { AccentButton } from "@/components/CarperUI";
 import { ScreenHeader } from "@/components/ScreenHeader";
@@ -32,6 +34,8 @@ function buildWhatsAppMessage(opts: {
   total: number;
   entrega: Entrega;
   address: string;
+  referencias: string;
+  mapsUrl: string;
   pagoLabel: string;
   name: string;
   phone: string;
@@ -47,11 +51,14 @@ function buildWhatsAppMessage(opts: {
   lines.push("");
   lines.push(`*Total: ${formatMXN(opts.total)}* (IVA incluido)`);
   lines.push("");
-  lines.push(
-    opts.entrega === "tienda"
-      ? "*Entrega:* Recoger en tienda"
-      : `*Entrega:* Envío a domicilio\nDirección: ${opts.address}`,
-  );
+  if (opts.entrega === "tienda") {
+    lines.push("*Entrega:* Recoger en tienda");
+  } else {
+    lines.push("*Entrega:* Envío a domicilio");
+    lines.push(`Dirección: ${opts.address}`);
+    if (opts.referencias) lines.push(`Referencias: ${opts.referencias}`);
+    if (opts.mapsUrl) lines.push(`📍 Ubicación: ${opts.mapsUrl}`);
+  }
   lines.push(`*Pago:* ${opts.pagoLabel}`);
   lines.push("");
   lines.push(`*Cliente:* ${opts.name}`);
@@ -130,11 +137,137 @@ export default function Checkout() {
   const [step, setStep] = useState(0);
   const [entrega, setEntrega] = useState<Entrega>("tienda");
   const [pago, setPago] = useState<Pago | null>(null);
-  const [address, setAddress] = useState("");
+  // Structured home-delivery address.
+  const [calle, setCalle] = useState("");
+  const [numExt, setNumExt] = useState("");
+  const [numInt, setNumInt] = useState("");
+  const [cp, setCp] = useState("");
+  const [colonia, setColonia] = useState("");
+  const [estado, setEstado] = useState("");
+  const [municipio, setMunicipio] = useState("");
+  const [referencias, setReferencias] = useState("");
+  const [colonias, setColonias] = useState<string[]>([]);
+  const [cpLoading, setCpLoading] = useState(false);
+  // GPS coords from the device; cpCentroid is the approximate CP location used
+  // as a fallback for the driver's map link when GPS isn't shared.
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [cpCentroid, setCpCentroid] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 16;
+
+  // Look up colonias + estado + centroid for a 5-digit CP (free, server-proxied).
+  // A monotonic request id guards against out-of-order responses: a slower reply
+  // for an old CP must never overwrite state for a newer one.
+  const cpReqId = useRef(0);
+  const lookupCp = async (raw: string) => {
+    const clean = raw.replace(/\D/g, "").slice(0, 5);
+    setCp(clean);
+    // Any CP edit invalidates previously derived geo context so the map pin and
+    // estado/municipio never silently mismatch the current CP.
+    const reqId = ++cpReqId.current;
+    setColonias([]);
+    setEstado("");
+    setMunicipio("");
+    setCpCentroid(null);
+    if (clean.length !== 5) {
+      setCpLoading(false);
+      return;
+    }
+    setCpLoading(true);
+    try {
+      const data = await getPostalCode(clean);
+      if (reqId !== cpReqId.current) return; // a newer CP edit superseded this one
+      setColonias(data.colonias ?? []);
+      if (data.estado) setEstado(data.estado);
+      if (data.municipio) setMunicipio(data.municipio);
+      if (typeof data.lat === "number" && typeof data.lng === "number") {
+        setCpCentroid({ lat: data.lat, lng: data.lng });
+      }
+      // Auto-select when the CP maps to a single colonia.
+      if ((data.colonias?.length ?? 0) === 1) setColonia(data.colonias[0]);
+    } catch {
+      if (reqId === cpReqId.current) setColonias([]);
+    } finally {
+      if (reqId === cpReqId.current) setCpLoading(false);
+    }
+  };
+
+  // Capture the device GPS and (best-effort) prefill empty address fields.
+  const useMyLocation = async () => {
+    if (gpsLoading) return;
+    setGpsLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permiso de ubicación",
+          "Activa el permiso de ubicación para compartir tu posición exacta con el repartidor.",
+        );
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const ll = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setCoords(ll);
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+      // Reverse geocode is best-effort (unsupported on web) — never blocks.
+      try {
+        const geo = await Location.reverseGeocodeAsync({ latitude: ll.lat, longitude: ll.lng });
+        const g = geo[0];
+        if (g) {
+          if (!calle.trim() && g.street) setCalle(g.street);
+          if (!numExt.trim() && g.streetNumber) setNumExt(g.streetNumber);
+          if (!colonia.trim() && (g.district || g.subregion)) {
+            setColonia(g.district || g.subregion || "");
+          }
+          if (!estado.trim() && g.region) setEstado(g.region);
+          if (!municipio.trim() && g.city) setMunicipio(g.city);
+          if (cp.trim().length !== 5 && g.postalCode) lookupCp(g.postalCode);
+        }
+      } catch {
+        // reverse geocode unavailable — coords alone still give a precise pin.
+      }
+    } catch {
+      Alert.alert(
+        "Ubicación",
+        "No pudimos obtener tu ubicación. Intenta de nuevo o escribe tu dirección manualmente.",
+      );
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
+  const pin = coords ?? cpCentroid;
+  const addressLine = (): string =>
+    [
+      `${calle.trim()} ${numExt.trim()}${numInt.trim() ? ` int ${numInt.trim()}` : ""}`.trim(),
+      colonia.trim() ? `Col. ${colonia.trim()}` : "",
+      cp.trim() ? `CP ${cp.trim()}` : "",
+      municipio.trim(),
+      estado.trim(),
+    ]
+      .filter(Boolean)
+      .join(", ");
+  const buildMapsUrl = (): string => {
+    if (pin) return `https://maps.google.com/?q=${pin.lat},${pin.lng}`;
+    const q = addressLine();
+    return q ? `https://maps.google.com/?q=${encodeURIComponent(`${q}, México`)}` : "";
+  };
+  const buildShippingAddress = (): ShippingAddressInput => ({
+    calle: calle.trim(),
+    numExterior: numExt.trim(),
+    numInterior: numInt.trim() || undefined,
+    colonia: colonia.trim(),
+    cp: cp.trim(),
+    municipio: municipio.trim() || undefined,
+    estado: estado.trim() || undefined,
+    referencias: referencias.trim() || undefined,
+    lat: pin?.lat,
+    lng: pin?.lng,
+    mapsUrl: buildMapsUrl() || undefined,
+  });
 
   // Web: after Stripe redirects back to this page, verify the pending order.
   const webReturnHandled = useRef(false);
@@ -196,9 +329,14 @@ export default function Checkout() {
   }, []);
 
   const steps = ["Entrega", "Pago", "Resumen"];
+  const envioReady =
+    calle.trim().length > 1 &&
+    numExt.trim().length > 0 &&
+    /^\d{5}$/.test(cp.trim()) &&
+    colonia.trim().length > 1;
   const canNext =
     step === 0
-      ? entrega === "tienda" || address.trim().length > 5
+      ? entrega === "tienda" || envioReady
       : step === 1
         ? pago !== null
         : name.trim().length > 1 && phone.trim().length >= 10 && cart.items.length > 0;
@@ -229,6 +367,7 @@ export default function Checkout() {
           buyerName: name.trim(),
           buyerPhone: phone.trim(),
           lines: cart.items.map((i) => ({ productId: i.id, qty: i.qty })),
+          shippingAddress: entrega === "envio" ? buildShippingAddress() : undefined,
         });
         if (result.mode === "native") {
           // Browser closed — verify authoritatively before confirming.
@@ -286,6 +425,7 @@ export default function Checkout() {
           total: cart.total,
           buyerName: name.trim(),
           buyerPhone: phone.trim(),
+          shippingAddress: entrega === "envio" ? buildShippingAddress() : undefined,
         },
       });
       folio = created.folio;
@@ -311,7 +451,9 @@ export default function Checkout() {
         items: cart.items.map((i) => ({ name: i.name, sku: i.sku, qty: i.qty, price: i.price })),
         total: cart.total,
         entrega,
-        address: address.trim(),
+        address: addressLine(),
+        referencias: referencias.trim(),
+        mapsUrl: buildMapsUrl(),
         pagoLabel,
         name: name.trim(),
         phone: phone.trim(),
@@ -375,15 +517,76 @@ export default function Checkout() {
             <View style={{ height: 12 }} />
             <SelectCard active={entrega === "envio"} icon="truck" title="Envío a Domicilio" sub={`Gratis · ${STORE.delivery.eta} · ${STORE.delivery.zona}`} onPress={() => setEntrega("envio")} />
             {entrega === "envio" ? (
-              <View style={{ marginTop: 20 }}>
-                <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 10 }}>Dirección de Envío</Text>
-                <TextInput
-                  value={address}
-                  onChangeText={setAddress}
-                  placeholder="Calle, número, colonia, CP"
-                  placeholderTextColor={c.neutral400}
+              <View style={{ marginTop: 20, gap: 14 }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400 }}>Dirección de Envío</Text>
+
+                {/* GPS — share an exact pin with the driver */}
+                <Pressable
+                  onPress={useMyLocation}
+                  disabled={gpsLoading}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1, borderColor: coords ? c.primary : c.border, backgroundColor: coords ? c.primarySoft : c.background, padding: 16 }}
+                >
+                  <View style={{ width: 40, height: 40, borderWidth: 1, borderColor: coords ? c.primary : c.border, alignItems: "center", justifyContent: "center" }}>
+                    <Feather name="navigation" size={18} color={coords ? c.primary : c.foreground} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 13, letterSpacing: -0.2, textTransform: "uppercase", color: coords ? c.primary : c.foreground }}>
+                      {coords ? "Ubicación capturada" : "Usar mi ubicación actual"}
+                    </Text>
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: c.mutedForeground, marginTop: 2 }}>
+                      {coords ? "El repartidor recibirá un mapa exacto" : "Comparte tu GPS para una entrega precisa"}
+                    </Text>
+                  </View>
+                  {gpsLoading ? (
+                    <ActivityIndicator color={c.primary} />
+                  ) : coords ? (
+                    <Feather name="check-circle" size={18} color={c.primary} />
+                  ) : (
+                    <Feather name="chevron-right" size={18} color={c.neutral400} />
+                  )}
+                </Pressable>
+
+                <FormInput label="Calle" value={calle} onChangeText={setCalle} placeholder="Ej. Av. Constitución" c={c} />
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <FormInput label="Núm. exterior" value={numExt} onChangeText={setNumExt} placeholder="123" keyboardType="numbers-and-punctuation" c={c} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <FormInput label="Interior (opcional)" value={numInt} onChangeText={setNumInt} placeholder="Depto 4" c={c} />
+                  </View>
+                </View>
+
+                <View>
+                  <FormInput label="Código postal" value={cp} onChangeText={lookupCp} placeholder="64000" keyboardType="number-pad" maxLength={5} c={c} />
+                  {cpLoading ? (
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: c.mutedForeground, marginTop: 6 }}>Buscando colonias…</Text>
+                  ) : estado ? (
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: c.mutedForeground, marginTop: 6 }}>
+                      {municipio ? `${municipio}, ` : ""}{estado}
+                    </Text>
+                  ) : null}
+                </View>
+
+                {colonias.length > 0 ? (
+                  <View>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 8 }}>Elige tu colonia</Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                      {colonias.map((col) => (
+                        <Chip key={col} label={col} active={colonia === col} onPress={() => setColonia(col)} c={c} />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+
+                <FormInput label="Colonia" value={colonia} onChangeText={setColonia} placeholder="Colonia" c={c} />
+
+                <FormInput
+                  label="Referencias"
+                  value={referencias}
+                  onChangeText={setReferencias}
+                  placeholder="Entre calles, color de fachada, indicaciones para llegar…"
                   multiline
-                  style={{ borderWidth: 1, borderColor: c.border, padding: 16, minHeight: 90, fontFamily: Fonts.medium, fontSize: 14, color: c.foreground, textAlignVertical: "top" }}
+                  c={c}
                 />
               </View>
             ) : null}
@@ -433,6 +636,22 @@ export default function Checkout() {
                 style={{ borderWidth: 1, borderColor: c.border, padding: 16, fontFamily: Fonts.medium, fontSize: 14, color: c.foreground }}
               />
             </View>
+
+            {entrega === "envio" ? (
+              <View style={{ marginTop: 20, borderWidth: 1, borderColor: c.border, padding: 16, gap: 6 }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400 }}>Enviar a</Text>
+                <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: c.foreground }}>{addressLine()}</Text>
+                {referencias.trim() ? (
+                  <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: c.mutedForeground }}>Ref: {referencias.trim()}</Text>
+                ) : null}
+                {coords ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+                    <Feather name="navigation" size={12} color={c.primary} />
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: c.primary }}>Ubicación GPS adjunta</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
 
             <View style={{ marginTop: 20, gap: 8 }}>
               <Line label="Entrega" value={entrega === "tienda" ? "Recoger en tienda" : "Envío a domicilio"} c={c} />
@@ -494,5 +713,49 @@ function Line({ label, value, c }: { label: string; value: string; c: ReturnType
       <Text style={{ fontFamily: Fonts.medium, fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase", color: c.mutedForeground }}>{label}</Text>
       <Text style={{ fontFamily: Fonts.mono, fontSize: 12, color: c.foreground, maxWidth: "55%", textAlign: "right" }} numberOfLines={1}>{value}</Text>
     </View>
+  );
+}
+
+function FormInput({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  c,
+  multiline,
+  keyboardType,
+  maxLength,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (t: string) => void;
+  placeholder: string;
+  c: ReturnType<typeof useColors>;
+  multiline?: boolean;
+  keyboardType?: React.ComponentProps<typeof TextInput>["keyboardType"];
+  maxLength?: number;
+}) {
+  return (
+    <View>
+      <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 8 }}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={c.neutral400}
+        multiline={multiline}
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+        style={{ borderWidth: 1, borderColor: c.border, padding: 16, minHeight: multiline ? 80 : undefined, fontFamily: Fonts.medium, fontSize: 14, color: c.foreground, textAlignVertical: multiline ? "top" : "center" }}
+      />
+    </View>
+  );
+}
+
+function Chip({ label, active, onPress, c }: { label: string; active: boolean; onPress: () => void; c: ReturnType<typeof useColors> }) {
+  return (
+    <Pressable onPress={onPress} style={{ borderWidth: 1, borderColor: active ? c.primary : c.border, backgroundColor: active ? c.primarySoft : c.background, paddingHorizontal: 14, paddingVertical: 9 }}>
+      <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: active ? c.primary : c.foreground }}>{label}</Text>
+    </Pressable>
   );
 }

@@ -18,6 +18,25 @@ export interface OutboundOrderLine {
   price: number;
 }
 
+// Structured home-delivery address captured at checkout. Persisted on the order
+// so it is never lost (the card/Stripe path used to drop it) and can be sent to
+// the ERP (observaciones) and the store's WhatsApp. `mapsUrl` is a ready-to-tap
+// Google Maps link built from GPS coordinates (preferred) or the address text,
+// so the driver navigates straight to the door.
+export interface ShippingAddress {
+  calle: string;
+  numExterior: string;
+  numInterior?: string;
+  colonia: string;
+  cp: string;
+  municipio?: string;
+  estado?: string;
+  referencias?: string;
+  lat?: number;
+  lng?: number;
+  mapsUrl?: string;
+}
+
 export type OutboundOrderStatus =
   | "pending"
   | "sent"
@@ -47,6 +66,8 @@ export const outboundOrdersTable = pgTable("outbound_orders", {
   pago: text("pago").notNull().default(""),
   buyerName: text("buyer_name"),
   buyerPhone: text("buyer_phone"),
+  // Structured home-delivery address (null for in-store pickup orders).
+  shippingAddress: jsonb("shipping_address").$type<ShippingAddress>(),
   lines: jsonb("lines").$type<OutboundOrderLine[]>().notNull().default([]),
   total: doublePrecision("total").notNull().default(0),
   // Online card payment (Stripe). Cash/SPEI orders stay "unpaid".

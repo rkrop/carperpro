@@ -31,6 +31,7 @@ import type {
   ListProductsParams,
   OrderInput,
   OrderResult,
+  PostalCode,
   Product,
   ProductPage,
   Sucursal,
@@ -765,6 +766,83 @@ export function useGetSyncStatus<TData = Awaited<ReturnType<typeof getSyncStatus
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSyncStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPostalCodeUrl = (cp: string,) => {
+
+
+
+
+  return `/api/postal-codes/${cp}`
+}
+
+/**
+ * @summary Lookup Mexican postal code (estado + colonias) for address autofill
+ */
+export const getPostalCode = async (cp: string, options?: RequestInit): Promise<PostalCode> => {
+
+  return customFetch<PostalCode>(getGetPostalCodeUrl(cp),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPostalCodeQueryKey = (cp: string,) => {
+    return [
+    `/api/postal-codes/${cp}`
+    ] as const;
+    }
+
+
+export const getGetPostalCodeQueryOptions = <TData = Awaited<ReturnType<typeof getPostalCode>>, TError = ErrorType<ErrorResponse>>(cp: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPostalCode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPostalCodeQueryKey(cp);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPostalCode>>> = ({ signal }) => getPostalCode(cp, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(cp), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPostalCode>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPostalCodeQueryResult = NonNullable<Awaited<ReturnType<typeof getPostalCode>>>
+export type GetPostalCodeQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Lookup Mexican postal code (estado + colonias) for address autofill
+ */
+
+export function useGetPostalCode<TData = Awaited<ReturnType<typeof getPostalCode>>, TError = ErrorType<ErrorResponse>>(
+ cp: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPostalCode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPostalCodeQueryOptions(cp,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

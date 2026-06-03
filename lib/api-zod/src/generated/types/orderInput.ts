@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OrderLineInput } from './orderLineInput';
+import type { ShippingAddress } from './shippingAddress';
 
 export interface OrderInput {
   lines: OrderLineInput[];
@@ -17,4 +18,5 @@ export interface OrderInput {
   buyerName?: string | null;
   /** @nullable */
   buyerPhone?: string | null;
+  shippingAddress?: ShippingAddress | null;
 }

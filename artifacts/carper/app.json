@@ -34,6 +34,13 @@
         {
           "cameraPermission": "Carper usa la cámara para escanear el código de barras de tus refacciones."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Carper usa tu ubicación para compartir un mapa exacto de tu domicilio con el repartidor.",
+          "locationWhenInUsePermission": "Carper usa tu ubicación para compartir un mapa exacto de tu domicilio con el repartidor."
+        }
       ]
     ],
     "experiments": {

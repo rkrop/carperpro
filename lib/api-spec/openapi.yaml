@@ -197,6 +197,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SyncStatus"
+  /postal-codes/{cp}:
+    get:
+      operationId: getPostalCode
+      tags: [catalog]
+      summary: Lookup Mexican postal code (estado + colonias) for address autofill
+      parameters:
+        - name: cp
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Postal code data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostalCode"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /orders:
     post:
       operationId: createOrder
@@ -372,6 +396,33 @@ components:
         name: { type: string }
         qty: { type: integer }
         price: { type: number }
+    PostalCode:
+      type: object
+      required: [cp, estado, municipio, colonias]
+      properties:
+        cp: { type: string }
+        estado: { type: string }
+        municipio: { type: string }
+        colonias:
+          type: array
+          items: { type: string }
+        lat: { type: ["number", "null"] }
+        lng: { type: ["number", "null"] }
+    ShippingAddress:
+      type: object
+      required: [calle, numExterior, colonia, cp]
+      properties:
+        calle: { type: string }
+        numExterior: { type: string }
+        numInterior: { type: ["string", "null"] }
+        colonia: { type: string }
+        cp: { type: string }
+        municipio: { type: ["string", "null"] }
+        estado: { type: ["string", "null"] }
+        referencias: { type: ["string", "null"] }
+        lat: { type: ["number", "null"] }
+        lng: { type: ["number", "null"] }
+        mapsUrl: { type: ["string", "null"] }
     OrderInput:
       type: object
       required: [lines, sucursalId, entrega, pago, total]
@@ -386,6 +437,10 @@ components:
         total: { type: number }
         buyerName: { type: ["string", "null"] }
         buyerPhone: { type: ["string", "null"] }
+        shippingAddress:
+          oneOf:
+            - $ref: "#/components/schemas/ShippingAddress"
+            - type: "null"
     OrderResult:
       type: object
       required: [id, folio, status]

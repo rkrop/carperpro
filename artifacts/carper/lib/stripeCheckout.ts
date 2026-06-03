@@ -13,6 +13,20 @@ export interface CheckoutLine {
   qty: number;
 }
 
+export interface ShippingAddressInput {
+  calle: string;
+  numExterior: string;
+  numInterior?: string;
+  colonia: string;
+  cp: string;
+  municipio?: string;
+  estado?: string;
+  referencias?: string;
+  lat?: number;
+  lng?: number;
+  mapsUrl?: string;
+}
+
 export interface VerifiedOrder {
   id: number;
   folio: string;
@@ -48,6 +62,7 @@ export async function startCardCheckout(opts: {
   entrega: string;
   buyerName: string;
   buyerPhone: string;
+  shippingAddress?: ShippingAddressInput | null;
   lines: CheckoutLine[];
 }): Promise<{ orderId: number; folio: string; mode: "native" | "web-redirect" }> {
   const isWeb = Platform.OS === "web";
@@ -64,6 +79,7 @@ export async function startCardCheckout(opts: {
       entrega: opts.entrega,
       buyerName: opts.buyerName,
       buyerPhone: opts.buyerPhone,
+      shippingAddress: opts.shippingAddress ?? null,
       lines: opts.lines,
       dest,
     }),

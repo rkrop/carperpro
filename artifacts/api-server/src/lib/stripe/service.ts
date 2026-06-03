@@ -6,6 +6,7 @@ import {
   productsTable,
   type OutboundOrder,
   type OutboundOrderLine,
+  type ShippingAddress,
 } from "@workspace/db";
 import type Stripe from "stripe";
 import { getUncachableStripeClient } from "./client";
@@ -25,6 +26,7 @@ export interface CreateCheckoutInput {
   entrega: string;
   buyerName?: string | null;
   buyerPhone?: string | null;
+  shippingAddress?: ShippingAddress | null;
   lines: CheckoutLineInput[];
   /** Where Stripe should return the buyer (app deep link or web URL). */
   dest: string;
@@ -203,6 +205,7 @@ export async function createCardCheckoutSession(
       pago: "Tarjeta",
       buyerName: input.buyerName ?? null,
       buyerPhone: input.buyerPhone ?? null,
+      shippingAddress: input.shippingAddress ?? null,
       lines,
       total,
       paymentStatus: "unpaid",

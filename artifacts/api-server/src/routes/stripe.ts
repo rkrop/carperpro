@@ -10,6 +10,7 @@ import {
   CheckoutError,
   type CheckoutLineInput,
 } from "../lib/stripe/service";
+import { normalizeShippingAddress } from "../lib/shippingAddress";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -42,11 +43,20 @@ router.post("/stripe/checkout", async (req: Request, res: Response): Promise<voi
       res.status(400).json({ error: "Falta la URL de retorno" });
       return;
     }
+    const entrega = typeof body.entrega === "string" ? body.entrega : "tienda";
+    const shippingAddress = normalizeShippingAddress(body.shippingAddress);
+    // Home delivery requires a complete structured address (calle, núm.
+    // exterior, colonia, CP de 5 dígitos) — mirrors the cash/SPEI path.
+    if (entrega === "envio" && !shippingAddress) {
+      res.status(400).json({ error: "La dirección de envío está incompleta o es inválida" });
+      return;
+    }
     const result = await createCardCheckoutSession({
       sucursalId: typeof body.sucursalId === "string" ? body.sucursalId : undefined,
-      entrega: typeof body.entrega === "string" ? body.entrega : "tienda",
+      entrega,
       buyerName: typeof body.buyerName === "string" ? body.buyerName : null,
       buyerPhone: typeof body.buyerPhone === "string" ? body.buyerPhone : null,
+      shippingAddress,
       lines,
       dest,
     });

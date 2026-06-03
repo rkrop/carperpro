@@ -11,6 +11,7 @@ import { CreateOrderBody } from "@workspace/api-zod";
 import { pushOrder } from "../lib/admintotal/outbound";
 import { getWebhookSucursalId } from "../lib/admintotal/config";
 import { effectivePrice } from "../lib/pricing";
+import { normalizeShippingAddress } from "../lib/shippingAddress";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -46,6 +47,15 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
     .limit(1);
   if (suc.length === 0) {
     res.status(400).json({ error: "Sucursal no válida" });
+    return;
+  }
+
+  // Home delivery requires a complete structured address (calle, núm. exterior,
+  // colonia, CP de 5 dígitos). Reject envío orders without one so a malformed or
+  // missing address never reaches persistence/ERP.
+  const shippingAddress = normalizeShippingAddress(input.shippingAddress);
+  if (input.entrega === "envio" && !shippingAddress) {
+    res.status(400).json({ error: "La dirección de envío está incompleta o es inválida" });
     return;
   }
 
@@ -121,6 +131,7 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
       pago: input.pago,
       buyerName: input.buyerName ?? null,
       buyerPhone: input.buyerPhone ?? null,
+      shippingAddress,
       lines,
       total,
     })

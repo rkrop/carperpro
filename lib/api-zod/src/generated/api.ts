@@ -209,6 +209,23 @@ export const GetSyncStatusResponse = zod.object({
 
 
 /**
+ * @summary Lookup Mexican postal code (estado + colonias) for address autofill
+ */
+export const GetPostalCodeParams = zod.object({
+  "cp": zod.coerce.string()
+})
+
+export const GetPostalCodeResponse = zod.object({
+  "cp": zod.string(),
+  "estado": zod.string(),
+  "municipio": zod.string(),
+  "colonias": zod.array(zod.string()),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish()
+})
+
+
+/**
  * @summary Submit an app order (pushed to Admintotal as a pedido)
  */
 export const CreateOrderBody = zod.object({
@@ -224,7 +241,20 @@ export const CreateOrderBody = zod.object({
   "pago": zod.string(),
   "total": zod.number(),
   "buyerName": zod.string().nullish(),
-  "buyerPhone": zod.string().nullish()
+  "buyerPhone": zod.string().nullish(),
+  "shippingAddress": zod.union([zod.object({
+  "calle": zod.string(),
+  "numExterior": zod.string(),
+  "numInterior": zod.string().nullish(),
+  "colonia": zod.string(),
+  "cp": zod.string(),
+  "municipio": zod.string().nullish(),
+  "estado": zod.string().nullish(),
+  "referencias": zod.string().nullish(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "mapsUrl": zod.string().nullish()
+}),zod.null()]).optional()
 })
 
 

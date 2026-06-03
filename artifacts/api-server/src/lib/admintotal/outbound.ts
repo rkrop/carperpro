@@ -3,6 +3,7 @@ import { db, outboundOrdersTable, type OutboundOrder } from "@workspace/db";
 import { logger } from "../logger";
 import { AdmintotalClient } from "./client";
 import { isAdmintotalConfigured } from "./config";
+import { buildAddressObservaciones } from "../shippingAddress";
 
 const MAX_ATTEMPTS = 6;
 
@@ -21,6 +22,11 @@ function buildPedidoPayload(order: OutboundOrder): Record<string, unknown> {
     forma_pago: order.pago,
     cliente_nombre: order.buyerName ?? undefined,
     cliente_telefono: order.buyerPhone ?? undefined,
+    // Delivery address (+ map link) so the store sees it in Admintotal, for
+    // card orders too where there is no WhatsApp hand-off.
+    observaciones: order.shippingAddress
+      ? buildAddressObservaciones(order.shippingAddress)
+      : undefined,
     total: order.total,
     detalles: order.lines.map((l) => ({
       producto: l.productId,

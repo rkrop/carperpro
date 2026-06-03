@@ -124,6 +124,38 @@ export interface OrderLineInput {
   price: number;
 }
 
+export interface PostalCode {
+  cp: string;
+  estado: string;
+  municipio: string;
+  colonias: string[];
+  /** @nullable */
+  lat?: number | null;
+  /** @nullable */
+  lng?: number | null;
+}
+
+export interface ShippingAddress {
+  calle: string;
+  numExterior: string;
+  /** @nullable */
+  numInterior?: string | null;
+  colonia: string;
+  cp: string;
+  /** @nullable */
+  municipio?: string | null;
+  /** @nullable */
+  estado?: string | null;
+  /** @nullable */
+  referencias?: string | null;
+  /** @nullable */
+  lat?: number | null;
+  /** @nullable */
+  lng?: number | null;
+  /** @nullable */
+  mapsUrl?: string | null;
+}
+
 export interface OrderInput {
   lines: OrderLineInput[];
   sucursalId: string;
@@ -134,6 +166,7 @@ export interface OrderInput {
   buyerName?: string | null;
   /** @nullable */
   buyerPhone?: string | null;
+  shippingAddress?: ShippingAddress | null;
 }
 
 export interface OrderResult {
