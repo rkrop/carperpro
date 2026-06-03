@@ -101,40 +101,36 @@ export default function Categorias() {
 
           {/* Full list */}
           <SectionLabel style={{ paddingHorizontal: 24, marginTop: 24, marginBottom: 8 }}>Todas las categorías</SectionLabel>
-          {categories.map((cat) => {
-            const iconAsset = categoryIconAsset(cat.name);
-            return (
-              <Pressable
-                key={cat.id}
-                onPress={() => router.push(`/subcategorias?category=${cat.id}&name=${encodeURIComponent(cat.name)}`)}
-                style={({ pressed }) => ({
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 16,
-                  paddingHorizontal: 24,
-                  paddingVertical: 20,
-                  borderBottomWidth: 1,
-                  borderBottomColor: c.border,
-                  backgroundColor: pressed ? c.neutral50 : c.background,
-                })}
-              >
-                <View style={{ width: 44, height: 44, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" }}>
-                  {iconAsset ? (
-                    <Image source={iconAsset} style={{ width: 34, height: 34 }} resizeMode="contain" />
-                  ) : (
-                    <MaterialCommunityIcons name={cat.icon as any} size={22} color={c.foreground} />
-                  )}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.2, textTransform: "uppercase", color: c.foreground }}>{cat.name}</Text>
-                  <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.mutedForeground, marginTop: 3 }}>
-                    {cat.count.toLocaleString("en-US")} refacciones
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={18} color={c.neutral400} />
-              </Pressable>
-            );
-          })}
+          {categories.map((cat) => (
+            <Pressable
+              key={cat.id}
+              onPress={() => router.push(`/subcategorias?category=${cat.id}&name=${encodeURIComponent(cat.name)}`)}
+              style={({ pressed }) => ({
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 16,
+                paddingHorizontal: 24,
+                paddingVertical: 26,
+                borderBottomWidth: 1,
+                borderBottomColor: c.border,
+                backgroundColor: pressed ? c.primary : c.background,
+              })}
+            >
+              {({ pressed }) => (
+                <>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 22, letterSpacing: -0.6, textTransform: "uppercase", color: pressed ? c.primaryForeground : c.foreground }}>
+                      {cat.name}
+                    </Text>
+                    <Text style={{ fontFamily: Fonts.mono, fontSize: 11, color: pressed ? c.primaryForeground : c.mutedForeground, marginTop: 5, opacity: pressed ? 0.85 : 1 }}>
+                      {cat.count.toLocaleString("en-US")} refacciones
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={pressed ? c.primaryForeground : c.neutral400} />
+                </>
+              )}
+            </Pressable>
+          ))}
         </ScrollView>
       )}
     </View>
