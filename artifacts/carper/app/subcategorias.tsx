@@ -41,22 +41,25 @@ export default function Subcategorias() {
           alignItems: "center",
           gap: 16,
           paddingHorizontal: 24,
-          paddingVertical: 20,
+          paddingVertical: 26,
           borderBottomWidth: 1,
           borderBottomColor: c.border,
-          backgroundColor: pressed ? c.neutral50 : c.background,
+          backgroundColor: pressed ? c.primary : c.background,
         })}
       >
-        <View style={{ width: 44, height: 44, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" }}>
-          <Feather name="grid" size={20} color={c.foreground} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.2, textTransform: "uppercase", color: c.foreground }}>
-            Todas las refacciones
-          </Text>
-          <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.mutedForeground, marginTop: 3 }}>Ver todo el catálogo</Text>
-        </View>
-        <Feather name="chevron-right" size={18} color={c.neutral400} />
+        {({ pressed }) => (
+          <>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 22, letterSpacing: -0.6, textTransform: "uppercase", color: pressed ? c.primaryForeground : c.foreground }}>
+                Todas las refacciones
+              </Text>
+              <Text style={{ fontFamily: Fonts.mono, fontSize: 11, color: pressed ? c.primaryForeground : c.mutedForeground, marginTop: 5, opacity: pressed ? 0.85 : 1 }}>
+                Ver todo el catálogo
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={pressed ? c.primaryForeground : c.neutral400} />
+          </>
+        )}
       </Pressable>
 
       {isError ? (
@@ -84,19 +87,25 @@ export default function Subcategorias() {
                 alignItems: "center",
                 gap: 16,
                 paddingHorizontal: 24,
-                paddingVertical: 20,
+                paddingVertical: 26,
                 borderBottomWidth: 1,
                 borderBottomColor: c.border,
-                backgroundColor: pressed ? c.neutral50 : c.background,
+                backgroundColor: pressed ? c.primary : c.background,
               })}
             >
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.2, textTransform: "uppercase", color: c.foreground }}>{sub.name}</Text>
-                <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.mutedForeground, marginTop: 3 }}>
-                  {sub.count.toLocaleString("en-US")} refacciones
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={c.neutral400} />
+              {({ pressed }) => (
+                <>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 22, letterSpacing: -0.6, textTransform: "uppercase", color: pressed ? c.primaryForeground : c.foreground }}>
+                      {sub.name}
+                    </Text>
+                    <Text style={{ fontFamily: Fonts.mono, fontSize: 11, color: pressed ? c.primaryForeground : c.mutedForeground, marginTop: 5, opacity: pressed ? 0.85 : 1 }}>
+                      {sub.count.toLocaleString("en-US")} refacciones
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={pressed ? c.primaryForeground : c.neutral400} />
+                </>
+              )}
             </Pressable>
           ))}
         </ScrollView>
