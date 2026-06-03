@@ -17,4 +17,5 @@
 - [Carper Tienda SEO](tienda-seo.md) — per-route meta+JSON-LD via useSeo hook (lib/seo.ts); sitemap served dynamically from api-server /api/sitemap.xml; Vite double-prefixes root-relative index.html URLs.
 - [Cart quantity stock cap](cart-stock-cap.md) — cart lines carry stock (null=no cap); card path = strict live-ERP gate, /orders = soft local-mirror gate (unknown orderable); normalize qty to +int before summing.
 - [WhatsApp order submission](whatsapp-order-submission.md) — cash/SPEI checkout POSTs /orders before WhatsApp; surfaces 409 stock shortfall (items, "solo quedan X"); blank sucursalId falls back to default (mirrors Stripe).
+- [API security & stability](api-security-stability.md) — in-process rate limiter (webhook-exempt, trust proxy 1), transactional FOR-UPDATE order writes, central async error handler, DB-pinging /healthz.
 - [Carper user accounts](carper-user-accounts.md) — optional Clerk auth (import `@clerk/expo`); order IDOR guard (userId&&!==getOptionalUserId→404, guest null stays open); addOrder optimistic-seeds history cache deduped by folio; checkout prefill uses split refs, no setEntrega.

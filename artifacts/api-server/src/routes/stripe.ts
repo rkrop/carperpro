@@ -12,6 +12,7 @@ import {
 } from "../lib/stripe/service";
 import { normalizeShippingAddress } from "../lib/shippingAddress";
 import { getOptionalUserId, ensureUser } from "../middlewares/requireAuth";
+import { writeLimiter } from "../middlewares/rateLimit";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -31,7 +32,7 @@ function parseLines(raw: unknown): CheckoutLineInput[] | null {
 }
 
 /** Create a Stripe Checkout Session for a card order. */
-router.post("/stripe/checkout", async (req: Request, res: Response): Promise<void> => {
+router.post("/stripe/checkout", writeLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const lines = parseLines(body.lines);
@@ -137,7 +138,7 @@ function isAllowedDest(dest: string): boolean {
 }
 
 /** Authoritative verify-on-return: confirm payment and return the order. */
-router.post("/stripe/verify", async (req: Request, res: Response): Promise<void> => {
+router.post("/stripe/verify", writeLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const orderId =

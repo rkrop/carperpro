@@ -264,31 +264,36 @@ router.post(
           ? { erpStockQty: stockQty, stockUpdatedAt: new Date() }
           : {};
 
-      await db
-        .insert(productsTable)
-        .values({ ...product, ...stockSet })
-        .onConflictDoUpdate({
-          target: productsTable.id,
-          set: {
-            sku: product.sku,
-            name: product.name,
-            brand: product.brand,
-            categoryId: product.categoryId,
-            price: product.price,
-            costo: product.costo,
-            originalPrice: product.originalPrice,
-            image: product.image,
-            specs: product.specs,
-            ...stockSet,
-          },
-        });
+      // Product upsert + its brand registration are a single logical write, so
+      // run them in a transaction: either both land or neither does (no product
+      // without its brand recorded).
+      await db.transaction(async (tx) => {
+        await tx
+          .insert(productsTable)
+          .values({ ...product, ...stockSet })
+          .onConflictDoUpdate({
+            target: productsTable.id,
+            set: {
+              sku: product.sku,
+              name: product.name,
+              brand: product.brand,
+              categoryId: product.categoryId,
+              price: product.price,
+              costo: product.costo,
+              originalPrice: product.originalPrice,
+              image: product.image,
+              specs: product.specs,
+              ...stockSet,
+            },
+          });
 
-      if (product.brand) {
-        await db
-          .insert(brandsTable)
-          .values({ name: product.brand })
-          .onConflictDoNothing({ target: brandsTable.name });
-      }
+        if (product.brand) {
+          await tx
+            .insert(brandsTable)
+            .values({ name: product.brand })
+            .onConflictDoNothing({ target: brandsTable.name });
+        }
+      });
 
       upserted += 1;
     }

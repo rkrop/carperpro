@@ -5,8 +5,16 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type HealthStatusDatabase = {
+  ok: boolean;
+  latencyMs: number;
+};
+
 export interface HealthStatus {
   status: string;
+  uptime?: number;
+  timestamp?: string;
+  database?: HealthStatusDatabase;
 }
 
 export interface ErrorResponse {

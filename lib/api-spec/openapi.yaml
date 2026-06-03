@@ -477,6 +477,17 @@ components:
       properties:
         status:
           type: string
+        uptime:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+        database:
+          type: object
+          properties:
+            ok: { type: boolean }
+            latencyMs: { type: number }
+          required: [ok, latencyMs]
       required:
         - status
     ErrorResponse:

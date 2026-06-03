@@ -17,6 +17,7 @@ export * from './getDealsParams';
 export * from './getProductParams';
 export * from './getProductsAvailabilityParams';
 export * from './healthStatus';
+export * from './healthStatusDatabase';
 export * from './listProductsParams';
 export * from './listSubcategoriesParams';
 export * from './orderHistoryItem';

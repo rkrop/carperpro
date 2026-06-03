@@ -12,8 +12,15 @@ import {
 } from "./middlewares/clerkProxyMiddleware";
 import { WebhookHandlers } from "./lib/stripe/webhookHandlers";
 import { reconcilePendingStripeOrders } from "./lib/stripe/service";
+import { generalLimiter } from "./middlewares/rateLimit";
+import { errorHandler } from "./middlewares/errorHandler";
 
 const app: Express = express();
+
+// Behind Replit's edge proxy, the real client IP arrives in X-Forwarded-For.
+// Trust exactly one proxy hop so req.ip reflects the client (used for rate
+// limiting) without trusting arbitrary client-supplied forwarding headers.
+app.set("trust proxy", 1);
 
 // Stripe webhook — MUST be registered BEFORE express.json() so the body stays a
 // raw Buffer for signature verification.
@@ -82,6 +89,17 @@ app.use(
   })),
 );
 
+// Anti-abuse rate limiting for all /api traffic. Verified webhooks (Admintotal
+// token, Stripe signature) are exempted inside the limiter so legitimate
+// integration traffic is never throttled. Mounted after the body parsers but
+// before the routes so it guards every endpoint.
+app.use(generalLimiter);
+
 app.use("/api", router);
+
+// Centralized error handler — Express 5 forwards rejected async handlers here.
+// Logs the failure with request context (no secrets/PII) and returns a generic
+// message so internals never leak to the client.
+app.use(errorHandler);
 
 export default app;
