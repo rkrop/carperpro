@@ -1,0 +1,53 @@
+Mejora la búsqueda del catálogo en /products para que sea por palabras clave, 
+precisa y ordenada por relevancia. Hoy hace match con ILIKE (substring, sin 
+acentos) pero ordena alfabéticamente, así que los resultados más relevantes 
+quedan enterrados. Ya existe una columna search_vector con full-text ponderado 
+(name/SKU > brand/OEM > description) mantenida por un trigger BEFORE INSERT/UPDATE, 
+pero está NULL en casi todas las filas porque las filas sincronizadas del ERP 
+nunca se rellenaron.
+
+Haz lo siguiente:
+
+1) BACKFILL search_vector en TODAS las filas existentes, de forma idempotente y 
+   EN PRODUCCIÓN (no solo en el seed de Excel). Hazlo por LOTES (1000-2000 filas 
+   por transacción) para no bloquear la tabla ni hacer timeout. Confirma cuántas 
+   filas quedaron con search_vector no nulo al terminar.
+
+2) Reescribe la búsqueda de /products para ordenar por ts_rank del search_vector 
+   (matches en nombre/SKU por encima de los de descripción), con desempate por 
+   nombre ascendente. Devuelve resultados sin duplicados (DISTINCT) y con orden 
+   determinista.
+
+3) Matching multi-palabra: construye la query desde las palabras del usuario con 
+   semántica AND y prefijo por palabra (to_tsquery con :*), sin acentos (unaccent), 
+   descartando stopwords conectoras: de, la, el, los, las, para, con, y, o, del, 
+   un, una. SANEA cada token (quita &, |, !, :, comillas y cualquier carácter no 
+   alfanumérico) antes de armar la query, o to_tsquery lanzará error con input real.
+
+4) CASOS BORDE OBLIGATORIOS:
+   - Si tras quitar stopwords no queda ninguna palabra, usa el camino ILIKE 
+     anterior como fallback (que la búsqueda nunca se rompa ni quede vacía).
+   - Mantén una red ILIKE SOLO para SKU/OEM/número de parte (substring parcial 
+     ahí sí es deseable). NO uses ILIKE substring en name/description, para no 
+     reintroducir falsos positivos a mitad de palabra.
+
+5) La configuración de text-search en la query DEBE coincidir con cómo se 
+   construyó el vector (config 'simple' + unaccent) o devolverá cero resultados 
+   en silencio.
+
+6) Paginación y total count deben seguir funcionando con el nuevo orden.
+
+7) Confirma que el sync del ERP y los webhooks dejan search_vector poblado (el 
+   trigger BEFORE debería hacerlo); si algún camino inserta/actualiza sin poblarlo, 
+   rellena esas filas.
+
+RESTRICCIÓN CRÍTICA: search_vector DEBE permanecer en el schema de Drizzle. Si un 
+push/publish del schema la elimina, el trigger escribirá en una columna inexistente 
+y TODA escritura a products se romperá. Verifica esto antes y después.
+
+Aplica los cambios en dev Y producción de forma consistente.
+
+VERIFICA al final: "bomba tsuru", una búsqueda de una sola palabra, una con acento 
+("válvula"), y una parcial ("bomb"), todas devuelven resultados precisos y bien 
+ordenados; y que búsquedas que antes funcionaban siguen devolviendo sus productos.
+Dime exactamente qué archivos y líneas modificaste.

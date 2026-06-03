@@ -100,6 +100,16 @@ function asSku(v: unknown): string {
   return "";
 }
 
+// Defensive field reader (same strategy as the ERP mapper): Admintotal sends
+// Spanish field names that vary by payload, so try a list of plausible keys and
+// take the first present, non-empty one.
+function pick(raw: Raw, keys: string[]): unknown {
+  for (const k of keys) {
+    if (raw[k] !== undefined && raw[k] !== null && raw[k] !== "") return raw[k];
+  }
+  return undefined;
+}
+
 // Price / stock changes. Body is an array of { sku, precio, costo, stock }.
 // Admintotal batches up to 50 per request, every ~4 minutes.
 router.post(
@@ -114,6 +124,17 @@ router.post(
           Array.isArray((body as Raw).productos)
         ? ((body as Raw).productos as Raw[])
         : [];
+
+    // DIAGNOSTIC: log the raw body and the exact keys of the first item so we
+    // can confirm the real field names Admintotal sends (identifier/price/stock)
+    // against a live sync. Safe to keep on — this is catalog data, not PII.
+    logger.info(
+      {
+        rawBody: JSON.stringify(body),
+        firstItemKeys: items[0] ? Object.keys(items[0]) : [],
+      },
+      "Webhook Admintotal precios/existencias: cuerpo RAW recibido (diagnóstico)",
+    );
 
     if (items.length === 0) {
       res.status(400).json({ error: "Se esperaba un arreglo de productos" });
@@ -133,14 +154,27 @@ router.post(
     let pricesUpdated = 0;
     let stockUpdated = 0;
     let notFound = 0;
+    const notFoundSkus: string[] = [];
 
     for (const item of items) {
-      const sku = asSku(item.sku);
-      if (!sku) continue;
+      // Tolerant field matching: Admintotal uses Spanish names (clave/codigo for
+      // the identifier, existencia/existencias for stock), same as the ERP
+      // mapper assumes — so read each field from a list of plausible keys.
+      const sku = asSku(
+        pick(item, ["sku", "clave", "codigo", "codigo_barras", "clave_producto"]),
+      );
+      if (!sku) {
+        // No recognizable identifier: count it instead of silently skipping.
+        notFound += 1;
+        notFoundSkus.push("(sin identificador)");
+        continue;
+      }
 
-      const precio = asNumber(item.precio);
-      const costo = asNumber(item.costo);
-      const stock = asNumber(item.stock);
+      const precio = asNumber(pick(item, ["precio", "precio_publico", "precio1", "price"]));
+      const costo = asNumber(pick(item, ["costo", "precio_costo", "costo_promedio"]));
+      const stock = asNumber(
+        pick(item, ["stock", "existencia", "existencias", "cantidad", "inventario", "disponible"]),
+      );
 
       // Stock lives on the product row (one-number-per-product). Price, cost and
       // stock all update the same row in a single statement, matched by SKU.
@@ -161,7 +195,10 @@ router.post(
         .returning({ id: productsTable.id });
 
       if (updated.length === 0) {
+        // Valid identifier but no product matched it: surface it instead of
+        // failing silently, so a SKU/clave mismatch is visible in the response.
         notFound += 1;
+        notFoundSkus.push(sku);
         continue;
       }
       if (precio !== undefined || costo !== undefined) pricesUpdated += updated.length;
@@ -169,10 +206,17 @@ router.post(
     }
 
     logger.info(
-      { received: items.length, pricesUpdated, stockUpdated, notFound },
+      { received: items.length, pricesUpdated, stockUpdated, notFound, notFoundSkus },
       "Webhook Admintotal: precios/existencias procesados",
     );
-    res.json({ ok: true, received: items.length, pricesUpdated, stockUpdated, notFound });
+    res.json({
+      ok: true,
+      received: items.length,
+      pricesUpdated,
+      stockUpdated,
+      notFound,
+      notFoundSkus,
+    });
   },
 );
 

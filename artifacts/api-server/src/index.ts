@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startScheduler } from "./lib/admintotal/scheduler";
 import { initStripe } from "./lib/stripe/init";
+import { backfillSearchVectors } from "./lib/search-backfill";
 
 const rawPort = process.env["PORT"];
 
@@ -24,6 +25,9 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  // Backfill any rows missing a search_vector (idempotent, self-healing). Runs
+  // here so a publish indexes the live catalog for relevance-ranked search.
+  void backfillSearchVectors();
   // Kick off the Admintotal inbound sync + outbound queue scheduler.
   startScheduler();
   // Best-effort Stripe setup (schema, managed webhook, backfill). Never fatal.

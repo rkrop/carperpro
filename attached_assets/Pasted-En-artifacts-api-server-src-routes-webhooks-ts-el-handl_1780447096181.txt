@@ -1,0 +1,35 @@
+En artifacts/api-server/src/routes/webhooks.ts, el handler del webhook 
+POST /webhooks/admintotal/precios-existencias solo lee los campos con nombre 
+EXACTO "sku", "precio", "costo" y "stock". Pero AdminTotal envía los nombres en 
+español (clave/codigo para el identificador, existencia/existencias para el stock), 
+igual que ya asume el mapper en src/lib/admintotal/mapper.ts. Por eso el webhook 
+responde ok:true pero NO actualiza precios ni existencias: la app muestra stock 
+vacío/cero, precios viejos y datos que nunca cambian.
+
+Haz lo siguiente:
+
+1) LOG DE DIAGNÓSTICO (primero): al inicio del handler, registra el cuerpo RAW 
+   completo (JSON.stringify del body) y las llaves exactas del primer item del 
+   arreglo, para ver con qué nombres reales manda AdminTotal el identificador, 
+   el precio y la existencia. Usa logger.info.
+
+2) MATCHING TOLERANTE: reutiliza la misma estrategia defensiva del mapper. Importa 
+   o replica el helper pick(raw, keys) y, para cada item, lee:
+   - identificador (sku) desde: ["sku","clave","codigo","codigo_barras","clave_producto"]
+   - precio desde: ["precio","precio_publico","precio1","price"]
+   - costo desde: ["costo","precio_costo","costo_promedio"]
+   - stock desde: ["stock","existencia","existencias","cantidad","inventario","disponible"]
+   Mantén la conversión numérica actual (asNumber) y asSku/trim para el identificador.
+
+3) ARREGLA EL FALLO SILENCIOSO: hoy "if (!sku) continue;" salta el item sin 
+   contarlo. Cambia la lógica para que un item sin identificador reconocible o 
+   que no haga match con ningún producto se cuente en notFound y se agregue a un 
+   arreglo notFoundSkus[] que se devuelva en la respuesta. La respuesta debe ser:
+   { ok, received, pricesUpdated, stockUpdated, notFound, notFoundSkus }.
+
+4) NO cambies la autenticación (Basic Auth / Api-key ya funciona), ni la ruta, 
+   ni el modelo de stock (erpStockQty en la fila del producto). NO toques el 
+   límite MAX_PRICE_STOCK_ITEMS.
+
+5) Después, dime exactamente qué archivo y líneas modificaste, y déjame el log 
+   del paso 1 activo para confirmar los nombres reales con una sincronización real.

@@ -1,11 +1,11 @@
 - [Excel seed script](excel-seed.md) — canonical seed-excel.mjs (pg from lib/db, xlsx via require("xlsx")); enforces single store "matriz", deletes stray branches/orphan inventory on re-run.
 - [Carper API routes](carper-api-routes.md) — routes mount at /api/* (not /api/catalog/*); port from PORT env, defaults to 8080 in dev.
-- [Full-text search setup](fts-setup.md) — catalog search is unaccent+ILIKE (NOT tsvector); search_vector MUST stay in Drizzle schema or push/publish drops it & the orphan trigger breaks all product writes.
+- [Full-text search setup](fts-setup.md) — catalog search is relevance-ranked tsvector (ts_rank, simple+unaccent, prefix+AND, stopwords, ILIKE net for sku/oem only); search_vector backfilled on boot + seed; MUST stay in Drizzle schema or push/publish drops it & the orphan trigger breaks all product writes.
 - [Stock model](stock-model.md) — one nullable number per product (products.erpStockQty), NOT inventory table; NULL=unknown(visible), 0=hidden, >0=count; API exposes stock+stockState.
 - [Effective price](pricing-fallback.md) — final price = precio venta if >0 else costo; one effectivePrice() helper applied at catalog/checkout/orders/deals so display never diverges from charge.
 - [Carper catalog test data](carper-demo-data.md) — live ERP mirror (numeric ids LEGIT); query-layer filters notTestProduct()+sellableProduct() (not DELETE); stock rule = hide only erpStockQty=0, unknown stays visible (~4,121 shown).
 - [Admintotal ERP sync](admintotal-sync.md) — bare-subdomain CLAVE; productos 429-rate-limited (full sync = minutes); stock lives in info_almacenes[].disponible (not existencias), mapped to erpStockQty.
-- [Admintotal webhooks](admintotal-webhooks.md) — /api/webhooks/admintotal/* push price/stock (by sku) + product creation; aggregate stock → products.erpStockQty; never zeroes on absent stock.
+- [Admintotal webhooks](admintotal-webhooks.md) — /api/webhooks/admintotal/* push price/stock (by sku) + product creation; payload keys are SPANISH (clave/existencia) so handler uses tolerant pick() + notFoundSkus; aggregate stock → products.erpStockQty; never zeroes on absent stock.
 - [Ofertas & Home curation](ofertas-screen.md) — live "Oferta del día" from /deals + curated cards in lib/campaigns.ts / lib/homeContent.ts; stock rule hides only confirmed-0 (unknown stays visible).
 - [Carper asset strategy](carper-asset-strategy.md) — brand logos = non-tappable credibility wall (catalog mostly SIN MARCA); deep links via ?q=/?category=, never ?brand=; icons match accent-insensitive.
 - [TS project references vs typecheck](ts-project-references.md) — after editing lib/db schema types, run `npx tsc -b lib/db` before api-server typecheck; it reads dist .d.ts, not source.

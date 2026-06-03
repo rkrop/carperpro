@@ -194,11 +194,25 @@ async function main() {
   );
 
   // ── 5. Rebuild search_vector for all rows ──────────────────────────────────
+  // Touch rows whose vector is NULL so the BEFORE INSERT/UPDATE trigger
+  // recomputes it. Batched (2000/tx) and idempotent so re-runs are cheap and it
+  // never long-locks the table.
   console.log("Rebuilding search vectors…");
-  await db.execute(sql`
-    UPDATE products SET updated_at = updated_at
-    WHERE search_vector IS NULL
-  `);
+  let vectorsBackfilled = 0;
+  for (;;) {
+    const res = await db.execute(sql`
+      WITH batch AS (
+        SELECT id FROM products WHERE search_vector IS NULL LIMIT 2000
+      )
+      UPDATE products p SET updated_at = updated_at
+      FROM batch
+      WHERE p.id = batch.id
+    `);
+    const affected = res.rowCount ?? 0;
+    vectorsBackfilled += affected;
+    if (affected < 2000) break;
+  }
+  console.log(`  search_vector backfilled: ${vectorsBackfilled}`);
 
   console.log(`\nDone. Inserted/updated: ${inserted}, skipped: ${skipped}`);
   process.exit(0);

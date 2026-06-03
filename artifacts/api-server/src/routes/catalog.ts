@@ -132,36 +132,91 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const offset = Number(req.query.offset) || 0;
 
   const conditions: SQL[] = [notTestProduct(), sellableProduct()];
+
+  // Order is relevance-ranked when we run a full-text search, otherwise it falls
+  // back to alphabetical by name. `rankOrder` carries the ts_rank ordering when
+  // active.
+  let rankOrder: SQL | null = null;
+
   if (q) {
-    // Accent-insensitive substring search over name, descripcion, sku, brand
-    // and OEM codes. We use unaccent()+ILIKE rather than the tsvector column:
-    // search_vector is populated lazily by a DB trigger (NULL for any row not
-    // re-written since the column was recreated), so ILIKE is the only thing
-    // guaranteed to match every existing catalog row. Each whitespace-separated
-    // word must match somewhere (AND), so extra words narrow results.
-    const haystack = sql`unaccent(lower(
-      coalesce(${productsTable.name}, '') || ' ' ||
-      coalesce(${productsTable.descripcion}, '') || ' ' ||
-      coalesce(${productsTable.sku}, '') || ' ' ||
-      coalesce(${productsTable.brand}, '') || ' ' ||
-      coalesce(array_to_string(${productsTable.oem}, ' '), '')
-    ))`;
-    const words = q.split(/\s+/).filter((w) => w.length > 0);
-    for (const w of words) {
-      // Escape ILIKE wildcards so user-typed % / _ match literally.
-      const term = `%${w.replace(/([%_\\])/g, "\\$1")}%`;
-      conditions.push(sql`${haystack} like unaccent(lower(${term}))`);
+    // Connector stopwords that carry no search signal. Dropped so a phrase like
+    // "bomba de gasolina tsuru" doesn't force "de" to match and wrongly exclude
+    // a "BOMBA GASOLINA TSURU".
+    const STOPWORDS = new Set([
+      "de", "la", "el", "los", "las", "para", "con", "y", "o", "del", "un", "una",
+    ]);
+    // Sanitize: drop everything that isn't a unicode letter/number (this also
+    // strips the tsquery operators & | ! : ( ) ' " so to_tsquery can't choke on
+    // real-world input). Accents are kept here and removed by unaccent() in SQL,
+    // matching exactly how search_vector was built.
+    const allWords = q
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 0);
+    const words = allWords.filter((w) => !STOPWORDS.has(w));
+
+    if (words.length > 0) {
+      // Full-text query: AND semantics + per-word prefix (foo:*), unaccented so
+      // it matches the stored vector built with to_tsvector('simple',
+      // unaccent(...)). Using the wrong config/accents would silently return 0.
+      const tsqueryStr = words.map((w) => `${w}:*`).join(" & ");
+      const tsquery = sql`to_tsquery('simple', unaccent(${tsqueryStr}))`;
+
+      // ILIKE safety net for partial SKU / OEM / part-number fragments only —
+      // full-text can't prefix-match a code typed mid-string. Restricted to
+      // sku/oem so we never reintroduce mid-word false positives in name/desc.
+      const skuHaystack = sql`unaccent(lower(
+        coalesce(${productsTable.sku}, '') || ' ' ||
+        coalesce(array_to_string(${productsTable.oem}, ' '), '')
+      ))`;
+      const netParts: SQL[] = [];
+      for (const w of words) {
+        const term = `%${w.replace(/([%_\\])/g, "\\$1")}%`;
+        netParts.push(sql`${skuHaystack} like unaccent(lower(${term}))`);
+      }
+      const ilikeNet = and(...netParts) as SQL;
+
+      conditions.push(
+        sql`(${productsTable.searchVector} @@ ${tsquery} or (${ilikeNet}))`,
+      );
+      // Weighted ts_rank ranks name/SKU (weight A) above brand/OEM (B) above
+      // description (C); SKU/OEM-only ILIKE-net hits rank 0 and sort last.
+      // coalesce(...,0) guards a transient NULL vector (pre-backfill) from
+      // sorting to the top under DESC's NULLS-FIRST default.
+      rankOrder = sql`coalesce(ts_rank(${productsTable.searchVector}, ${tsquery}), 0) desc`;
+    } else {
+      // Nothing searchable left after dropping stopwords/punctuation: fall back
+      // to the previous accent-insensitive substring AND match so search never
+      // breaks or returns empty for inputs like "de la".
+      const haystack = sql`unaccent(lower(
+        coalesce(${productsTable.name}, '') || ' ' ||
+        coalesce(${productsTable.descripcion}, '') || ' ' ||
+        coalesce(${productsTable.sku}, '') || ' ' ||
+        coalesce(${productsTable.brand}, '') || ' ' ||
+        coalesce(array_to_string(${productsTable.oem}, ' '), '')
+      ))`;
+      for (const w of allWords) {
+        const term = `%${w.replace(/([%_\\])/g, "\\$1")}%`;
+        conditions.push(sql`${haystack} like unaccent(lower(${term}))`);
+      }
     }
   }
   if (categoryId) conditions.push(eq(productsTable.categoryId, categoryId));
   if (brand) conditions.push(eq(productsTable.brand, brand));
   const where = and(...conditions);
 
+  // Deterministic order: relevance first when ranking, then name, then id as a
+  // final tiebreaker. Rows are unique by primary key, so no DISTINCT is needed.
+  const orderBy: SQL[] = rankOrder
+    ? [rankOrder, sql`${productsTable.name} asc`, sql`${productsTable.id} asc`]
+    : [sql`${productsTable.name} asc`];
+
   const rows = await db
     .select()
     .from(productsTable)
     .where(where)
-    .orderBy(productsTable.name)
+    .orderBy(...orderBy)
     .limit(limit)
     .offset(offset);
 
