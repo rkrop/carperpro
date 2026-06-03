@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AccentButton, EmptyState, Hairline, Skeleton } from "@/components/CarperUI";
@@ -14,6 +14,11 @@ import { useApp } from "@/context/AppContext";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { discountPct, formatMXN, stockStatus } from "@/lib/format";
+import { STORE } from "@/lib/store";
+
+// WhatsApp brand green — recognizable across the light/dark theme.
+const WHATSAPP_GREEN = "#25D366";
+const WHATSAPP_GREEN_PRESSED = "#1DA851";
 
 export default function Producto() {
   const c = useColors();
@@ -90,6 +95,15 @@ export default function Producto() {
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
+  // Contact an advisor about this part (e.g. to confirm availability when it's
+  // out of stock). Prefills the WhatsApp message with the product name + SKU.
+  const open = (url: string) => Linking.openURL(url).catch(() => {});
+  const consultarWhatsApp = () => {
+    const msg = `Hola Carper, me interesa esta refacción: ${product.name} (SKU ${product.sku}). ¿Tienen disponibilidad?`;
+    open(`https://wa.me/${STORE.whatsapp}?text=${encodeURIComponent(msg)}`);
+  };
+  const llamar = () => open(`tel:${STORE.phone}`);
+
   const statusColor =
     status === "alto"
       ? c.success
@@ -151,6 +165,34 @@ export default function Producto() {
           </View>
           <Text style={{ fontFamily: Fonts.medium, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: c.mutedForeground, marginTop: 6 }}>IVA incluido</Text>
         </View>
+
+        {/* Ask an advisor about availability via WhatsApp. Hidden when out of
+            stock — the sticky CTA already surfaces WhatsApp + call there. */}
+        {!agotado ? (
+          <Pressable
+            onPress={consultarWhatsApp}
+            style={({ pressed }) => ({
+              backgroundColor: c.background,
+              paddingHorizontal: 24,
+              paddingVertical: 18,
+              borderBottomWidth: 1,
+              borderBottomColor: c.border,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 14,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: WHATSAPP_GREEN, alignItems: "center", justifyContent: "center" }}>
+              <Feather name="message-circle" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase", color: c.foreground }}>Consultar por WhatsApp</Text>
+              <Text style={{ fontFamily: Fonts.medium, fontSize: 11, lineHeight: 15, color: c.mutedForeground, marginTop: 2 }}>¿Dudas de disponibilidad? Escríbele a un asesor.</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={c.neutral400} />
+          </Pressable>
+        ) : null}
 
         {/* OEM / equivalents (optional — disappears when absent) */}
         {product.oem?.length || product.equivalents?.length ? (
@@ -241,8 +283,34 @@ export default function Producto() {
               <AccentButton label="Ver Carrito" icon="shopping-cart" onPress={() => router.push("/carrito")} />
             </View>
           </View>
+        ) : agotado ? (
+          // Defensive: the /products/:id route applies sellableProduct(), so a
+          // confirmed-0-stock part normally 404s before reaching here. Kept as a
+          // fallback (e.g. stock dropping to 0 mid-view) so the shopper can still
+          // reach an advisor by message or call instead of a dead "Agotado".
+          <View style={{ gap: 12 }}>
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 11, lineHeight: 15, color: c.mutedForeground, textAlign: "center" }}>
+              Sin existencia en este momento. Consulta disponibilidad con un asesor.
+            </Text>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <Pressable
+                onPress={consultarWhatsApp}
+                style={({ pressed }) => ({ flex: 1, height: 56, backgroundColor: pressed ? WHATSAPP_GREEN_PRESSED : WHATSAPP_GREEN, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 })}
+              >
+                <Feather name="message-circle" size={16} color="#fff" />
+                <Text style={{ color: "#fff", fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase" }}>WhatsApp</Text>
+              </Pressable>
+              <Pressable
+                onPress={llamar}
+                style={({ pressed }) => ({ flex: 1, height: 56, borderWidth: 1, borderColor: c.foreground, backgroundColor: pressed ? c.neutral100 : c.background, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 })}
+              >
+                <Feather name="phone" size={16} color={c.foreground} />
+                <Text style={{ color: c.foreground, fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase" }}>Llamar</Text>
+              </Pressable>
+            </View>
+          </View>
         ) : (
-          <AccentButton label={agotado ? "Agotado" : "Agregar al Carrito"} icon="shopping-cart" onPress={onAdd} disabled={agotado} />
+          <AccentButton label="Agregar al Carrito" icon="shopping-cart" onPress={onAdd} />
         )}
       </View>
     </View>
