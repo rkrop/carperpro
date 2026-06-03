@@ -10,6 +10,7 @@
 - [Carper asset strategy](carper-asset-strategy.md) — brand logos = non-tappable credibility wall (catalog mostly SIN MARCA); deep links via ?q=/?category=, never ?brand=; icons match accent-insensitive.
 - [TS project references vs typecheck](ts-project-references.md) — after editing lib/db schema types, run `npx tsc -b lib/db` before api-server typecheck; it reads dist .d.ts, not source.
 - [Stripe integration](stripe-integration.md) — card-only Checkout Sessions w/ dynamic price_data; awaiting_payment status skips ERP queue; MUST externalize stripe-replit-sync in esbuild or migrations silently no-op.
+- [Semantic search](semantic-search.md) — hybrid (text OR embedding) superset never degrades text; model=gemini-embedding-001 @768 dims (text-embedding-004 is 404); free tier 100/min paces backfill; exclude embedding col from selects.
 - [NL search assist](nl-search-assist.md) — AI rewrites phrase→structured {parts,vehicle} (catalog doesn't co-locate part+vehicle, so AND-all=0); adopt only if beats plain; OpenAI client MUST be lazy or API crashes at boot.
 - [Sublíneas & vehicle search](sublineas-vehicle-search.md) — 2-level Línea→Sublínea (subcategories table fills over time like stock; always show "Ver todo"); vehicle search = ?q=marca+modelo via FTS (omit año: ranges), ?compat=1 was dead.
 - [Query caching & list perf](carper-query-caching.md) — global staleTime 60s safe (stock freshness lives in cart availability + server checkout, not global); results list is FlatList, keep filter ScrollView un-nested.

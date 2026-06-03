@@ -2,15 +2,19 @@ import { GoogleGenAI } from "@google/genai";
 import { EMBEDDING_DIM } from "@workspace/db";
 import { logger } from "./logger";
 
-// Semantic-search embeddings via Google's `text-embedding-004` model (768 dims,
-// multilingual — good for Spanish auto-parts queries).
+// Semantic-search embeddings via Google's `gemini-embedding-001` model,
+// requesting EMBEDDING_DIM (768) dimensions to match the DB column. Multilingual
+// — good for Spanish auto-parts queries. At dimensions other than the model's
+// native 3072 the output is NOT unit-normalized, which is fine here: we compare
+// with cosine distance (pgvector `<=>` / vector_cosine_ops), which is
+// scale-invariant.
 //
 // IMPORTANT: neither Replit's managed OpenAI nor managed Gemini AI integration
 // supports the embeddings API, so this calls Google directly with the user's own
 // key (GEMINI_API_KEY / GOOGLE_API_KEY). EVERYTHING here degrades gracefully:
 // when no key is set, `isEmbeddingsConfigured()` is false and the embed helpers
 // return null, so the catalog falls back to plain text search untouched.
-export const EMBEDDING_MODEL = "text-embedding-004";
+export const EMBEDDING_MODEL = "gemini-embedding-001";
 export { EMBEDDING_DIM };
 
 function apiKey(): string | undefined {
@@ -29,20 +33,44 @@ function getClient(): GoogleGenAI | null {
   return client;
 }
 
-const sleep = (ms: number): Promise<void> =>
+export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-// Retry with exponential backoff + jitter. Embedding endpoints rate-limit (429)
-// and have transient blips; mass backfill MUST tolerate them.
-async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
+// A 429 from the embeddings API includes a `retryDelay` (e.g. "59s") — the free
+// tier caps requests-per-minute and each text counts as one request. Honor that
+// delay so the mass backfill paces itself instead of giving up.
+const MAX_RETRY_WAIT_MS = 70_000;
+function isRateLimit(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  const msg = err instanceof Error ? err.message : String(err);
+  return status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(msg);
+}
+function retryDelayMs(err: unknown): number | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  const m =
+    msg.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/) ||
+    msg.match(/retry in (\d+(?:\.\d+)?)\s*s/i);
+  return m && m[1] ? Math.ceil(parseFloat(m[1]) * 1000) : null;
+}
+
+// Retry with backoff. On rate limits, wait the server-provided retryDelay (so
+// the next per-minute window opens); on transient blips, exponential backoff +
+// jitter. Mass backfill MUST tolerate both.
+async function withRetry<T>(fn: () => Promise<T>, tries = 8): Promise<T> {
   let delay = 1000;
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (err) {
       if (attempt >= tries - 1) throw err;
-      await sleep(delay + Math.random() * 250);
-      delay = Math.min(delay * 2, 30000);
+      let wait: number;
+      if (isRateLimit(err)) {
+        wait = Math.min((retryDelayMs(err) ?? 60_000) + 1000, MAX_RETRY_WAIT_MS);
+      } else {
+        wait = delay + Math.random() * 250;
+        delay = Math.min(delay * 2, 30_000);
+      }
+      await sleep(wait);
     }
   }
 }
@@ -73,7 +101,10 @@ export async function embedDocuments(
         ai.models.embedContent({
           model: EMBEDDING_MODEL,
           contents: chunk,
-          config: { taskType: "RETRIEVAL_DOCUMENT" },
+          config: {
+            taskType: "RETRIEVAL_DOCUMENT",
+            outputDimensionality: EMBEDDING_DIM,
+          },
         }),
       );
       const embs = resp.embeddings ?? [];
@@ -110,7 +141,10 @@ export async function embedQuery(text: string): Promise<number[] | null> {
       ai.models.embedContent({
         model: EMBEDDING_MODEL,
         contents: key,
-        config: { taskType: "RETRIEVAL_QUERY" },
+        config: {
+          taskType: "RETRIEVAL_QUERY",
+          outputDimensionality: EMBEDDING_DIM,
+        },
       }),
     );
     const values = resp.embeddings?.[0]?.values;

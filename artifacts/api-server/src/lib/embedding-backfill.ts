@@ -52,8 +52,12 @@ function buildEmbeddingText(row: EmbedRow): string {
     .slice(0, MAX_TEXT);
 }
 
-// Embed up to BATCH products at a time (matches the embed API's max per request).
-const BATCH = 100;
+// Embed up to BATCH products per request. Kept just under the embed API's
+// free-tier limit of 100 requests/minute (each text counts as one request) so a
+// single batch never self-exceeds the quota; withRetry then waits out the
+// per-minute window between batches. Full ~4k backfill therefore runs ~100/min
+// in the background and is fully resumable across restarts.
+const BATCH = 95;
 // Bounds the loop so a persistent embed failure can't spin forever. Far above
 // any realistic sellable catalog size (~4k) / BATCH.
 const MAX_ITER = 1000;
@@ -71,6 +75,9 @@ export async function backfillEmbeddings(): Promise<void> {
     return;
   }
   try {
+    logger.info(
+      "embeddings: iniciando backfill (free tier ~100/min, se reanuda tras reinicios)",
+    );
     let total = 0;
     let iterations = 0;
     for (;;) {
@@ -126,13 +133,15 @@ export async function backfillEmbeddings(): Promise<void> {
       }
       total += updated;
       if (updated === 0) {
-        // Whole batch failed to embed (API down / invalid key) — stop instead of
-        // re-selecting the same NULL rows forever. Next boot retries.
+        // Whole batch failed to embed (API down / invalid key / daily quota
+        // exhausted) — stop instead of re-selecting the same NULL rows forever.
+        // Next boot retries.
         logger.error(
           "embeddings: ningún vector generado en el lote, backfill detenido (se reintenta en el próximo arranque)",
         );
         break;
       }
+      logger.info({ embedded: total }, "embeddings: progreso de backfill");
     }
     if (total > 0) {
       logger.info({ embedded: total }, "embeddings: backfill completado");
