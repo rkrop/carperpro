@@ -45,6 +45,7 @@ function RootLayoutNav() {
       <Stack.Screen name="confirmacion" />
       <Stack.Screen name="favoritos" />
       <Stack.Screen name="pedidos" />
+      <Stack.Screen name="pedido" />
       <Stack.Screen name="notificaciones" />
       <Stack.Screen name="ayuda" />
       <Stack.Screen name="acerca" />

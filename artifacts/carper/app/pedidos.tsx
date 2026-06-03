@@ -41,9 +41,10 @@ export default function Pedidos() {
             {orders.map((o) => {
               const firstName = o.lines[0]?.name;
               return (
-                <View
+                <Pressable
                   key={o.id}
-                  style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: c.border }}
+                  onPress={() => router.push({ pathname: "/pedido", params: { folio: o.folio } })}
+                  style={({ pressed }) => ({ backgroundColor: pressed ? c.neutral50 : c.background, paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: c.border })}
                 >
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
                     <Text style={{ fontFamily: Fonts.mono, fontSize: 12, color: c.foreground }}>{o.folio}</Text>
@@ -54,14 +55,25 @@ export default function Pedidos() {
                     {o.entrega === "envio" ? "Envío a domicilio" : "Recoger en tienda"}
                     {firstName ? ` · ${firstName}` : ""}
                   </Text>
-                  <Pressable
-                    onPress={() => reorder(o.lines)}
-                    style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start", marginTop: 14, borderWidth: 1, borderColor: c.primary, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: pressed ? c.neutral50 : c.background })}
-                  >
-                    <Feather name="rotate-ccw" size={13} color={c.primary} />
-                    <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.primary }}>Volver a pedir</Text>
-                  </Pressable>
-                </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 14 }}>
+                    <Pressable
+                      onPress={(e) => {
+                        // Keep the reorder tap from also opening the card's detail.
+                        e.stopPropagation();
+                        reorder(o.lines);
+                      }}
+                      style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: c.primary, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: pressed ? c.neutral50 : c.background })}
+                    >
+                      <Feather name="rotate-ccw" size={13} color={c.primary} />
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.primary }}>Volver a pedir</Text>
+                    </Pressable>
+                    <View style={{ flex: 1 }} />
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.mutedForeground }}>Ver detalle</Text>
+                      <Feather name="chevron-right" size={16} color={c.mutedForeground} />
+                    </View>
+                  </View>
+                </Pressable>
               );
             })}
           </View>
