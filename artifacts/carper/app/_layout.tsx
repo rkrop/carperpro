@@ -31,7 +31,19 @@ if (apiDomain) setBaseUrl(`https://${apiDomain}`);
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient();
+// Sensible global caching so navigating back to a screen shows data instantly
+// from cache while it refreshes in the background. Stock-sensitive queries
+// (e.g. cart availability) opt out by overriding staleTime/gcTime per-query.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000, // 1 min: catalog data is fresh enough to reuse
+      gcTime: 10 * 60_000, // keep cached pages around for 10 min
+      retry: 2,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 function RootLayoutNav() {
   return (

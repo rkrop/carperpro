@@ -12,7 +12,7 @@ import { useColors } from "@/hooks/useColors";
 import { discountPct, formatMXN, stockStatus } from "@/lib/format";
 
 /** Full-width product list row (Resultados screen). */
-export function ProductRow({ product }: { product: Product }) {
+export const ProductRow = React.memo(function ProductRow({ product }: { product: Product }) {
   const c = useColors();
   const router = useRouter();
   const cart = useCart();
@@ -127,7 +127,7 @@ export function ProductRow({ product }: { product: Product }) {
       </View>
     </Pressable>
   );
-}
+});
 
 /** Compact card for horizontal carousels (recently viewed, related). */
 export function ProductCardMini({ product }: { product: Product }) {

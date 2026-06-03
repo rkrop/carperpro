@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import { FlatList, ScrollView, Text, View } from "react-native";
 
 import { Chip, EmptyState, Hairline, IconBox, Skeleton } from "@/components/CarperUI";
 import { ProductRow } from "@/components/ProductRow";
@@ -49,6 +49,9 @@ export default function Resultados() {
   }, [base, brand, availOnly, priceSort]);
 
   const availableBrands = useMemo(() => (allBrands ?? []).filter((b) => base.some((p) => p.brand === b)), [allBrands, base]);
+
+  const renderItem = useCallback(({ item }: { item: (typeof filtered)[number] }) => <ProductRow product={item} />, []);
+  const keyExtractor = useCallback((item: (typeof filtered)[number]) => item.id, []);
 
   const title = category ? category.name : params.compat === "1" ? "Compatibles" : "Resultados";
   const subtitle = params.q
@@ -109,14 +112,18 @@ export default function Resultados() {
           message={`No encontramos refacciones${params.q ? ` para "${params.q}"` : ""}. Verifica el SKU o intenta con otra marca.`}
         />
       ) : (
-        <ScrollView contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
-          {filtered.map((item, i) => (
-            <View key={item.id}>
-              <ProductRow product={item} />
-              {i < filtered.length - 1 ? <Hairline /> : null}
-            </View>
-          ))}
-        </ScrollView>
+        <FlatList
+          data={filtered}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          ItemSeparatorComponent={Hairline}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 32 }}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          removeClippedSubviews
+        />
       )}
     </View>
   );
