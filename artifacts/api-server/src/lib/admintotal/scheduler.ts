@@ -10,6 +10,7 @@ import { runTargetedStockRefresh } from "./targetedRefresh";
 import { processOutboundQueue } from "./outbound";
 import { reconcilePendingStripeOrders } from "../stripe/service";
 import { backfillEmbeddings } from "../embedding-backfill";
+import { backfillDescriptions } from "../description-backfill";
 
 let started = false;
 let timer: NodeJS.Timeout | null = null;
@@ -29,6 +30,14 @@ async function tick(): Promise<void> {
     await backfillEmbeddings();
   } catch (err) {
     logger.error({ err }, "embeddings: error inesperado en catch-up programado");
+  }
+  // Generate AI descriptions for anything new/content-changed since the last pass
+  // (the reset trigger NULLs descripcion_generada on content change; new rows
+  // arrive NULL). No-ops when unconfigured or already running.
+  try {
+    await backfillDescriptions();
+  } catch (err) {
+    logger.error({ err }, "descripciones: error inesperado en generación programada");
   }
   try {
     await processOutboundQueue();

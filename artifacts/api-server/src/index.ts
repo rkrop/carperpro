@@ -6,6 +6,7 @@ import { backfillSearchVectors } from "./lib/search-backfill";
 import { ensureSearchTrigger } from "./lib/ensure-search-trigger";
 import { ensureEmbeddingSetup } from "./lib/ensure-embedding-setup";
 import { backfillEmbeddings } from "./lib/embedding-backfill";
+import { backfillDescriptions } from "./lib/description-backfill";
 
 const rawPort = process.env["PORT"];
 
@@ -43,6 +44,12 @@ app.listen(port, (err) => {
     // never affected.
     await ensureEmbeddingSetup();
     await backfillEmbeddings();
+    // AI sales descriptions (Task #49): generate one for every product the ERP
+    // left without a `descripcion`, served as a fallback so the catalog never
+    // shows "sin descripción". Offline, idempotent, resumable; no-ops without the
+    // OpenAI integration. Runs after embeddings so the two backfills don't both
+    // start a heavy pass at the same instant on boot.
+    await backfillDescriptions();
   })();
   // Kick off the Admintotal inbound sync + outbound queue scheduler.
   startScheduler();

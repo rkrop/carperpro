@@ -70,6 +70,16 @@ export const productsTable = pgTable("products", {
   // Rich product description: vehicle applications, OEM codes, specs, etc.
   // Used for full-text search (tsvector index maintained via DB trigger).
   descripcion: text("descripcion"),
+  // AI-generated sales description (Task #49). Produced offline in batch by
+  // description-backfill.ts from the product's REAL ERP data (name, brand,
+  // category, specs, vehicles, OEM) — never invented specs/compatibility. Served
+  // ONLY as a fallback when `descripcion` is empty, so it never overrides real
+  // ERP copy. NULL until generated, and re-NULLed by the `products_embedding_reset`
+  // trigger whenever source content changes so it is regenerated. Written via raw
+  // SQL on the server (like `embedding`), never through Drizzle inserts — hence
+  // omitted from the insert schema below. Deliberately kept OUT of the full-text
+  // `search_vector` so AI prose never skews search relevance.
+  descripcionGenerada: text("descripcion_generada"),
   // Cost and supplier info (from Excel / Admintotal)
   costo: doublePrecision("costo"),
   proveedor: text("proveedor"),
@@ -112,6 +122,7 @@ export const insertProductSchema = createInsertSchema(productsTable).omit({
   updatedAt: true,
   searchVector: true,
   embedding: true,
+  descripcionGenerada: true,
 });
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof productsTable.$inferSelect;

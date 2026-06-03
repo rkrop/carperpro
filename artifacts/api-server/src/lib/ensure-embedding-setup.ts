@@ -7,10 +7,12 @@ import { logger } from "./logger";
 //  1. the `vector` extension exists (defensive — the db `push` script also
 //     creates it before the column),
 //  2. an HNSW cosine index backs nearest-neighbor scans,
-//  3. a BEFORE UPDATE trigger NULLs `embedding` whenever the searchable content
-//     changes, so the next backfill pass automatically re-embeds the row. This
-//     is how new/changed products (ERP sync + webhooks) stay semantically
-//     indexed without any per-write embedding call on the hot path.
+//  3. a BEFORE UPDATE trigger NULLs `embedding` AND `descripcion_generada`
+//     whenever the searchable content changes, so the next backfill pass
+//     automatically re-embeds the row and regenerates its AI sales description
+//     (Task #49). This is how new/changed products (ERP sync + webhooks) keep
+//     both AI-derived fields current without any per-write model call on the hot
+//     path. The two backfills (embeddings, descriptions) pick up the NULLed rows.
 //
 // All steps are idempotent and NON-FATAL: if the column doesn't exist yet
 // (push hasn't run), the index/trigger creation throws and is logged, and the
@@ -28,6 +30,7 @@ const RESET_FUNCTION = `
       OR NEW.subcategory_id IS DISTINCT FROM OLD.subcategory_id
     ) THEN
       NEW.embedding := NULL;
+      NEW.descripcion_generada := NULL;
     END IF;
     RETURN NEW;
   END;

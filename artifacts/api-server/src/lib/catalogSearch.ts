@@ -84,7 +84,13 @@ export function serializeProduct(row: CatalogProduct): Record<string, unknown> {
     vehicles: row.vehicles ?? [],
     oem: row.oem ?? null,
     equivalents: row.equivalents ?? null,
-    descripcion: row.descripcion ?? null,
+    // Real ERP copy wins; the AI-generated description (Task #49) is only a
+    // fallback for the ~all products the ERP leaves without one. The client can't
+    // tell them apart — same field — so a product never shows up "sin descripción".
+    descripcion:
+      (row.descripcion && row.descripcion.trim()) ||
+      row.descripcionGenerada ||
+      null,
   };
 }
 
