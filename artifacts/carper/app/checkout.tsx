@@ -5,6 +5,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Alert, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useCreateOrder } from "@workspace/api-client-react";
+
 import { AccentButton } from "@/components/CarperUI";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts, isWeb, WEB_BOTTOM_INSET } from "@/constants/fonts";
@@ -75,6 +77,37 @@ function isFulfilled(order: VerifiedOrder): boolean {
 const VERIFYING_MESSAGE =
   "Recibimos tu pago. Estamos confirmando la disponibilidad final con la tienda y te avisaremos en breve.";
 
+// Shape of the 409 body POST /orders returns when a cash/SPEI order asks for
+// more units than are available.
+interface StockShortfallItem {
+  productId: string;
+  sku: string;
+  name: string;
+  requested: number;
+  available: number;
+}
+
+// When createOrder rejects, detect the stock shortfall (HTTP 409) and build an
+// itemized message. The generated client throws an ApiError carrying `status`
+// and the parsed `data` body, so we duck-type rather than import the class.
+// Matches the card/Stripe shortfall wording ("Algunos productos ya no están
+// disponibles… Actualiza tu carrito e inténtalo de nuevo") and adds the
+// per-product "solo quedan X" detail.
+function stockShortfallMessage(err: unknown): string | null {
+  const e = err as { status?: number; data?: { items?: StockShortfallItem[] } } | null;
+  if (!e || e.status !== 409) return null;
+  const items = e.data?.items;
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const detail = items
+    .map((it) => `• ${it.name}: solo quedan ${it.available}`)
+    .join("\n");
+  return (
+    "Algunos productos ya no están disponibles en la cantidad solicitada:\n\n" +
+    `${detail}\n\n` +
+    "Actualiza tu carrito e inténtalo de nuevo."
+  );
+}
+
 function verifiedToOrder(v: VerifiedOrder): Order {
   return {
     id: v.folio,
@@ -93,6 +126,7 @@ export default function Checkout() {
   const insets = useSafeAreaInsets();
   const cart = useCart();
   const { addOrder } = useApp();
+  const createOrder = useCreateOrder();
   const [step, setStep] = useState(0);
   const [entrega, setEntrega] = useState<Entrega>("tienda");
   const [pago, setPago] = useState<Pago | null>(null);
@@ -231,7 +265,46 @@ export default function Checkout() {
       return;
     }
 
-    const folio = `CAR-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+    // Cash / SPEI (WhatsApp): submit the order to the server FIRST so its stock
+    // guard can reject over-ordered lines before we open WhatsApp. A 409 carries
+    // the affected products and their available counts; surface that itemized
+    // message and route the shopper back to fix their cart.
+    let folio: string;
+    try {
+      const created = await createOrder.mutateAsync({
+        data: {
+          lines: cart.items.map((i) => ({
+            productId: i.id,
+            sku: i.sku,
+            name: i.name,
+            qty: i.qty,
+            price: i.price,
+          })),
+          sucursalId: STORE.id,
+          entrega,
+          pago: pago ?? "efectivo",
+          total: cart.total,
+          buyerName: name.trim(),
+          buyerPhone: phone.trim(),
+        },
+      });
+      folio = created.folio;
+    } catch (err) {
+      setSubmitting(false);
+      const shortfall = stockShortfallMessage(err);
+      if (shortfall) {
+        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        Alert.alert("Revisa tu carrito", shortfall, [
+          { text: "Ver carrito", onPress: () => router.replace("/carrito") },
+        ]);
+        return;
+      }
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const message = err instanceof Error ? err.message : "No se pudo enviar el pedido. Intenta de nuevo.";
+      Alert.alert("Error al enviar", message);
+      return;
+    }
+
     try {
       const text = buildWhatsAppMessage({
         folio,

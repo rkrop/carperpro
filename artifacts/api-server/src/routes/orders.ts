@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { CreateOrderBody } from "@workspace/api-zod";
 import { pushOrder } from "../lib/admintotal/outbound";
+import { getWebhookSucursalId } from "../lib/admintotal/config";
 import { effectivePrice } from "../lib/pricing";
 import { logger } from "../lib/logger";
 
@@ -34,11 +35,14 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  // Validate the sucursal exists (ERP-backed).
+  // Resolve the sucursal: client value if valid, else the main store (Matriz).
+  // Mirrors the Stripe checkout path so the single-store app can submit with a
+  // blank sucursalId and still get a valid, ERP-backed branch.
+  const sucursalId = input.sucursalId?.trim() || getWebhookSucursalId();
   const suc = await db
     .select({ id: sucursalesTable.id })
     .from(sucursalesTable)
-    .where(eq(sucursalesTable.id, input.sucursalId))
+    .where(eq(sucursalesTable.id, sucursalId))
     .limit(1);
   if (suc.length === 0) {
     res.status(400).json({ error: "Sucursal no válida" });
@@ -112,7 +116,7 @@ router.post("/orders", async (req: Request, res: Response): Promise<void> => {
     .values({
       folio,
       status: "pending",
-      sucursalId: input.sucursalId,
+      sucursalId,
       entrega: input.entrega,
       pago: input.pago,
       buyerName: input.buyerName ?? null,
