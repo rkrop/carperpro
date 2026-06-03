@@ -29,8 +29,15 @@ interface PaginatedResponse<T> {
   results?: T[];
 }
 
-const MAX_RETRIES = 4;
-const BASE_BACKOFF_MS = 800;
+// The `productos` endpoint is heavily 429-rate-limited, so we retry each page
+// persistently (with a capped exponential backoff and honoring Retry-After)
+// rather than giving up after a couple of tries — every extra page landed in a
+// single tick shortens how long the catalog reads "Consultar". A page that
+// still fails after all retries doesn't lose progress: the streaming pull
+// records where to resume and the next scheduler tick continues from there.
+const MAX_RETRIES = 8;
+const BASE_BACKOFF_MS = 1000;
+const MAX_BACKOFF_MS = 30_000;
 const PAGE_LIMIT = 100;
 
 function sleep(ms: number): Promise<void> {
@@ -118,7 +125,7 @@ export class AdmintotalClient {
       });
     } catch (err) {
       if (attempt < MAX_RETRIES) {
-        const wait = BASE_BACKOFF_MS * 2 ** attempt;
+        const wait = Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS);
         logger.warn(
           { err, url, attempt, wait },
           "Admintotal: error de red, reintentando",
@@ -142,7 +149,7 @@ export class AdmintotalClient {
       if (attempt < MAX_RETRIES) {
         const retryAfter = Number(res.headers.get("retry-after"));
         const wait = Number.isNaN(retryAfter)
-          ? BASE_BACKOFF_MS * 2 ** attempt
+          ? Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS)
           : retryAfter * 1000;
         logger.warn(
           { status: res.status, url, attempt, wait },
@@ -217,17 +224,31 @@ export class AdmintotalClient {
   // through, we stop gracefully (complete=false) and keep everything fetched so
   // far, rather than throwing away the entire run. `complete` is true only when
   // pagination ended naturally (the `next` link became null).
+  //
+  // RESUMABILITY: pass `startUrl` (a previously returned `nextUrl`) to continue
+  // from where an earlier, rate-limited run stopped instead of restarting at
+  // page 0. The returned `nextUrl` is the page to resume from next time: null
+  // when pagination finished, or the URL of the page that failed/was pending
+  // when a 429 cut the run short. Because the API paginates with stable
+  // limit/offset links, a saved `next` URL stays valid across runs.
   async fetchPagesWithCallback<T>(
     path: string,
     params: Record<string, string | number> | undefined,
     onPage: (rows: T[]) => Promise<void>,
-  ): Promise<{ expectedCount: number | null; complete: boolean }> {
+    startUrl?: string | null,
+  ): Promise<{
+    expectedCount: number | null;
+    complete: boolean;
+    nextUrl: string | null;
+  }> {
     let expectedCount: number | null = null;
     let complete = false;
-    let url: string | null = this.buildUrl(path, {
-      limit: PAGE_LIMIT,
-      ...(params ?? {}),
-    });
+    let url: string | null =
+      startUrl ??
+      this.buildUrl(path, {
+        limit: PAGE_LIMIT,
+        ...(params ?? {}),
+      });
     let guard = 0;
     while (url && guard < 10_000) {
       guard += 1;
@@ -238,16 +259,17 @@ export class AdmintotalClient {
         // The low-level request already retried 429/5xx with backoff. If it
         // still failed with a transient status, stop paginating but KEEP the
         // pages we already processed (complete stays false so callers skip any
-        // destructive prune). Non-transient errors still propagate.
+        // destructive prune) AND report `url` as the resume point so the next
+        // run continues from this exact page. Non-transient errors propagate.
         if (
           err instanceof AdmintotalError &&
           (err.status === 429 || (err.status != null && err.status >= 500))
         ) {
           logger.warn(
             { status: err.status, url },
-            "Admintotal: paginación detenida por límite de tasa; se conserva el progreso",
+            "Admintotal: paginación detenida por límite de tasa; se conserva el progreso y se guarda el punto de reanudación",
           );
-          break;
+          return { expectedCount, complete: false, nextUrl: url };
         }
         throw err;
       }
@@ -265,7 +287,7 @@ export class AdmintotalClient {
       url = page.next ?? null;
       if (!url) complete = true;
     }
-    return { expectedCount, complete };
+    return { expectedCount, complete, nextUrl: complete ? null : url };
   }
 
   async getProductos(): Promise<Record<string, unknown>[]> {
@@ -281,14 +303,21 @@ export class AdmintotalClient {
   }
 
   // Stream every `productos` page, invoking `onPage` per batch so the caller can
-  // upsert (and persist stock) incrementally. See fetchPagesWithCallback.
+  // upsert (and persist stock) incrementally. Pass `startUrl` to resume a pull
+  // that an earlier rate-limited run could not finish. See fetchPagesWithCallback.
   async streamProductos(
     onPage: (rows: Record<string, unknown>[]) => Promise<void>,
-  ): Promise<{ expectedCount: number | null; complete: boolean }> {
+    startUrl?: string | null,
+  ): Promise<{
+    expectedCount: number | null;
+    complete: boolean;
+    nextUrl: string | null;
+  }> {
     return this.fetchPagesWithCallback<Record<string, unknown>>(
       "productos/",
       undefined,
       onPage,
+      startUrl,
     );
   }
 

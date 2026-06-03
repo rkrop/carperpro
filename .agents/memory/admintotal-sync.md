@@ -62,6 +62,30 @@ transient hiccup). After each run a logger.info line + the syncState `message`
 report catalog-wide known/zero/unknown coverage — use that to watch the
 "Consultar" gap close over successive syncs.
 
+## Productos pull RESUMES across ticks — a "cycle" is a multi-run unit
+The full pull must NOT restart at page 0 each tick: it persists where it stopped
+and the next tick continues from there, so a pass naturally spans several
+rate-limited ticks. The catalog is effectively too big to pull in one tick, so the
+unit of correctness is the whole pass ("cycle"), not a single run.
+
+**Why:** Restarting at 0 each tick re-fetched the same early pages and never
+reached the tail, so stock coverage crept up painfully slowly. Resuming makes
+every tick forward progress → whole catalog gets real quantities in a predictable
+window. The resume point is the saved pagination URL (not a numeric offset we
+compute), which stays valid across the gap and survives a switch to cursor
+pagination.
+
+**How to apply (the trap):** Because a pass spans ticks, NEVER make per-cycle
+decisions from a single run's in-memory accumulators (seen-id list, per-run
+category counts) — that was the whole previous bug class. Prune stale products by
+"not touched since the cycle began" (a row-level sync timestamp), gated on the
+cycle actually finishing AND near-full coverage; recompute category counts from
+the products table, not the run accumulator. Watch out: Drizzle's `$onUpdate` does
+NOT fire on `onConflictDoUpdate`, so the per-row sync timestamp must be set
+explicitly in the upsert or the prune deletes live rows. Lean toward MORE retry
+persistence per page (bounded backoff, honor Retry-After) since extra pages landed
+per tick directly shrink the "Consultar" window.
+
 ## Empty `info_almacenes: []` means a CONFIRMED 0 (not "no signal")
 List and detail endpoints return IDENTICAL `info_almacenes` arrays, so per-product
 detail fetches add nothing. The mapper distinguishes: array present-but-empty →

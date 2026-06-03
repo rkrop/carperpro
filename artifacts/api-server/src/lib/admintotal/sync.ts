@@ -1,4 +1,4 @@
-import { sql, notInArray } from "drizzle-orm";
+import { sql, notInArray, eq, lt } from "drizzle-orm";
 import {
   db,
   categoriesTable,
@@ -74,13 +74,39 @@ export async function runInboundSync(): Promise<SyncResult> {
 
   syncing = true;
   const startedAt = new Date();
+
+  // Resume bookkeeping: continue the product pull from where the last tick
+  // stopped instead of restarting at page 0. A `cursorUrl` means a previous run
+  // was cut short by the ERP rate limit; NULL means start a fresh full pass.
+  const prevRows = await db
+    .select()
+    .from(syncStateTable)
+    .where(eq(syncStateTable.key, SYNC_KEY))
+    .limit(1);
+  const prev = prevRows[0];
+  const resumeUrl = prev?.cursorUrl ?? null;
+  const freshCycle = !resumeUrl;
+  // A "cycle" is one full pass over the catalog; it may span several ticks. We
+  // stamp when it began so that, once it completes, we can prune products no
+  // longer in the ERP (any row not touched since the cycle started).
+  const cycleStartedAt = freshCycle
+    ? startedAt
+    : (prev?.cycleStartedAt ?? startedAt);
+  const priorCycleFetched = freshCycle ? 0 : (prev?.cycleFetchedCount ?? 0);
+
   await setSyncState({
     status: "running",
     lastStartedAt: startedAt,
     lastError: null,
-    message: "Sincronizando con Admintotal…",
+    cycleStartedAt,
+    message: resumeUrl
+      ? "Reanudando sincronización con Admintotal…"
+      : "Sincronizando con Admintotal…",
   });
-  logger.info("Admintotal: iniciando sincronización entrante");
+  logger.info(
+    { resuming: !freshCycle, priorCycleFetched },
+    "Admintotal: iniciando sincronización entrante",
+  );
 
   try {
     const client = new AdmintotalClient();
@@ -141,7 +167,6 @@ export async function runInboundSync(): Promise<SyncResult> {
     // ever landed in the DB. Persisting per page makes every run durable: even a
     // cut-short pull leaves stock for the pages it managed to fetch.
     const brandSet = new Set<string>();
-    const seenProductIds: string[] = [];
     const categoryCounts = new Map<string, number>();
     let productsSynced = 0;
     let fetchedCount = 0;
@@ -150,13 +175,19 @@ export async function runInboundSync(): Promise<SyncResult> {
     let stockZeroThisRun = 0; // ...of which were a confirmed 0 (Agotado)
     let stockUnknownThisRun = 0; // payload had no stock signal -> left untouched
 
-    const { expectedCount, complete } = await client.streamProductos(
+    const { expectedCount, complete, nextUrl } = await client.streamProductos(
       async (rawProductos) => {
         fetchedCount += rawProductos.length;
         for (const raw of rawProductos) {
           const mapped = mapProduct(raw);
           if (!mapped) continue;
           const { product, stockQty } = mapped;
+          // Stamp every touched row so the cycle-completion prune (which deletes
+          // rows untouched since `cycleStartedAt`) keeps everything we saw —
+          // even across the multiple ticks a full pass now spans. Relying on the
+          // schema's $onUpdate is not safe here because Drizzle does not apply
+          // it to onConflictDoUpdate, so we set it explicitly on both paths.
+          const touchedAt = new Date();
 
           // Stock lives on the product row (one-number-per-product). Write it
           // whenever the ERP reported it via the proper channel — including a
@@ -166,7 +197,7 @@ export async function runInboundSync(): Promise<SyncResult> {
           // we never wipe stock the real-time price/stock webhook already set.
           const stockSet =
             stockQty !== undefined
-              ? { erpStockQty: stockQty, stockUpdatedAt: new Date() }
+              ? { erpStockQty: stockQty, stockUpdatedAt: touchedAt }
               : {};
           if (stockQty === undefined) {
             stockUnknownThisRun += 1;
@@ -177,7 +208,7 @@ export async function runInboundSync(): Promise<SyncResult> {
 
           await db
             .insert(productsTable)
-            .values({ ...product, ...stockSet })
+            .values({ ...product, ...stockSet, updatedAt: touchedAt })
             .onConflictDoUpdate({
               target: productsTable.id,
               set: {
@@ -190,10 +221,10 @@ export async function runInboundSync(): Promise<SyncResult> {
                 originalPrice: product.originalPrice,
                 image: product.image,
                 specs: product.specs,
+                updatedAt: touchedAt,
                 ...stockSet,
               },
             });
-          seenProductIds.push(product.id);
           productsSynced += 1;
           if (product.brand) brandSet.add(product.brand);
           if (product.categoryId) {
@@ -204,21 +235,35 @@ export async function runInboundSync(): Promise<SyncResult> {
           }
         }
       },
+      // Resume from where the previous tick stopped (null = fresh full pass).
+      resumeUrl,
     );
-    // A pull is only "complete" when pagination ended naturally AND we got at
-    // least ~90% of the count the API advertised. A partial/cut-short pull must
-    // NEVER trigger the destructive prune below, or it would wipe live products.
+    // Cumulative rows fetched across every tick of the current pass. The pull
+    // now resumes across ticks, so a single run only sees part of the catalog;
+    // coverage / prune decisions must be made against the whole cycle, not one
+    // run. `complete` (the `next` link became null) signals we reached the end
+    // of the catalog and the cycle is therefore finished.
+    const cycleFetchedCount = priorCycleFetched + fetchedCount;
+    const cycleComplete = complete;
+    // The cycle is only "complete enough" to prune when pagination ended
+    // naturally AND we fetched ~90% of the advertised count over the whole pass.
+    // A partial/cut-short pull must NEVER trigger the destructive prune below,
+    // or it would wipe live products on a transient ERP hiccup.
     const pullComplete =
-      complete &&
-      fetchedCount > 0 &&
+      cycleComplete &&
+      cycleFetchedCount > 0 &&
       (expectedCount === null ||
-        fetchedCount >= Math.floor(expectedCount * 0.9));
+        cycleFetchedCount >= Math.floor(expectedCount * 0.9));
     logger.info(
       {
         productsSynced,
         fetchedCount,
+        cycleFetchedCount,
         expectedCount,
+        cycleComplete,
         pullComplete,
+        resumed: !freshCycle,
+        willResume: !cycleComplete,
         stockKnownThisRun,
         stockZeroThisRun,
         stockUnknownThisRun,
@@ -226,7 +271,7 @@ export async function runInboundSync(): Promise<SyncResult> {
       "Admintotal: productos sincronizados",
     );
 
-    // 4) Brands
+    // 4) Brands — insert any brand seen this tick (idempotent across the cycle).
     const seenBrands = Array.from(brandSet);
     for (const name of seenBrands) {
       await db
@@ -234,41 +279,58 @@ export async function runInboundSync(): Promise<SyncResult> {
         .values({ name })
         .onConflictDoNothing({ target: brandsTable.name });
     }
-    // Prune stale products, then stale brands — but ONLY when the product pull
-    // looked complete. A partial/failed pull must never delete products (that
-    // would empty the catalog on a transient ERP hiccup); we keep the existing
-    // rows and try again next sync. Stock lives on the product row
-    // (products.erpStockQty), so pruning a product removes its stock with it.
+    // Prune stale products, then stale brands — but ONLY when the whole pass
+    // completed. Because a pass spans multiple ticks, we can't use this run's
+    // seen-id list; instead we delete any product not touched since the cycle
+    // began (its `updatedAt` predates `cycleStartedAt`). A partial/failed pull
+    // must never delete products (that would empty the catalog on a transient
+    // ERP hiccup). Stock lives on the product row (products.erpStockQty), so
+    // pruning a product removes its stock with it.
     if (pullComplete) {
-      if (seenProductIds.length > 0) {
-        await db.delete(productsTable).where(notInArray(productsTable.id, seenProductIds));
-      }
-      if (seenBrands.length > 0) {
-        await db.delete(brandsTable).where(notInArray(brandsTable.name, seenBrands));
+      await db
+        .delete(productsTable)
+        .where(lt(productsTable.updatedAt, cycleStartedAt));
+      // Drop brands that no longer have any product after the prune above.
+      const liveBrandRows = await db
+        .selectDistinct({ brand: productsTable.brand })
+        .from(productsTable);
+      const liveBrands = liveBrandRows
+        .map((r) => r.brand)
+        .filter((b): b is string => !!b);
+      if (liveBrands.length > 0) {
+        await db
+          .delete(brandsTable)
+          .where(notInArray(brandsTable.name, liveBrands));
+      } else {
+        // No products left at all — clear every brand too (notInArray with an
+        // empty list is a no-op, so this case must be handled explicitly).
+        await db.delete(brandsTable);
       }
     } else {
       logger.warn(
-        { fetched: fetchedCount, expectedCount },
+        { fetched: fetchedCount, cycleFetchedCount, expectedCount },
         "Admintotal: pull de productos incompleto; se omite la limpieza para no borrar productos/inventario",
       );
     }
 
-    // 5) Category counts — zero out categories not seen in this sync.
-    if (categoryCounts.size < categories.length) {
-      const seenCategoryIds = Array.from(categoryCounts.keys());
-      if (seenCategoryIds.length > 0) {
-        await db
-          .update(categoriesTable)
-          .set({ count: 0 })
-          .where(notInArray(categoriesTable.id, seenCategoryIds));
-      }
-    }
-    for (const [id, count] of categoryCounts) {
-      await db
-        .update(categoriesTable)
-        .set({ count })
-        .where(sql`${categoriesTable.id} = ${id}`);
-    }
+    // 5) Category counts — recompute straight from the products table rather
+    // than from this run's accumulator. A pass now spans several ticks, so the
+    // per-run `categoryCounts` only covers part of the catalog; deriving counts
+    // from the table keeps them correct on every partial run instead of
+    // clobbering them with a fraction of the real total.
+    void categoryCounts; // retained for per-run observability only
+    await db.update(categoriesTable).set({ count: 0 });
+    await db.execute(sql`
+      update ${categoriesTable} c
+      set count = sub.cnt
+      from (
+        select ${productsTable.categoryId} as category_id, count(*)::int as cnt
+        from ${productsTable}
+        where ${productsTable.categoryId} is not null
+        group by ${productsTable.categoryId}
+      ) sub
+      where c.id = sub.category_id
+    `);
 
     // Observability: catalog-wide stock coverage AFTER this run, so we can see
     // how many products now show a real quantity ("known") vs. still read
@@ -301,12 +363,22 @@ export async function runInboundSync(): Promise<SyncResult> {
       stats.total > 0
         ? ` ${stats.known}/${stats.total} con stock conocido (${stats.unknown} en "Consultar").`
         : "";
+    // Persist where to resume: if the pass finished (reached the end of the
+    // catalog) clear the cursor and counters so the next tick starts a fresh
+    // full pass; otherwise save the `nextUrl` and the running fetched count so
+    // the next tick picks up exactly where this one stopped instead of page 0.
+    const resumeMsg = cycleComplete
+      ? ""
+      : " Continúa en la próxima corrida.";
     await setSyncState({
       status: "success",
       lastFinishedAt: finishedAt,
       lastSuccessAt: finishedAt,
       lastError: null,
-      message: `Sincronización ${pullComplete ? "completada" : "parcial (límite de tasa del ERP)"}.${coverageMsg}`,
+      cursorUrl: cycleComplete ? null : nextUrl,
+      cycleStartedAt: cycleComplete ? null : cycleStartedAt,
+      cycleFetchedCount: cycleComplete ? 0 : cycleFetchedCount,
+      message: `Sincronización ${pullComplete ? "completada" : "parcial (límite de tasa del ERP)"}.${coverageMsg}${resumeMsg}`,
       productsSynced,
       categoriesSynced: categories.length,
       sucursalesSynced: sucursales.length,

@@ -18,6 +18,17 @@ export const syncStateTable = pgTable("sync_state", {
   categoriesSynced: integer("categories_synced").notNull().default(0),
   sucursalesSynced: integer("sucursales_synced").notNull().default(0),
   brandsSynced: integer("brands_synced").notNull().default(0),
+  // Resumable-pull bookkeeping for the rate-limited Admintotal `productos` pull.
+  // The full catalog (~32k rows) rarely fetches in one tick before a 429 stops
+  // it, so we persist where to resume next run instead of restarting at page 0.
+  // `cursorUrl` is the absolute `next` URL we should continue from; NULL means
+  // "start a fresh full pass from the first page". A pass therefore spans
+  // multiple ticks, so we also track when it began (`cycleStartedAt`) and how
+  // many rows it has fetched so far (`cycleFetchedCount`) to safely prune
+  // products that disappeared from the ERP only once a whole pass completes.
+  cursorUrl: text("cursor_url"),
+  cycleStartedAt: timestamp("cycle_started_at", { withTimezone: true }),
+  cycleFetchedCount: integer("cycle_fetched_count").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
