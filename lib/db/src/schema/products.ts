@@ -27,6 +27,32 @@ const tsvector = customType<{ data: string; driverData: string }>({
   },
 });
 
+// Semantic-search embedding dimension. Must match the embedding model used by
+// the API server (Google text-embedding-004 → 768 dims). Kept here so the
+// pgvector column type and the server-side validation stay in lockstep.
+export const EMBEDDING_DIM = 768;
+
+// pgvector `vector(N)` likewise has no first-class Drizzle type. Declared as a
+// custom type for the SAME reason as tsvector above: so it lives in the schema
+// source of truth and `drizzle-kit push` never drops it. The `vector` extension
+// must already exist when push runs — the `push` script in package.json creates
+// it first (ensure-extensions.mjs).
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return `vector(${EMBEDDING_DIM})`;
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string): number[] {
+    return value
+      .replace(/^\[|\]$/g, "")
+      .split(",")
+      .filter((s) => s.length > 0)
+      .map(Number);
+  },
+});
+
 // Products mirror Admintotal "productos". `id` is the Admintotal producto id
 // (stringified) so upserts are idempotent. Catalog is a read-only mirror.
 export const productsTable = pgTable("products", {
@@ -69,6 +95,13 @@ export const productsTable = pgTable("products", {
   // omitted from the insert schema below); it exists here only so the schema
   // diff keeps it in sync across dev/prod instead of dropping it.
   searchVector: tsvector("search_vector"),
+  // Semantic-search embedding (Google text-embedding-004, 768 dims). NULL until
+  // the API server's backfill embeds the row, and re-NULLed by the
+  // `products_embedding_reset` trigger whenever searchable content changes so it
+  // is automatically re-embedded. The app never writes this through Drizzle
+  // (hence omitted from the insert schema below); it is populated/queried via
+  // raw pgvector SQL on the server.
+  embedding: vector("embedding"),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
@@ -78,6 +111,7 @@ export const productsTable = pgTable("products", {
 export const insertProductSchema = createInsertSchema(productsTable).omit({
   updatedAt: true,
   searchVector: true,
+  embedding: true,
 });
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof productsTable.$inferSelect;

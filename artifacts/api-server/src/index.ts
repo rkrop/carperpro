@@ -4,6 +4,8 @@ import { startScheduler } from "./lib/admintotal/scheduler";
 import { initStripe } from "./lib/stripe/init";
 import { backfillSearchVectors } from "./lib/search-backfill";
 import { ensureSearchTrigger } from "./lib/ensure-search-trigger";
+import { ensureEmbeddingSetup } from "./lib/ensure-embedding-setup";
+import { backfillEmbeddings } from "./lib/embedding-backfill";
 
 const rawPort = process.env["PORT"];
 
@@ -35,6 +37,12 @@ app.listen(port, (err) => {
   void (async () => {
     await ensureSearchTrigger();
     await backfillSearchVectors();
+    // Semantic search (pgvector): ensure the extension/index/reset-trigger, then
+    // embed any product missing an embedding. Both no-op gracefully when no
+    // embedding provider (GEMINI_API_KEY) is configured — plain text search is
+    // never affected.
+    await ensureEmbeddingSetup();
+    await backfillEmbeddings();
   })();
   // Kick off the Admintotal inbound sync + outbound queue scheduler.
   startScheduler();
