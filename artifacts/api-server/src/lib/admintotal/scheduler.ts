@@ -3,6 +3,7 @@ import {
   getSyncIntervalMs,
   getTargetedRefreshIntervalMs,
   isAdmintotalConfigured,
+  isAutoSyncEnabled,
   missingConfigMessage,
 } from "./config";
 import { runInboundSync } from "./sync";
@@ -17,10 +18,16 @@ let timer: NodeJS.Timeout | null = null;
 let targetedTimer: NodeJS.Timeout | null = null;
 
 async function tick(): Promise<void> {
-  try {
-    await runInboundSync();
-  } catch (err) {
-    logger.error({ err }, "Admintotal: error inesperado en sync programado");
+  // The automatic API-driven inventory pull is disabled by default: the catalog
+  // is built from a master export and kept fresh only by inbound webhooks. The
+  // rest of the tick (outbound order queue, Stripe reconcile, enrichment) still
+  // runs. Re-enable with ADMINTOTAL_AUTO_SYNC=1.
+  if (isAutoSyncEnabled()) {
+    try {
+      await runInboundSync();
+    } catch (err) {
+      logger.error({ err }, "Admintotal: error inesperado en sync programado");
+    }
   }
   // Re-embed anything the sync (or webhooks) created or content-changed since the
   // last pass: the reset trigger NULLs `embedding` on content change, and new
@@ -73,10 +80,17 @@ export function startScheduler(): void {
     logger.error(missingConfigMessage());
   }
 
+  const autoSync = isAutoSyncEnabled();
   const intervalMs = getSyncIntervalMs();
-  logger.info({ intervalMs }, "Admintotal: programador de sincronización iniciado");
+  logger.info(
+    { intervalMs, autoSync },
+    autoSync
+      ? "Admintotal: programador de sincronización iniciado"
+      : "Admintotal: auto-sync DESACTIVADO (catálogo por carga maestra + webhooks); el programador solo procesa cola saliente y conciliación Stripe",
+  );
 
-  // Boot sync (don't block server startup).
+  // Boot tick (don't block server startup). The inbound pull inside tick() is
+  // gated by isAutoSyncEnabled(); the rest (outbound queue, Stripe) always runs.
   void tick();
 
   timer = setInterval(() => {
@@ -85,18 +99,20 @@ export function startScheduler(): void {
   // Don't keep the event loop alive solely for the timer.
   timer.unref?.();
 
-  // Separate, higher-frequency targeted stock refresh (~3 min). No boot run:
-  // the first targeted tick fires after one interval, by which point the boot
-  // full sync is underway and the targeted pass simply yields to it.
-  const targetedIntervalMs = getTargetedRefreshIntervalMs();
-  logger.info(
-    { targetedIntervalMs },
-    "Admintotal: refresh dirigido de stock programado",
-  );
-  targetedTimer = setInterval(() => {
-    void targetedTick();
-  }, targetedIntervalMs);
-  targetedTimer.unref?.();
+  // Separate, higher-frequency targeted stock refresh (~3 min). Only scheduled
+  // when the automatic API pull is enabled — with auto-sync off the catalog's
+  // stock is maintained exclusively by inbound webhooks.
+  if (autoSync) {
+    const targetedIntervalMs = getTargetedRefreshIntervalMs();
+    logger.info(
+      { targetedIntervalMs },
+      "Admintotal: refresh dirigido de stock programado",
+    );
+    targetedTimer = setInterval(() => {
+      void targetedTick();
+    }, targetedIntervalMs);
+    targetedTimer.unref?.();
+  }
 }
 
 export function stopScheduler(): void {

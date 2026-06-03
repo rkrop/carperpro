@@ -76,6 +76,17 @@ export function getSyncIntervalMs(): number {
   return 15 * 60 * 1000;
 }
 
+// Master switch for the AUTOMATIC inventory-creation rules: the periodic full
+// product pull from the Admintotal API and the targeted stock refresh. The
+// catalog is now built from a master export and kept fresh ONLY by inbound
+// webhooks (Admintotal is the single source of truth), so the API-driven
+// repopulation is DISABLED by default. Set ADMINTOTAL_AUTO_SYNC=1 (or true) to
+// re-enable the legacy automatic pull.
+export function isAutoSyncEnabled(): boolean {
+  const raw = (process.env.ADMINTOTAL_AUTO_SYNC ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 // Interval for the lightweight TARGETED stock refresh that keeps the most
 // important (recently ordered / stalest-known) products fresher than the full
 // resumable pass can. Defaults to ~3 minutes; clamped to a 30s floor so it can
