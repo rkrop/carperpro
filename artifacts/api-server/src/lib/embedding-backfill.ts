@@ -12,7 +12,7 @@ import {
   isEmbeddingsConfigured,
   toVectorLiteral,
 } from "./embeddings";
-import { notTestProduct, sellableProduct } from "../routes/catalog";
+import { notTestProduct, sellableProduct } from "./catalogSearch";
 
 // Compose the text we embed for a product. Same signal as the full-text vector
 // (name/brand/category/description/specs/vehicles/OEM) but as natural language

@@ -73,6 +73,7 @@ function RootLayoutNav() {
       <Stack.Screen name="resultados" />
       <Stack.Screen name="producto/[id]" />
       <Stack.Screen name="buscar-vehiculo" />
+      <Stack.Screen name="asistente" />
       <Stack.Screen name="carrito" />
       <Stack.Screen name="checkout" />
       <Stack.Screen name="confirmacion" />

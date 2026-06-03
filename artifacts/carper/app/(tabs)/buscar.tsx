@@ -48,6 +48,7 @@ export default function Buscar() {
   };
 
   const entries = [
+    { icon: "message-circle" as const, title: "Asistente de piezas", sub: "Describe tu auto y la falla", action: () => router.push("/asistente") },
     { icon: "hash" as const, title: "Por número de parte", sub: "Busca por SKU u OEM", action: () => submit(query || "sku") },
     { icon: "truck" as const, title: "Por vehículo", sub: "Marca · Modelo · Año · Motor", action: () => router.push("/buscar-vehiculo") },
     { icon: "maximize" as const, title: "Escanear refacción", sub: "Usa la cámara de tu equipo", action: () => router.push("/escanear") },

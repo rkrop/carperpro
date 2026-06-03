@@ -22,6 +22,8 @@ import type {
 import type {
   Address,
   AddressInput,
+  AssistantChatInput,
+  AssistantChatResponse,
   AvailabilityPage,
   Category,
   Deals,
@@ -1015,6 +1017,77 @@ export const useCreateOrder = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getCreateOrderMutationOptions(options));
+    }
+
+export const getCreateAssistantChatUrl = () => {
+
+
+
+
+  return `/api/assistant/chat`
+}
+
+/**
+ * @summary Conversational part-finder — recommends real catalog products
+ */
+export const createAssistantChat = async (assistantChatInput: AssistantChatInput, options?: RequestInit): Promise<AssistantChatResponse> => {
+
+  return customFetch<AssistantChatResponse>(getCreateAssistantChatUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      assistantChatInput,)
+  }
+);}
+
+
+
+
+export const getCreateAssistantChatMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssistantChat>>, TError,{data: BodyType<AssistantChatInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAssistantChat>>, TError,{data: BodyType<AssistantChatInput>}, TContext> => {
+
+const mutationKey = ['createAssistantChat'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAssistantChat>>, {data: BodyType<AssistantChatInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAssistantChat(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAssistantChatMutationResult = NonNullable<Awaited<ReturnType<typeof createAssistantChat>>>
+    export type CreateAssistantChatMutationBody = BodyType<AssistantChatInput>
+    export type CreateAssistantChatMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Conversational part-finder — recommends real catalog products
+ */
+export const useCreateAssistantChat = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssistantChat>>, TError,{data: BodyType<AssistantChatInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAssistantChat>>,
+        TError,
+        {data: BodyType<AssistantChatInput>},
+        TContext
+      > => {
+      return useMutation(getCreateAssistantChatMutationOptions(options));
     }
 
 export const getGetMeUrl = () => {

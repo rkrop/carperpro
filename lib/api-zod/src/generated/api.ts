@@ -287,6 +287,43 @@ export const CreateOrderBody = zod.object({
 
 
 /**
+ * @summary Conversational part-finder — recommends real catalog products
+ */
+export const CreateAssistantChatBody = zod.object({
+  "messages": zod.array(zod.object({
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string()
+}))
+})
+
+export const CreateAssistantChatResponse = zod.object({
+  "reply": zod.string(),
+  "products": zod.array(zod.object({
+  "id": zod.string(),
+  "sku": zod.string(),
+  "name": zod.string(),
+  "brand": zod.string(),
+  "price": zod.number(),
+  "originalPrice": zod.number().nullish(),
+  "stock": zod.number().nullable(),
+  "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
+  "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "image": zod.string().nullish(),
+  "compatible": zod.boolean(),
+  "specs": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})),
+  "vehicles": zod.array(zod.string()),
+  "oem": zod.array(zod.string()).nullish(),
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
+}))
+})
+
+
+/**
  * @summary Get the signed-in user's profile
  */
 export const GetMeResponse = zod.object({

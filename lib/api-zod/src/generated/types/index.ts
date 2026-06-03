@@ -8,6 +8,10 @@
 
 export * from './address';
 export * from './addressInput';
+export * from './assistantChatInput';
+export * from './assistantChatMessage';
+export * from './assistantChatMessageRole';
+export * from './assistantChatResponse';
 export * from './availabilityPage';
 export * from './category';
 export * from './deals';

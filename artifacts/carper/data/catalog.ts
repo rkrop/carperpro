@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { ImageSourcePropType } from "react-native";
 
 import {
+  useCreateAssistantChat,
   useCreateOrder,
   useGetDeals,
   getGetProductsAvailabilityQueryKey,
@@ -14,6 +15,7 @@ import {
   useListSubcategories,
   useListProducts,
   useListSucursales,
+  type AssistantChatMessage,
   type Category as ApiCategory,
   type Subcategory as ApiSubcategory,
   type ListProductsParams,
@@ -22,7 +24,7 @@ import {
   type Sucursal,
 } from "@workspace/api-client-react";
 
-export type { Sucursal, Spec, ListProductsParams };
+export type { Sucursal, Spec, ListProductsParams, AssistantChatMessage };
 
 /** Catalog category (Admintotal "línea"). `icon` is resolved locally. */
 export interface Category {
@@ -237,6 +239,25 @@ export function useSyncStatus() {
 }
 
 export { useCreateOrder };
+
+/**
+ * Conversational part-finder assistant. The server is stateless — each turn
+ * sends the whole conversation so the assistant can use earlier answers
+ * (vehicle, symptom) to refine its recommendation. Returns a reply plus REAL
+ * catalog products (already mapped to the app's shape) to render as cards.
+ */
+export function useAssistantChat() {
+  const mutation = useCreateAssistantChat();
+
+  async function send(
+    messages: AssistantChatMessage[],
+  ): Promise<{ reply: string; products: Product[] }> {
+    const res = await mutation.mutateAsync({ data: { messages } });
+    return { reply: res.reply, products: res.products.map(mapProduct) };
+  }
+
+  return { send, isPending: mutation.isPending };
+}
 
 /** Resolve a local category icon from a category id, using the cached list. */
 export function useCategoryIcon(categoryId: string | null | undefined): string {

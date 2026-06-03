@@ -85,6 +85,28 @@ export interface Product {
   descripcion?: string | null;
 }
 
+export type AssistantChatMessageRole = typeof AssistantChatMessageRole[keyof typeof AssistantChatMessageRole];
+
+
+export const AssistantChatMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface AssistantChatMessage {
+  role: AssistantChatMessageRole;
+  content: string;
+}
+
+export interface AssistantChatInput {
+  messages: AssistantChatMessage[];
+}
+
+export interface AssistantChatResponse {
+  reply: string;
+  products: Product[];
+}
+
 export type ProductAvailabilityStockState = typeof ProductAvailabilityStockState[keyof typeof ProductAvailabilityStockState];
 
 

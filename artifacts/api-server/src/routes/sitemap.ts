@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and } from "drizzle-orm";
 import { db, productsTable, categoriesTable } from "@workspace/db";
-import { notTestProduct, sellableProduct } from "./catalog";
+import { notTestProduct, sellableProduct } from "../lib/catalogSearch";
 
 const router: IRouter = Router();
 

@@ -42,6 +42,35 @@ export default function Inicio() {
           </Text>
         </View>
 
+        {/* Asistente de piezas — conversational part finder */}
+        <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
+          <Pressable
+            onPress={() => router.push("/asistente")}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 16,
+              borderWidth: 1,
+              borderColor: c.primary,
+              padding: 18,
+              backgroundColor: pressed ? c.neutral50 : c.background,
+            })}
+          >
+            <View style={{ width: 44, height: 44, backgroundColor: c.primary, alignItems: "center", justifyContent: "center" }}>
+              <Feather name="message-circle" size={20} color={c.primaryForeground} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: Fonts.black, fontSize: 14, letterSpacing: -0.3, textTransform: "uppercase", color: c.foreground }}>
+                Asistente de Piezas
+              </Text>
+              <Text style={{ fontFamily: Fonts.medium, fontSize: 11, lineHeight: 15, color: c.mutedForeground, marginTop: 2 }}>
+                Dinos tu auto y la falla. Te decimos qué refacción necesitas.
+              </Text>
+            </View>
+            <Feather name="arrow-up-right" size={20} color={c.primary} />
+          </Pressable>
+        </View>
+
         {/* Quick actions — 2x2 grid */}
         <View style={{ paddingHorizontal: 24, paddingVertical: 28 }}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", borderTopWidth: 1, borderLeftWidth: 1, borderColor: c.border }}>

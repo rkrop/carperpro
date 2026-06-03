@@ -284,6 +284,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /assistant/chat:
+    post:
+      operationId: createAssistantChat
+      tags: [assistant]
+      summary: Conversational part-finder — recommends real catalog products
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantChatInput"
+      responses:
+        "200":
+          description: Assistant reply with grounded product recommendations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantChatResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /me:
     get:
       operationId: getMe
@@ -589,6 +613,39 @@ components:
           items:
             type: string
         descripcion: { type: ["string", "null"] }
+    AssistantChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content: { type: string }
+    AssistantChatInput:
+      type: object
+      required: [messages]
+      properties:
+        # Full conversation so far (client-held). The server is stateless: each
+        # turn sends the whole history so the assistant can use earlier answers
+        # (vehicle, symptom) to refine its recommendation.
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantChatMessage"
+    AssistantChatResponse:
+      type: object
+      required: [reply, products]
+      properties:
+        # Conversational reply in es-MX (a follow-up question, or a short intro
+        # to the recommended products).
+        reply: { type: string }
+        # Real catalog products recommended this turn (empty while the assistant
+        # is still gathering info or when nothing matched). Rendered as cards by
+        # the client — prices/SKUs live here, never invented in `reply`.
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
     ProductAvailability:
       type: object
       required: [id, stock, stockState]
