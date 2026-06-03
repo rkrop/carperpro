@@ -11,7 +11,6 @@ import { useSeo, organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 function HeroSection() {
   return (
     <section className="relative bg-foreground text-white py-24 md:py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] bg-[size:48px_48px] opacity-20" />
       <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8 relative z-10">
         <div className="max-w-3xl space-y-8">
           <div className="inline-flex items-center gap-2 border border-white/20 bg-white/10 px-3 py-1 font-mono text-xs font-bold uppercase tracking-widest">
