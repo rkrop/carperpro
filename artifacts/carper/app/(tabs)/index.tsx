@@ -9,6 +9,7 @@ import { Confianza } from "@/components/home/Confianza";
 import { ConsejosTaller } from "@/components/home/ConsejosTaller";
 import { DealOfDay } from "@/components/home/DealOfDay";
 import { DiagnosticoRapido } from "@/components/home/DiagnosticoRapido";
+import { HomeBlog } from "@/components/home/HomeBlog";
 import { HomeFaq } from "@/components/home/HomeFaq";
 import { NuestrasMarcas } from "@/components/home/NuestrasMarcas";
 import { Fonts, TAB_BAR_HEIGHT } from "@/constants/fonts";
@@ -110,6 +111,9 @@ export default function Inicio() {
 
         {/* Consejos del taller — editorial tips */}
         <ConsejosTaller />
+
+        {/* Blog & Comunidad — news, tips, testimonials */}
+        <HomeBlog />
 
         {/* Nuestras marcas — credibility wall */}
         <NuestrasMarcas />
