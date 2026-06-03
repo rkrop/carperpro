@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { startScheduler } from "./lib/admintotal/scheduler";
 import { initStripe } from "./lib/stripe/init";
 import { backfillSearchVectors } from "./lib/search-backfill";
+import { ensureSearchTrigger } from "./lib/ensure-search-trigger";
 
 const rawPort = process.env["PORT"];
 
@@ -25,9 +26,16 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  // Backfill any rows missing a search_vector (idempotent, self-healing). Runs
-  // here so a publish indexes the live catalog for relevance-ranked search.
-  void backfillSearchVectors();
+  // Ensure the search_vector trigger/function are present and up to date
+  // (versioned in code so dev AND prod self-apply on boot), then backfill any
+  // rows missing a search_vector (idempotent, self-healing). Runs here so a
+  // publish indexes the live catalog for relevance-ranked search. Ordered:
+  // ensureSearchTrigger() may NULL vectors when its definition changes, and
+  // backfillSearchVectors() repopulates those NULLs in batches.
+  void (async () => {
+    await ensureSearchTrigger();
+    await backfillSearchVectors();
+  })();
   // Kick off the Admintotal inbound sync + outbound queue scheduler.
   startScheduler();
   // Best-effort Stripe setup (schema, managed webhook, backfill). Never fatal.

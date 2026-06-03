@@ -200,7 +200,8 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
         coalesce(${productsTable.descripcion}, '') || ' ' ||
         coalesce(${productsTable.sku}, '') || ' ' ||
         coalesce(${productsTable.brand}, '') || ' ' ||
-        coalesce(array_to_string(${productsTable.oem}, ' '), '')
+        coalesce(array_to_string(${productsTable.oem}, ' '), '') || ' ' ||
+        coalesce(array_to_string(${productsTable.vehicles}, ' '), '')
       ))`;
       for (const w of allWords) {
         const term = `%${w.replace(/([%_\\])/g, "\\$1")}%`;

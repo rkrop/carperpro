@@ -212,6 +212,38 @@ async function main() {
     const idBySku = new Map();
     for (const r of skuRes.rows) idBySku.set(r.sku, r.id);
 
+    // ── 4c. Ensure the search_vector trigger function (vehicles + specs) ──────
+    // Recreate it before the upserts so every upserted row's search_vector is
+    // (re)built with the latest weighting — including vehicles (weight D) and
+    // specs value/label (weight D) — even if the running server hasn't applied
+    // the latest definition. Keep this body in sync with
+    // src/lib/ensure-search-trigger.ts.
+    await client.query(`
+      CREATE OR REPLACE FUNCTION products_search_vector_update() RETURNS trigger AS $$
+        BEGIN
+          NEW.search_vector :=
+            setweight(to_tsvector('simple', unaccent(coalesce(NEW.sku, ''))), 'A') ||
+            setweight(to_tsvector('simple', unaccent(coalesce(NEW.name, ''))), 'A') ||
+            setweight(to_tsvector('simple', unaccent(coalesce(NEW.brand, ''))), 'B') ||
+            setweight(to_tsvector('simple', unaccent(coalesce(NEW.descripcion, ''))), 'C') ||
+            setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.oem, ' '), ''))), 'B') ||
+            setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.vehicles, ' '), ''))), 'D') ||
+            setweight(to_tsvector('simple', unaccent(coalesce((
+              SELECT string_agg(coalesce(spec.value->>'value', '') || ' ' || coalesce(spec.value->>'label', ''), ' ')
+              FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(NEW.specs) = 'array' THEN NEW.specs ELSE '[]'::jsonb END
+              ) AS spec
+            ), ''))), 'D');
+          RETURN NEW;
+        END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await client.query(`DROP TRIGGER IF EXISTS products_search_trigger ON products`);
+    await client.query(`
+      CREATE TRIGGER products_search_trigger BEFORE INSERT OR UPDATE ON products
+      FOR EACH ROW EXECUTE FUNCTION products_search_vector_update()
+    `);
+
     // ── 5. Upsert products (batched) ──────────────────────────────────────────
     // On conflict we update ONLY Excel-provided columns and preserve enrichment
     // (brand, category_id, image, original_price, descripcion, oem, vehicles).
