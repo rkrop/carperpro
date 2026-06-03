@@ -132,73 +132,99 @@ export async function runInboundSync(): Promise<SyncResult> {
     }
     logger.info({ count: sucursales.length }, "Admintotal: sucursales sincronizadas");
 
-    // 3) Productos -> products (with stock on the row) + brands
-    const {
-      results: rawProductos,
-      expectedCount,
-      complete,
-    } = await client.getProductosWithMeta();
-    // A pull is only "complete" when pagination ended naturally AND we got at
-    // least ~90% of the count the API advertised. A partial/cut-short pull must
-    // NEVER trigger the destructive prune below, or it would wipe live stock.
-    const pullComplete =
-      complete &&
-      rawProductos.length > 0 &&
-      (expectedCount === null ||
-        rawProductos.length >= Math.floor(expectedCount * 0.9));
+    // 3) Productos -> products (with stock on the row) + brands.
+    //
+    // We STREAM the catalog page-by-page and upsert each page as it arrives
+    // (see client.streamProductos). The catalog is large (~32k rows) and the ERP
+    // is heavily rate-limited, so buffering the whole result set before writing
+    // meant a single 429 partway through threw away the entire run and NO stock
+    // ever landed in the DB. Persisting per page makes every run durable: even a
+    // cut-short pull leaves stock for the pages it managed to fetch.
     const brandSet = new Set<string>();
     const seenProductIds: string[] = [];
     const categoryCounts = new Map<string, number>();
     let productsSynced = 0;
+    let fetchedCount = 0;
+    // Per-run stock observability counters.
+    let stockKnownThisRun = 0; // rows where the payload carried a stock reading
+    let stockZeroThisRun = 0; // ...of which were a confirmed 0 (Agotado)
+    let stockUnknownThisRun = 0; // payload had no stock signal -> left untouched
 
-    for (const raw of rawProductos) {
-      const mapped = mapProduct(raw);
-      if (!mapped) continue;
-      const { product, stockQty } = mapped;
+    const { expectedCount, complete } = await client.streamProductos(
+      async (rawProductos) => {
+        fetchedCount += rawProductos.length;
+        for (const raw of rawProductos) {
+          const mapped = mapProduct(raw);
+          if (!mapped) continue;
+          const { product, stockQty } = mapped;
 
-      // Stock lives on the product row (one-number-per-product). Only write it
-      // when this payload actually carried stock info: when it doesn't, leave
-      // the existing value alone so we never zero out stock that the real-time
-      // price/stock webhook already set.
-      const stockSet =
-        stockQty !== undefined
-          ? { erpStockQty: stockQty, stockUpdatedAt: new Date() }
-          : {};
+          // Stock lives on the product row (one-number-per-product). Write it
+          // whenever the ERP reported it via the proper channel — including a
+          // legitimate 0 (mapper returns 0 when the warehouse breakdown is
+          // present but empty). Only when the payload carried NO stock signal at
+          // all (stockQty === undefined) do we leave the stored value alone, so
+          // we never wipe stock the real-time price/stock webhook already set.
+          const stockSet =
+            stockQty !== undefined
+              ? { erpStockQty: stockQty, stockUpdatedAt: new Date() }
+              : {};
+          if (stockQty === undefined) {
+            stockUnknownThisRun += 1;
+          } else {
+            stockKnownThisRun += 1;
+            if (stockQty === 0) stockZeroThisRun += 1;
+          }
 
-      await db
-        .insert(productsTable)
-        .values({ ...product, ...stockSet })
-        .onConflictDoUpdate({
-          target: productsTable.id,
-          set: {
-            sku: product.sku,
-            name: product.name,
-            brand: product.brand,
-            categoryId: product.categoryId,
-            price: product.price,
-            costo: product.costo,
-            originalPrice: product.originalPrice,
-            image: product.image,
-            specs: product.specs,
-            ...stockSet,
-          },
-        });
-      seenProductIds.push(product.id);
-      productsSynced += 1;
-      if (product.brand) brandSet.add(product.brand);
-      if (product.categoryId) {
-        categoryCounts.set(
-          product.categoryId,
-          (categoryCounts.get(product.categoryId) ?? 0) + 1,
-        );
-      }
-      // NOTE: stock is written above (on the product row) only when this payload
-      // carried existencias. When it doesn't, we deliberately leave the stored
-      // erpStockQty alone: the price/stock webhook
-      // (/webhooks/admintotal/precios-existencias) is the authoritative
-      // near-real-time stock source, and zeroing here would wipe it every sync.
-    }
-    logger.info({ count: productsSynced }, "Admintotal: productos sincronizados");
+          await db
+            .insert(productsTable)
+            .values({ ...product, ...stockSet })
+            .onConflictDoUpdate({
+              target: productsTable.id,
+              set: {
+                sku: product.sku,
+                name: product.name,
+                brand: product.brand,
+                categoryId: product.categoryId,
+                price: product.price,
+                costo: product.costo,
+                originalPrice: product.originalPrice,
+                image: product.image,
+                specs: product.specs,
+                ...stockSet,
+              },
+            });
+          seenProductIds.push(product.id);
+          productsSynced += 1;
+          if (product.brand) brandSet.add(product.brand);
+          if (product.categoryId) {
+            categoryCounts.set(
+              product.categoryId,
+              (categoryCounts.get(product.categoryId) ?? 0) + 1,
+            );
+          }
+        }
+      },
+    );
+    // A pull is only "complete" when pagination ended naturally AND we got at
+    // least ~90% of the count the API advertised. A partial/cut-short pull must
+    // NEVER trigger the destructive prune below, or it would wipe live products.
+    const pullComplete =
+      complete &&
+      fetchedCount > 0 &&
+      (expectedCount === null ||
+        fetchedCount >= Math.floor(expectedCount * 0.9));
+    logger.info(
+      {
+        productsSynced,
+        fetchedCount,
+        expectedCount,
+        pullComplete,
+        stockKnownThisRun,
+        stockZeroThisRun,
+        stockUnknownThisRun,
+      },
+      "Admintotal: productos sincronizados",
+    );
 
     // 4) Brands
     const seenBrands = Array.from(brandSet);
@@ -222,7 +248,7 @@ export async function runInboundSync(): Promise<SyncResult> {
       }
     } else {
       logger.warn(
-        { fetched: rawProductos.length, expectedCount },
+        { fetched: fetchedCount, expectedCount },
         "Admintotal: pull de productos incompleto; se omite la limpieza para no borrar productos/inventario",
       );
     }
@@ -244,13 +270,43 @@ export async function runInboundSync(): Promise<SyncResult> {
         .where(sql`${categoriesTable.id} = ${id}`);
     }
 
+    // Observability: catalog-wide stock coverage AFTER this run, so we can see
+    // how many products now show a real quantity ("known") vs. still read
+    // "Consultar" (NULL) — and confirm the gap is closing over time.
+    const statsRows = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        known: sql<number>`count(${productsTable.erpStockQty})::int`,
+        zero: sql<number>`count(*) filter (where ${productsTable.erpStockQty} = 0)::int`,
+        unknown: sql<number>`count(*) filter (where ${productsTable.erpStockQty} is null)::int`,
+      })
+      .from(productsTable);
+    const stats = statsRows[0] ?? { total: 0, known: 0, zero: 0, unknown: 0 };
+    logger.info(
+      {
+        pullComplete,
+        knownThisRun: stockKnownThisRun,
+        zeroThisRun: stockZeroThisRun,
+        unknownThisRun: stockUnknownThisRun,
+        catalogTotal: stats.total,
+        catalogKnown: stats.known,
+        catalogZero: stats.zero,
+        catalogUnknown: stats.unknown,
+      },
+      "Admintotal: cobertura de stock tras sincronización",
+    );
+
     const finishedAt = new Date();
+    const coverageMsg =
+      stats.total > 0
+        ? ` ${stats.known}/${stats.total} con stock conocido (${stats.unknown} en "Consultar").`
+        : "";
     await setSyncState({
       status: "success",
       lastFinishedAt: finishedAt,
       lastSuccessAt: finishedAt,
       lastError: null,
-      message: "Sincronización completada",
+      message: `Sincronización ${pullComplete ? "completada" : "parcial (límite de tasa del ERP)"}.${coverageMsg}`,
       productsSynced,
       categoriesSynced: categories.length,
       sucursalesSynced: sucursales.length,

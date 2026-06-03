@@ -102,9 +102,20 @@ function buildSpecs(raw: Raw): ProductSpec[] {
 
 // Parse per-sucursal existencias. Admintotal may expose this as an array of
 // { almacen, existencia } objects under various keys.
-function parseInventory(
-  raw: Raw,
-): { inventory: { sucursalId: string; quantity: number }[]; flat?: number } {
+//
+// `hasInventoryArray` tells the caller whether the payload actually CARRIED the
+// per-warehouse breakdown (the `info_almacenes` array key was present), even when
+// that array is EMPTY. Admintotal returns this key on every `productos` row and
+// leaves it `[]` when the product has no available units in any warehouse — i.e.
+// an empty array is a definitive "0 available" reading from the ERP via the
+// proper channel, NOT "stock unknown". The caller relies on this to persist a
+// real 0 (so the product reads "Agotado") instead of leaving it NULL
+// ("Consultar"). When the key is absent entirely we leave stock untouched.
+function parseInventory(raw: Raw): {
+  inventory: { sucursalId: string; quantity: number }[];
+  flat?: number;
+  hasInventoryArray: boolean;
+} {
   const arr = pick(raw, [
     "info_almacenes",
     "existencias",
@@ -112,6 +123,7 @@ function parseInventory(
     "almacenes",
     "stock_almacenes",
   ]);
+  const hasInventoryArray = Array.isArray(arr);
   const inventory: { sucursalId: string; quantity: number }[] = [];
   if (Array.isArray(arr)) {
     for (const entry of arr) {
@@ -147,7 +159,11 @@ function parseInventory(
   const flat = asNumber(
     pick(raw, ["existencia", "existencias", "stock", "cantidad", "inventario"]),
   );
-  return { inventory, flat: Array.isArray(arr) ? undefined : flat };
+  return {
+    inventory,
+    flat: hasInventoryArray ? undefined : flat,
+    hasInventoryArray,
+  };
 }
 
 export function mapProduct(raw: Raw): MappedProduct | null {
@@ -171,17 +187,23 @@ export function mapProduct(raw: Raw): MappedProduct | null {
   const image =
     asString(pick(raw, ["imagen", "foto", "image", "imagen_url"])) ?? null;
 
-  const { inventory, flat } = parseInventory(raw);
+  const { inventory, flat, hasInventoryArray } = parseInventory(raw);
 
   // Collapse to a single on-hand number. Prefer the per-sucursal breakdown (sum
-  // of sellable warehouses; the mapper already drops "MAL ESTADO"); otherwise
-  // use the flat existencia. Undefined when the payload had no stock info.
+  // of sellable warehouses; the mapper already drops "MAL ESTADO"). When the
+  // breakdown key was present but yielded no sellable units (empty array, or only
+  // damaged-goods warehouses) treat it as a definitive 0 — the ERP reported the
+  // breakdown and it has nothing available. Fall back to a flat existencia when
+  // there's no breakdown at all. `undefined` ONLY when the payload carried NO
+  // stock signal whatsoever, so the caller leaves the stored value untouched.
   const stockQty =
     inventory.length > 0
       ? inventory.reduce((sum, r) => sum + Math.max(0, r.quantity), 0)
-      : flat !== undefined
-        ? Math.max(0, Math.round(flat))
-        : undefined;
+      : hasInventoryArray
+        ? 0
+        : flat !== undefined
+          ? Math.max(0, Math.round(flat))
+          : undefined;
 
   const product: InsertProduct = {
     id,

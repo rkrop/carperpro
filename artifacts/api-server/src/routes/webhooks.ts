@@ -255,8 +255,10 @@ router.post(
       if (!mapped) continue;
       const { product, stockQty } = mapped;
 
-      // Stock lives on the product row. Only set it when this payload carried
-      // existencias; otherwise leave any existing value untouched.
+      // Stock lives on the product row. Write it whenever the ERP reported it
+      // via the proper channel — including a legitimate 0 (the mapper returns 0
+      // when the warehouse breakdown is present but empty). Only when the payload
+      // carried NO stock signal at all do we leave any existing value untouched.
       const stockSet =
         stockQty !== undefined
           ? { erpStockQty: stockQty, stockUpdatedAt: new Date() }

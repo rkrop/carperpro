@@ -210,6 +210,64 @@ export class AdmintotalClient {
     return (await this.fetchAllWithMeta<T>(path, params)).results;
   }
 
+  // Stream a paginated endpoint page-by-page, invoking `onPage` for each batch
+  // as soon as it arrives instead of buffering the whole result set. This lets
+  // the caller PERSIST each page immediately, so a long or rate-limited pull
+  // still makes durable progress: if the ERP starts returning 429 partway
+  // through, we stop gracefully (complete=false) and keep everything fetched so
+  // far, rather than throwing away the entire run. `complete` is true only when
+  // pagination ended naturally (the `next` link became null).
+  async fetchPagesWithCallback<T>(
+    path: string,
+    params: Record<string, string | number> | undefined,
+    onPage: (rows: T[]) => Promise<void>,
+  ): Promise<{ expectedCount: number | null; complete: boolean }> {
+    let expectedCount: number | null = null;
+    let complete = false;
+    let url: string | null = this.buildUrl(path, {
+      limit: PAGE_LIMIT,
+      ...(params ?? {}),
+    });
+    let guard = 0;
+    while (url && guard < 10_000) {
+      guard += 1;
+      let page: PaginatedResponse<T>;
+      try {
+        page = await this.request<PaginatedResponse<T>>("GET", url);
+      } catch (err) {
+        // The low-level request already retried 429/5xx with backoff. If it
+        // still failed with a transient status, stop paginating but KEEP the
+        // pages we already processed (complete stays false so callers skip any
+        // destructive prune). Non-transient errors still propagate.
+        if (
+          err instanceof AdmintotalError &&
+          (err.status === 429 || (err.status != null && err.status >= 500))
+        ) {
+          logger.warn(
+            { status: err.status, url },
+            "Admintotal: paginación detenida por límite de tasa; se conserva el progreso",
+          );
+          break;
+        }
+        throw err;
+      }
+      if (expectedCount === null && typeof page.count === "number") {
+        expectedCount = page.count;
+      }
+      if (Array.isArray(page.results)) {
+        await onPage(page.results);
+      } else if (Array.isArray(page as unknown as T[])) {
+        // Some endpoints may return a bare array (single, final page).
+        await onPage(page as unknown as T[]);
+        complete = true;
+        break;
+      }
+      url = page.next ?? null;
+      if (!url) complete = true;
+    }
+    return { expectedCount, complete };
+  }
+
   async getProductos(): Promise<Record<string, unknown>[]> {
     return this.fetchAll<Record<string, unknown>>("productos/");
   }
@@ -220,6 +278,18 @@ export class AdmintotalClient {
     complete: boolean;
   }> {
     return this.fetchAllWithMeta<Record<string, unknown>>("productos/");
+  }
+
+  // Stream every `productos` page, invoking `onPage` per batch so the caller can
+  // upsert (and persist stock) incrementally. See fetchPagesWithCallback.
+  async streamProductos(
+    onPage: (rows: Record<string, unknown>[]) => Promise<void>,
+  ): Promise<{ expectedCount: number | null; complete: boolean }> {
+    return this.fetchPagesWithCallback<Record<string, unknown>>(
+      "productos/",
+      undefined,
+      onPage,
+    );
   }
 
   /**
