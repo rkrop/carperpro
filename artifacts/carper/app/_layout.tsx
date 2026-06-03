@@ -9,7 +9,7 @@ import {
 } from "@expo-google-fonts/inter";
 import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/space-mono";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ClerkProvider, ClerkLoaded, useAuth } from "@clerk/expo";
+import { ClerkProvider, ClerkLoaded } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -22,6 +22,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PhoneAuthProvider, useAuth } from "@/lib/auth";
 import { AppProvider } from "@/context/AppContext";
 import { CartProvider } from "@/context/CartContext";
 
@@ -116,6 +117,7 @@ export default function RootLayout() {
       proxyUrl={clerkProxyUrl}
     >
       <ClerkLoaded>
+        <PhoneAuthProvider>
         <SafeAreaProvider>
           <ErrorBoundary>
             <QueryClientProvider client={queryClient}>
@@ -133,6 +135,7 @@ export default function RootLayout() {
             </QueryClientProvider>
           </ErrorBoundary>
         </SafeAreaProvider>
+        </PhoneAuthProvider>
       </ClerkLoaded>
     </ClerkProvider>
   );

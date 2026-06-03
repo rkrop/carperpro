@@ -14,7 +14,7 @@ runButton = "Project"
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
-integrations = ["stripe:1.0.0"]
+integrations = ["stripe:1.0.0", "twilio:1.0.0"]
 
 [postMerge]
 path = "scripts/post-merge.sh"
@@ -50,3 +50,6 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.development]
+
+[userenv.shared]
+TWILIO_VERIFY_SERVICE_SID = "VA18ebfb97843782323728954c8c280dd0"

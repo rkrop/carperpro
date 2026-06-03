@@ -3,6 +3,7 @@ import { getAuth, clerkClient } from "@clerk/express";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import type { PhoneAuthedRequest } from "./phoneAuth";
 
 // Express's Request augmented with the authenticated Clerk user id, set by
 // `requireAuth`. Routes downstream can read `req.userId` safely.
@@ -17,8 +18,7 @@ export interface AuthedRequest extends Request {
  * account endpoints use this.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const auth = getAuth(req);
-  const userId = auth?.userId;
+  const userId = getOptionalUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Inicia sesión para continuar" });
     return;
@@ -27,13 +27,19 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   next();
 }
 
-/** Reads the signed-in user id without requiring it (for optional-auth routes). */
+/**
+ * Reads the signed-in user id without requiring it (for optional-auth routes).
+ * Accepts either auth method: a Clerk session (email/Google) takes precedence,
+ * otherwise a phone (SMS-OTP) session resolved by `attachPhoneAuth`.
+ */
 export function getOptionalUserId(req: Request): string | null {
   try {
-    return getAuth(req)?.userId ?? null;
+    const clerkUserId = getAuth(req)?.userId;
+    if (clerkUserId) return clerkUserId;
   } catch {
-    return null;
+    // No Clerk session for this request — fall through to the phone session.
   }
+  return (req as PhoneAuthedRequest).phoneUserId ?? null;
 }
 
 /**
@@ -49,6 +55,10 @@ export async function ensureUser(userId: string): Promise<void> {
     .onConflictDoNothing()
     .returning({ id: usersTable.id });
   if (inserted.length === 0) return; // already provisioned
+
+  // Phone (SMS-OTP) users aren't Clerk users — their row (with the phone) is
+  // created at verify time, so skip the Clerk profile enrichment for them.
+  if (userId.startsWith("phone_")) return;
 
   try {
     const u = await clerkClient.users.getUser(userId);

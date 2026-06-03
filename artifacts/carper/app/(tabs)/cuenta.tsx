@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
-import { useAuth, useUser } from "@clerk/expo";
+import { useUser } from "@clerk/expo";
+import { useAuth } from "@/lib/auth";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";

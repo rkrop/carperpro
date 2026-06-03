@@ -14,6 +14,7 @@ import { WebhookHandlers } from "./lib/stripe/webhookHandlers";
 import { reconcilePendingStripeOrders } from "./lib/stripe/service";
 import { generalLimiter } from "./middlewares/rateLimit";
 import { errorHandler } from "./middlewares/errorHandler";
+import { attachPhoneAuth } from "./middlewares/phoneAuth";
 
 const app: Express = express();
 
@@ -88,6 +89,11 @@ app.use(
     ),
   })),
 );
+
+// Phone (SMS-OTP) session resolver. Runs right after Clerk so it can defer to a
+// Clerk session when present, and otherwise resolve our opaque `cps_` token.
+// This makes both login methods transparent to every downstream route.
+app.use(attachPhoneAuth);
 
 // Anti-abuse rate limiting for all /api traffic. Verified webhooks (Admintotal
 // token, Stripe signature) are exempted inside the limiter so legitimate

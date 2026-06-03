@@ -22,3 +22,5 @@
 - [WhatsApp order submission](whatsapp-order-submission.md) — cash/SPEI checkout POSTs /orders before WhatsApp; surfaces 409 stock shortfall (items, "solo quedan X"); blank sucursalId falls back to default (mirrors Stripe).
 - [API security & stability](api-security-stability.md) — in-process rate limiter (webhook-exempt, trust proxy 1), transactional FOR-UPDATE order writes, central async error handler, DB-pinging /healthz.
 - [Carper user accounts](carper-user-accounts.md) — optional Clerk auth (import `@clerk/expo`); order IDOR guard (userId&&!==getOptionalUserId→404, guest null stays open); addOrder optimistic-seeds history cache deduped by folio; checkout prefill uses split refs, no setEntrega.
+- [Phone OTP auth](phone-otp-auth.md) — SECOND login method (Twilio Verify) beside Clerk; opaque `cps_` server sessions, unified client `useAuth` from `@/lib/auth`; sub-router paths are relative to `/api`.
+- [Twilio Verify](twilio-verify.md) — Verify via direct HTTPS (NOT proxy/SDK); creds from connectors REST include_secrets; mislabeled fields (account_sid holds SK key).

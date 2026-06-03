@@ -1,12 +1,13 @@
 import { Feather } from "@expo/vector-icons";
-import { useAuth, useSignUp } from "@clerk/expo";
+import { useSignUp } from "@clerk/expo";
+import { useAuth } from "@/lib/auth";
 import { Link, useRouter } from "expo-router";
 import React from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AccentButton } from "@/components/CarperUI";
-import { AuthField, GoogleAuthButton, OrDivider, clerkErrorMessage } from "@/components/AuthUI";
+import { AuthField, GoogleAuthButton, OrDivider, PhoneAuthSection, clerkErrorMessage } from "@/components/AuthUI";
 import { Fonts, isWeb, WEB_TOP_INSET } from "@/constants/fonts";
 import { useColors } from "@/hooks/useColors";
 
@@ -107,6 +108,8 @@ export default function SignUp() {
         </Text>
 
         <GoogleAuthButton />
+        <View style={{ height: 12 }} />
+        <PhoneAuthSection />
         <OrDivider />
 
         <AuthField

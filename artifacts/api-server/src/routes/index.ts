@@ -8,6 +8,7 @@ import webhooksRouter from "./webhooks";
 import stripeRouter from "./stripe";
 import accountRouter from "./account";
 import assistantRouter from "./assistant";
+import authRouter from "./auth";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(webhooksRouter);
 router.use(stripeRouter);
 router.use(accountRouter);
 router.use(assistantRouter);
+router.use(authRouter);
 
 export default router;
