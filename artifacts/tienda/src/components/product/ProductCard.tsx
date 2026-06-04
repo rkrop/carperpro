@@ -64,19 +64,19 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
       </div>
 
       {/* Content Area */}
-      <div className={`flex flex-col p-6 ${featured ? 'md:w-1/2 justify-center' : 'flex-1'}`}>
-        <div className="mb-2 text-xs font-mono text-muted-foreground uppercase tracking-widest">
+      <div className={`flex flex-col p-6 min-w-0 ${featured ? 'md:w-1/2 justify-center' : 'flex-1'}`}>
+        <div className="mb-2 text-xs font-mono text-muted-foreground uppercase tracking-widest truncate">
           {product.sku}
         </div>
         
-        <h3 className={`font-bold text-foreground leading-tight mb-4 ${featured ? 'text-2xl md:text-3xl font-display' : 'text-lg'}`}>
+        <h3 className={`font-bold text-foreground leading-tight mb-4 break-words ${featured ? 'text-2xl md:text-3xl font-display' : 'text-lg'}`}>
           <Link href={`/producto/${product.id}`} className="hover:text-primary transition-colors line-clamp-2">
             {product.name}
           </Link>
         </h3>
         
         <div className="mt-auto pt-4 border-t border-border flex flex-wrap items-end justify-between gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             {product.originalPrice && product.originalPrice > product.price && (
               <div className="text-xs font-mono text-muted-foreground line-through">
                 {priceFormatter.format(product.originalPrice)}

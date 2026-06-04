@@ -143,6 +143,15 @@
     @apply border-border;
   }
 
+  /* Prevent stray-wide elements from causing horizontal scroll/jitter on
+     mobile. `clip` (unlike `hidden`) does not create a scroll container, so the
+     sticky header keeps working. */
+  html,
+  body {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
     -webkit-font-smoothing: antialiased;

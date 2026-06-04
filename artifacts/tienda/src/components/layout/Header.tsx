@@ -1,15 +1,14 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, Menu, X, ArrowRight } from "lucide-react";
+import { Menu, X, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchBar } from "./SearchBar";
 import { APP_URL } from "@/lib/store";
 
 export function Header() {
-  const [location, setLocation] = useLocation();
+  const [location] = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const handleScroll = () => {
@@ -22,13 +21,6 @@ export function Header() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location]);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      setLocation(`/catalogo?q=${encodeURIComponent(searchQuery.trim())}`);
-    }
-  };
 
   const navLinks = [
     { href: "/catalogo", label: "Catálogo" },
@@ -57,18 +49,10 @@ export function Header() {
             </Link>
 
             {/* Desktop Search */}
-            <form onSubmit={handleSearch} className="hidden md:flex flex-1 max-w-xl relative">
-              <div className="relative w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Buscar por número de parte, SKU, marca..."
-                  className="w-full pl-9 bg-card border-border focus-visible:ring-primary font-mono text-sm h-10"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </form>
+            <SearchBar
+              className="hidden md:flex flex-1 max-w-xl"
+              inputClassName="h-10"
+            />
 
             {/* Desktop Nav */}
             <nav className="hidden md:flex items-center gap-6 shrink-0">
@@ -102,18 +86,11 @@ export function Header() {
         {isMobileMenuOpen && (
           <div className="md:hidden border-t bg-white absolute top-full left-0 w-full shadow-lg">
             <div className="p-4 space-y-4">
-              <form onSubmit={handleSearch}>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    placeholder="Buscar producto..."
-                    className="w-full pl-9 bg-card font-mono text-sm h-12"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-              </form>
+              <SearchBar
+                inputClassName="h-12"
+                placeholder="Buscar producto..."
+                onNavigate={() => setIsMobileMenuOpen(false)}
+              />
               <nav className="flex flex-col gap-2">
                 <Link
                   href="/"
