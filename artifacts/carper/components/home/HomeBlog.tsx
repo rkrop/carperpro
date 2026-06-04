@@ -1,8 +1,7 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { SectionLabel } from "@/components/CarperUI";
 import { Fonts } from "@/constants/fonts";
@@ -89,19 +88,12 @@ export function HomeBlog() {
               overflow: "hidden",
             })}
           >
-            {/* Colored icon header */}
-            <View
-              style={{
-                height: 90,
-                backgroundColor: post.accentColor,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <MaterialCommunityIcons
-                name={post.icon as never}
-                size={36}
-                color="rgba(255,255,255,0.85)"
+            {/* Editorial photo header */}
+            <View style={{ height: 110, backgroundColor: post.accentColor }}>
+              <Image
+                source={post.image}
+                resizeMode="cover"
+                style={{ width: "100%", height: "100%" }}
               />
             </View>
 

@@ -1,8 +1,7 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts } from "@/constants/fonts";
@@ -146,21 +145,20 @@ export default function BlogIndex() {
             })}
           >
             <View style={{ flexDirection: "row", gap: 0 }}>
-              {/* Colored icon column */}
+              {/* Editorial photo column */}
               <View
                 style={{
-                  width: 90,
+                  width: 110,
                   minHeight: 110,
                   backgroundColor: post.accentColor,
-                  alignItems: "center",
-                  justifyContent: "center",
                   flexShrink: 0,
+                  overflow: "hidden",
                 }}
               >
-                <MaterialCommunityIcons
-                  name={post.icon as never}
-                  size={30}
-                  color="rgba(255,255,255,0.8)"
+                <Image
+                  source={post.image}
+                  resizeMode="cover"
+                  style={{ width: "100%", height: "100%" }}
                 />
               </View>
 

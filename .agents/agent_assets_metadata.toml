@@ -96,6 +96,66 @@ uri = "file://artifacts/carper/assets/images/tips/afinacion.png"
 type = "image"
 title = "tune up tip"
 
+[[generated]]
+id = "Rpj2lJ-86BRdvqIFkmDlQ"
+uri = "file://artifacts/carper/assets/images/blog/check-obd.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "d8hz5gt6unO1vcah3z5ta"
+uri = "file://artifacts/carper/assets/images/blog/cinco-sensores.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "e-FxvnISj7bDrwwlrbnR2"
+uri = "file://artifacts/carper/assets/images/blog/testimonio-tsuru.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "AOAySRDGfwjysU3arqHJY"
+uri = "file://artifacts/carper/assets/images/blog/alternador-vida-util.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ufFB6Hq2z4c1_4offI7hW"
+uri = "file://artifacts/carper/assets/images/blog/agua-en-aceite.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ue2oAAlQjcjVs91HYK1bq"
+uri = "file://artifacts/carper/assets/images/blog/expo-automechanika-2025.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "KNEXDv6GnoZ-f96Z3sfQJ"
+uri = "file://artifacts/carper/assets/images/blog/foro-d21-vs-d22.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "-4BMDtLBR6sFOiqX_hlmI"
+uri = "file://artifacts/carper/assets/images/blog/refacciones-originales-vs-alternas.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "LqfhwxzJLwj073ceNkjtT"
+uri = "file://artifacts/carper/assets/images/blog/bomba-gasolina-sintomas.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "v8r1B4cx9e8V6xhBu0sss"
+uri = "file://artifacts/carper/assets/images/blog/hilux-partes-mas-pedidas.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "hG-qDlAXGY5g_S3Ui0J5K"
 uri = "file://exports/inventario_carper.xlsx"

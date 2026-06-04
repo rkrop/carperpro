@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
-import { Linking, Pressable, ScrollView, Share, Text, View } from "react-native";
+import { Image, Linking, Pressable, ScrollView, Share, Text, View } from "react-native";
 
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts } from "@/constants/fonts";
@@ -123,19 +123,12 @@ export default function BlogPost() {
       <ScreenHeader title={post.category} />
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Hero block */}
-        <View
-          style={{
-            height: 160,
-            backgroundColor: post.accentColor,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <MaterialCommunityIcons
-            name={post.icon as never}
-            size={60}
-            color="rgba(255,255,255,0.75)"
+        {/* Hero photo */}
+        <View style={{ height: 220, backgroundColor: post.accentColor }}>
+          <Image
+            source={post.image}
+            resizeMode="cover"
+            style={{ width: "100%", height: "100%" }}
           />
         </View>
 
@@ -351,18 +344,17 @@ export default function BlogPost() {
               >
                 <View
                   style={{
-                    width: 44,
-                    height: 44,
+                    width: 56,
+                    height: 56,
                     backgroundColor: rp.accentColor,
-                    alignItems: "center",
-                    justifyContent: "center",
                     flexShrink: 0,
+                    overflow: "hidden",
                   }}
                 >
-                  <MaterialCommunityIcons
-                    name={rp.icon as never}
-                    size={20}
-                    color="rgba(255,255,255,0.8)"
+                  <Image
+                    source={rp.image}
+                    resizeMode="cover"
+                    style={{ width: "100%", height: "100%" }}
                   />
                 </View>
                 <View style={{ flex: 1 }}>

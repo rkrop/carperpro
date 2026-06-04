@@ -6,6 +6,8 @@
  * The `featured` flag controls which posts appear on the home screen strip.
  */
 
+import { ImageSourcePropType } from "react-native";
+
 export type BlogCategory =
   | "Tips del Taller"
   | "Sabías Que"
@@ -25,6 +27,8 @@ export interface BlogPost {
   readMin: number;
   icon: string;
   accentColor: string;
+  /** Editorial photo for the post (cover-cropped in cards and hero). */
+  image: ImageSourcePropType;
   featured?: boolean;
 }
 
@@ -40,6 +44,7 @@ export const BLOG_CATEGORIES: BlogCategory[] = [
 export const BLOG_POSTS: BlogPost[] = [
   {
     id: "check-obd",
+    image: require("@/assets/images/blog/check-obd.png"),
     category: "Tips del Taller",
     tag: "DIY",
     title: "Cómo leer códigos OBD2 sin ir al taller",
@@ -80,6 +85,7 @@ Los escáneres Bluetooth con app para celular (tipo ELM327) son suficientes para
   },
   {
     id: "cinco-sensores",
+    image: require("@/assets/images/blog/cinco-sensores.png"),
     category: "Sabías Que",
     tag: "Curiosidades",
     title: "Los 5 sensores que más fallan en autos mexicanos",
@@ -116,6 +122,7 @@ El común denominador: todos son piezas de mantenimiento preventivo que conviene
   },
   {
     id: "testimonio-tsuru",
+    image: require("@/assets/images/blog/testimonio-tsuru.png"),
     category: "Testimonio",
     tag: "Caso real",
     title: "\"Arreglé la marcha de mi Tsuru en 30 minutos\"",
@@ -152,6 +159,7 @@ El común denominador: todos son piezas de mantenimiento preventivo que conviene
   },
   {
     id: "alternador-vida-util",
+    image: require("@/assets/images/blog/alternador-vida-util.png"),
     category: "Tips del Taller",
     tag: "Mantenimiento",
     title: "¿Cuánto dura realmente un alternador?",
@@ -190,6 +198,7 @@ Un alternador remanufacturado de calidad cuesta entre $800 y $1,800 y tiene gara
   },
   {
     id: "agua-en-aceite",
+    image: require("@/assets/images/blog/agua-en-aceite.png"),
     category: "Tips del Taller",
     tag: "Urgente",
     title: "Agua en el aceite: la emergencia que no puedes ignorar",
@@ -228,6 +237,7 @@ El motor sobrecalentado una vez puede dañar la cabeza sin que la temperatura ll
   },
   {
     id: "expo-automechanika-2025",
+    image: require("@/assets/images/blog/expo-automechanika-2025.png"),
     category: "Expo & Eventos",
     tag: "Industria",
     title: "Automechanika México 2025: lo que debes saber",
@@ -263,6 +273,7 @@ Automechanika Ciudad de México es, junto con la edición de Frankfurt, una de l
   },
   {
     id: "foro-d21-vs-d22",
+    image: require("@/assets/images/blog/foro-d21-vs-d22.png"),
     category: "Foro",
     tag: "Comunidad",
     title: "Nissan D21 vs D22: ¿cuál aguanta más trabajo pesado?",
@@ -306,6 +317,7 @@ La realidad es que la D21 bien cuidada y la D22 bien mantenida duran más de 300
   },
   {
     id: "refacciones-originales-vs-alternas",
+    image: require("@/assets/images/blog/refacciones-originales-vs-alternas.png"),
     category: "Noticias",
     tag: "Opinión",
     title: "Originales vs genéricas: la verdad que nadie te dice",
@@ -337,6 +349,7 @@ Pregunta al distribuidor quién fabricó la pieza, no solo qué caja trae. Un pr
   },
   {
     id: "bomba-gasolina-sintomas",
+    image: require("@/assets/images/blog/bomba-gasolina-sintomas.png"),
     category: "Sabías Que",
     tag: "Prevención",
     title: "Tu bomba de gasolina avisa antes de morir",
@@ -372,6 +385,7 @@ No descartes el filtro de gasolina en línea — un filtro tapado hace que la bo
   },
   {
     id: "hilux-partes-mas-pedidas",
+    image: require("@/assets/images/blog/hilux-partes-mas-pedidas.png"),
     category: "Noticias",
     tag: "Mercado",
     title: "Toyota Hilux: las piezas más pedidas en Sonora en 2025",
