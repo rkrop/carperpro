@@ -12,6 +12,7 @@ import { logger } from "../logger";
 import { getAdmintotalClient } from "./client";
 import { isAdmintotalConfigured, missingConfigMessage } from "./config";
 import { mapCategory, mapSubcategory, mapSucursal, mapProduct } from "./mapper";
+import { sweepBackInStock } from "../push/notify";
 
 const SYNC_KEY = "catalog";
 
@@ -450,6 +451,10 @@ export async function runInboundSync(): Promise<SyncResult> {
       brandsSynced: brandSet.size,
     });
     logger.info("Admintotal: sincronización entrante completada");
+
+    // Fire-and-forget: notify back-in-stock subscribers whose part the mirror
+    // just refreshed to a positive count (idempotent, one-shot per sub).
+    void sweepBackInStock();
 
     return {
       ok: true,

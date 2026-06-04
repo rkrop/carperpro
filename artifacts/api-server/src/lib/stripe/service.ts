@@ -13,7 +13,8 @@ import { resolveSucursalId } from "../sucursal";
 import { pushOrder } from "../admintotal/outbound";
 import { getLiveSellableStock } from "../admintotal/liveStock";
 import { effectivePrice } from "../pricing";
-import { notifyOrderPaid } from "../twilio/notify";
+import { notifyOrderPaid, notifyOrderPaidCustomer } from "../twilio/notify";
+import { notifyOrderPaidPush, notifyOrderProblemPush } from "../push/notify";
 import { logger } from "../logger";
 
 export interface CheckoutLineInput {
@@ -32,6 +33,8 @@ export interface CreateCheckoutInput {
   dest: string;
   /** Clerk user id when the buyer is signed in; null for guest checkout. */
   userId?: string | null;
+  /** Expo push token of the ordering device, so paid/failed push reaches guests too. */
+  pushToken?: string | null;
 }
 
 export interface ClientOrder {
@@ -205,6 +208,7 @@ export async function createCardCheckoutSession(
       buyerName: input.buyerName ?? null,
       buyerPhone: input.buyerPhone ?? null,
       shippingAddress: input.shippingAddress ?? null,
+      pushToken: input.pushToken ?? null,
       lines,
       total,
       paymentStatus: "unpaid",
@@ -313,7 +317,7 @@ export async function reconcileStripeOrder(
   const session = await stripe.checkout.sessions.retrieve(order.stripeSessionId);
 
   if (session.status === "expired") {
-    await db
+    const failed = await db
       .update(outboundOrdersTable)
       .set({ paymentStatus: "failed", status: "failed" })
       .where(
@@ -321,8 +325,12 @@ export async function reconcileStripeOrder(
           eq(outboundOrdersTable.id, order.id),
           eq(outboundOrdersTable.paymentStatus, "unpaid"),
         ),
-      );
-    return (await loadOrder(order.id)) ?? order;
+      )
+      .returning();
+    // Single-winner: only the caller that actually flipped unpaid -> failed
+    // notifies, so "No pudimos procesar" fires exactly once.
+    if (failed.length > 0) notifyOrderProblemPush(failed[0]);
+    return failed[0] ?? (await loadOrder(order.id)) ?? order;
   }
 
   if (session.payment_status !== "paid") return order;
@@ -466,6 +474,12 @@ async function fulfillPaidOrder(
       "Admintotal: push de pedido pagado falló, queda en cola",
     ),
   );
+  // Confirm to the customer only once fulfillment is secured (stock re-check
+  // passed). Notifying here — not at the paid flip — avoids contradicting the
+  // rare sold-out-after-payment case, which sends the problem notification
+  // instead. SMS to their phone + "Pago confirmado" push to their device.
+  notifyOrderPaidCustomer(queued);
+  notifyOrderPaidPush(queued);
   return queued;
 }
 
@@ -521,7 +535,11 @@ async function refundSoldOutOrder(
     { orderId: order.id, soldOut: soldOut.map((l) => l.sku), refunded },
     "Stripe: pedido agotado tras el pago; cancelado",
   );
-  return (await loadOrder(order.id)) ?? order;
+  const cancelled = (await loadOrder(order.id)) ?? order;
+  // An item sold out during the payment window: tell the customer we couldn't
+  // process their order (they were/are being refunded).
+  notifyOrderProblemPush(cancelled);
+  return cancelled;
 }
 
 /**

@@ -6,8 +6,9 @@ import {
   type NextFunction,
 } from "express";
 import { timingSafeEqual } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, or, isNull } from "drizzle-orm";
 import { db, productsTable, brandsTable } from "@workspace/db";
+import { notifyBackInStock } from "../lib/push/notify";
 import { logger } from "../lib/logger";
 import { getWebhookToken } from "../lib/admintotal/config";
 import { mapProduct } from "../lib/admintotal/mapper";
@@ -156,6 +157,9 @@ router.post(
     let stockUpdated = 0;
     let notFound = 0;
     const notFoundSkus: string[] = [];
+    // Product ids that go from 0/unknown stock to a positive count this batch —
+    // notified to back-in-stock subscribers after the loop (best-effort).
+    const restockIds: string[] = [];
 
     for (const item of items) {
       // Tolerant field matching: Admintotal uses Spanish names (clave/codigo for
@@ -215,9 +219,29 @@ router.post(
         // Only overwrite costo when one actually arrived.
         if (costoParam !== null) set.costo = costoParam;
       }
+      let incomingQty: number | null = null;
       if (hasStock) {
-        set.erpStockQty = Math.max(0, Math.round(stock as number));
+        incomingQty = Math.max(0, Math.round(stock as number));
+        set.erpStockQty = incomingQty;
         set.stockUpdatedAt = new Date();
+      }
+
+      // Detect a 0/unknown -> positive transition BEFORE the update so we can
+      // notify back-in-stock subscribers. Only query when the incoming stock is
+      // positive (the only case that can satisfy a "back in stock" alert).
+      let wasOutIds: string[] = [];
+      if (incomingQty !== null && incomingQty > 0) {
+        wasOutIds = (
+          await db
+            .select({ id: productsTable.id })
+            .from(productsTable)
+            .where(
+              and(
+                eq(productsTable.skuBase, base),
+                or(eq(productsTable.erpStockQty, 0), isNull(productsTable.erpStockQty)),
+              ),
+            )
+        ).map((r) => r.id);
       }
 
       const updated = await db
@@ -225,6 +249,8 @@ router.post(
         .set(set)
         .where(eq(productsTable.skuBase, base))
         .returning({ id: productsTable.id });
+
+      if (wasOutIds.length > 0) restockIds.push(...wasOutIds);
 
       if (updated.length === 0) {
         // Valid identifier but no product matched it: surface it instead of
@@ -235,6 +261,11 @@ router.post(
       }
       if (hasPriceSignal) pricesUpdated += updated.length;
       if (hasStock) stockUpdated += updated.length;
+    }
+
+    // Fire-and-forget back-in-stock pushes; never block the webhook response.
+    if (restockIds.length > 0) {
+      void notifyBackInStock(restockIds);
     }
 
     logger.info(

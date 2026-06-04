@@ -270,6 +270,7 @@ export const CreateOrderBody = zod.object({
   "total": zod.number(),
   "buyerName": zod.string().nullish(),
   "buyerPhone": zod.string().nullish(),
+  "pushToken": zod.string().nullish(),
   "shippingAddress": zod.union([zod.object({
   "calle": zod.string(),
   "numExterior": zod.string(),
@@ -283,6 +284,35 @@ export const CreateOrderBody = zod.object({
   "lng": zod.number().nullish(),
   "mapsUrl": zod.string().nullish()
 }),zod.null()]).optional()
+})
+
+
+/**
+ * @summary Register (upsert) an Expo push token for this device
+ */
+export const RegisterPushTokenBody = zod.object({
+  "token": zod.string(),
+  "platform": zod.string().nullish()
+})
+
+export const RegisterPushTokenResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+/**
+ * @summary Notify this device (push) when the product is back in stock
+ */
+export const SubscribeRestockParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const SubscribeRestockBody = zod.object({
+  "token": zod.string()
+})
+
+export const SubscribeRestockResponse = zod.object({
+  "ok": zod.boolean()
 })
 
 

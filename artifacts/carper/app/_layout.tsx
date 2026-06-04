@@ -23,6 +23,7 @@ import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PhoneAuthProvider, useAuth } from "@/lib/auth";
+import { registerPushToken } from "@/lib/push";
 import { AppProvider } from "@/context/AppContext";
 import { CartProvider } from "@/context/CartContext";
 
@@ -39,11 +40,17 @@ const clerkProxyUrl = process.env.EXPO_PUBLIC_CLERK_PROXY_URL || undefined;
 // otherwise, so guest requests (catalog, guest checkout) keep working while
 // signed-in requests reach the /me account endpoints.
 function ApiAuthBridge() {
-  const { getToken } = useAuth();
+  const { getToken, isSignedIn } = useAuth();
   useEffect(() => {
     setAuthTokenGetter(() => getToken());
     return () => setAuthTokenGetter(null);
   }, [getToken]);
+  // Register the device's push token on launch and whenever auth changes, so the
+  // backend can reach this device (and link it to the account once signed in)
+  // for order-state and back-in-stock notifications. Best-effort.
+  useEffect(() => {
+    void registerPushToken();
+  }, [isSignedIn]);
   return null;
 }
 

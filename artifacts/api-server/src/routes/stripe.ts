@@ -71,6 +71,7 @@ router.post("/stripe/checkout", writeLimiter, async (req: Request, res: Response
       lines,
       dest,
       userId,
+      pushToken: typeof body.pushToken === "string" ? body.pushToken : null,
     });
     res.status(201).json(result);
   } catch (err) {

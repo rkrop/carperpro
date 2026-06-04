@@ -284,6 +284,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /push/register:
+    post:
+      operationId: registerPushToken
+      tags: [push]
+      summary: Register (upsert) an Expo push token for this device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushRegisterInput"
+      responses:
+        "200":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+        "400":
+          description: Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /products/{id}/restock-subscribe:
+    post:
+      operationId: subscribeRestock
+      tags: [push]
+      summary: Notify this device (push) when the product is back in stock
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestockSubscribeInput"
+      responses:
+        "200":
+          description: Subscribed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /assistant/chat:
     post:
       operationId: createAssistantChat
@@ -799,10 +859,31 @@ components:
         total: { type: number }
         buyerName: { type: ["string", "null"] }
         buyerPhone: { type: ["string", "null"] }
+        # Expo push token of the ordering device, so order-state pushes reach the
+        # buyer (including guests). Optional — null/omitted when push isn't set up.
+        pushToken: { type: ["string", "null"] }
         shippingAddress:
           oneOf:
             - $ref: "#/components/schemas/ShippingAddress"
             - type: "null"
+    PushRegisterInput:
+      type: object
+      required: [token]
+      properties:
+        # Expo push token (ExponentPushToken[...]).
+        token: { type: string }
+        platform: { type: ["string", "null"] }
+    RestockSubscribeInput:
+      type: object
+      required: [token]
+      properties:
+        # Expo push token to notify when the product is back in stock.
+        token: { type: string }
+    OkResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
     OrderResult:
       type: object
       required: [id, folio, status]

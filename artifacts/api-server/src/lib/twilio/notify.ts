@@ -183,6 +183,120 @@ export async function sendOrderPaidSms(
   return data.sid ?? null;
 }
 
+// Normalize a Mexican buyer phone to E.164 for Twilio. Accepts already-E.164
+// numbers (+52...), bare 10-digit local numbers (adds +52), and 52-prefixed
+// 12-digit numbers. Returns null when there aren't enough digits to be valid.
+function toE164Mx(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (/^\+\d{10,15}$/.test(trimmed)) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) return `+52${digits}`;
+  if (digits.length === 12 && digits.startsWith("52")) return `+${digits}`;
+  if (digits.length === 13 && digits.startsWith("521")) return `+${digits}`;
+  return null;
+}
+
+/** Short customer-facing confirmation SMS body (plain text, es-MX). */
+export function buildCustomerPaidMessage(order: OutboundOrder): string {
+  const total = moneyMx(Number(order.total) || 0);
+  const entrega =
+    order.entrega === "tienda"
+      ? "Puedes recogerlo en tienda."
+      : "Lo preparamos para envío a domicilio.";
+  return [
+    "Carper Autopartes",
+    `Confirmamos tu pago del pedido ${order.folio}.`,
+    `Total: ${total}.`,
+    entrega,
+    "Gracias por tu compra.",
+  ].join(" ");
+}
+
+/**
+ * Send the customer their paid-order confirmation by SMS, to the phone captured
+ * at checkout. Resolves with the Twilio message SID, or null when there's no
+ * valid destination phone or notifications aren't configured. Rejects on a
+ * Twilio API error (callers fire-and-forget).
+ */
+export async function sendOrderPaidCustomerSms(
+  order: OutboundOrder,
+): Promise<string | null> {
+  const to = toE164Mx(order.buyerPhone);
+  if (!to) {
+    logger.warn(
+      { folio: order.folio },
+      "SMS al cliente omitido: el teléfono del comprador no es válido",
+    );
+    return null;
+  }
+
+  const creds = await getTwilioCredentials();
+  const from = process.env.CARPER_NOTIFY_SMS_FROM || creds.phoneNumber;
+  if (!from) {
+    logger.warn("SMS al cliente omitido: no hay remitente de Twilio configurado.");
+    return null;
+  }
+
+  const accountSid = await resolveAccountSid(
+    creds.apiKeySid,
+    creds.apiKeySecret,
+    creds.accountSidHint,
+  );
+
+  const body = new URLSearchParams({
+    From: from.trim(),
+    To: to,
+    Body: buildCustomerPaidMessage(order),
+  });
+
+  const r = await fetch(`${API_BASE}/Accounts/${accountSid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: twilioBasicAuth(creds.apiKeySid, creds.apiKeySecret),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => ({}))) as {
+      code?: number;
+      message?: string;
+    };
+    throw new Error(
+      `Twilio Messages ${r.status} (code ${detail.code ?? "?"}): ${
+        detail.message ?? "envío de SMS al cliente falló"
+      }`,
+    );
+  }
+
+  const data = (await r.json()) as { sid?: string };
+  return data.sid ?? null;
+}
+
+/**
+ * Fire-and-forget wrapper: send the customer their paid confirmation SMS. Never
+ * throws — a notification failure must not affect order fulfillment.
+ */
+export function notifyOrderPaidCustomer(order: OutboundOrder): void {
+  void sendOrderPaidCustomerSms(order)
+    .then((sid) => {
+      if (!sid) return;
+      logger.info(
+        { folio: order.folio, messageSid: sid },
+        "Confirmación de pago enviada al cliente por SMS",
+      );
+    })
+    .catch((err) => {
+      logger.warn(
+        { folio: order.folio, err: err instanceof Error ? err.message : err },
+        "No se pudo enviar la confirmación de pago al cliente",
+      );
+    });
+}
+
 /**
  * Fire-and-forget wrapper: notify Carper that an order was paid. Never throws —
  * a notification failure must not affect order fulfillment.

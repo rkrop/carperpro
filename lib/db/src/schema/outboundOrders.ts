@@ -82,6 +82,11 @@ export const outboundOrdersTable = pgTable(
     .notNull()
     .default("unpaid"),
   stripeSessionId: text("stripe_session_id"),
+  // Expo push token of the device that placed the order. Captured at checkout so
+  // order-state pushes ("Pago confirmado" / "No pudimos procesar tu pedido")
+  // reach the buyer even when they checked out as a guest. Null when the device
+  // hadn't registered for push (denied permission, web, etc.).
+  pushToken: text("push_token"),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

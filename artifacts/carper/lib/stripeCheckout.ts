@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { getAuthToken } from "@workspace/api-client-react";
+import { getExpoPushToken } from "./push";
 
 // API base — same domain the generated client points at (EXPO_PUBLIC_DOMAIN is
 // the api-server's public host in dev/prod).
@@ -85,6 +86,10 @@ export async function startCardCheckout(opts: {
     ? `${window.location.origin}${window.location.pathname}`
     : Linking.createURL("stripe-return");
 
+  // Attach the device's push token so "Pago confirmado" / "No pudimos procesar"
+  // push reaches this device — works for guests too (no account needed).
+  const pushToken = await getExpoPushToken();
+
   const res = await fetch(apiUrl("/api/stripe/checkout"), {
     method: "POST",
     headers: await authedJsonHeaders(),
@@ -95,6 +100,7 @@ export async function startCardCheckout(opts: {
       shippingAddress: opts.shippingAddress ?? null,
       lines: opts.lines,
       dest,
+      pushToken,
     }),
   });
 

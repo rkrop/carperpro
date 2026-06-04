@@ -18,5 +18,7 @@ export interface OrderInput {
   buyerName?: string | null;
   /** @nullable */
   buyerPhone?: string | null;
+  /** @nullable */
+  pushToken?: string | null;
   shippingAddress?: ShippingAddress | null;
 }

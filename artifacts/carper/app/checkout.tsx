@@ -26,6 +26,7 @@ import { useColors } from "@/hooks/useColors";
 import { formatMXN } from "@/lib/format";
 import { STORE } from "@/lib/store";
 import { startCardCheckout, verifyPayment, type VerifiedOrder } from "@/lib/stripeCheckout";
+import { getExpoPushToken } from "@/lib/push";
 
 type Entrega = "tienda" | "envio";
 type Pago = "efectivo" | "tarjeta" | "spei";
@@ -456,6 +457,9 @@ export default function Checkout() {
     // message and route the shopper back to fix their cart.
     let folio: string;
     try {
+      // Attach the device's push token so order-state push can reach this device
+      // (and guests too). Best-effort: null when unavailable.
+      const pushToken = await getExpoPushToken();
       const created = await createOrder.mutateAsync({
         data: {
           lines: cart.items.map((i) => ({
@@ -472,6 +476,7 @@ export default function Checkout() {
           buyerName: name.trim(),
           buyerPhone: phone.trim(),
           shippingAddress: entrega === "envio" ? buildShippingAddress() : undefined,
+          pushToken,
         },
       });
       folio = created.folio;

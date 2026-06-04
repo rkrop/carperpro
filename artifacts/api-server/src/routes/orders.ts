@@ -163,6 +163,7 @@ router.post("/orders", writeLimiter, async (req: Request, res: Response): Promis
           buyerName: input.buyerName ?? null,
           buyerPhone: input.buyerPhone ?? null,
           shippingAddress,
+          pushToken: input.pushToken ?? null,
           lines,
           total,
         })

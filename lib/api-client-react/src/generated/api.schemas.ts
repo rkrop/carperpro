@@ -218,7 +218,23 @@ export interface OrderInput {
   buyerName?: string | null;
   /** @nullable */
   buyerPhone?: string | null;
+  /** @nullable */
+  pushToken?: string | null;
   shippingAddress?: ShippingAddress | null;
+}
+
+export interface PushRegisterInput {
+  token: string;
+  /** @nullable */
+  platform?: string | null;
+}
+
+export interface RestockSubscribeInput {
+  token: string;
+}
+
+export interface OkResult {
+  ok: boolean;
 }
 
 export interface OrderResult {

@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AccentButton, EmptyState, Hairline, Skeleton } from "@/components/CarperUI";
@@ -14,6 +14,7 @@ import { useApp } from "@/context/AppContext";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { discountPct, formatMXN, stockStatus } from "@/lib/format";
+import { subscribeRestock } from "@/lib/push";
 import { STORE } from "@/lib/store";
 
 // WhatsApp brand green — recognizable across the light/dark theme.
@@ -30,6 +31,8 @@ export default function Producto() {
   const cart = useCart();
   const { addRecent, toggleFavorite, isFavorite } = useApp();
   const [added, setAdded] = useState(false);
+  // Back-in-stock subscription state for the out-of-stock CTA.
+  const [restockState, setRestockState] = useState<"idle" | "loading" | "done">("idle");
 
   useEffect(() => {
     if (product) addRecent(product);
@@ -93,6 +96,23 @@ export default function Producto() {
     cart.add(product);
     setAdded(true);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  // "Avísame cuando vuelva a haber": subscribe this device to a back-in-stock
+  // push for the out-of-stock part. We push only (no SMS) for restock alerts.
+  const onNotifyRestock = async () => {
+    if (!product || restockState !== "idle") return;
+    setRestockState("loading");
+    try {
+      await subscribeRestock(product.id);
+      setRestockState("done");
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      setRestockState("idle");
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      const message = err instanceof Error ? err.message : "No se pudo registrar el aviso.";
+      Alert.alert("Aviso no registrado", message);
+    }
   };
 
   // Contact an advisor about this part (e.g. to confirm availability when it's
@@ -292,6 +312,42 @@ export default function Producto() {
             <Text style={{ fontFamily: Fonts.medium, fontSize: 11, lineHeight: 15, color: c.mutedForeground, textAlign: "center" }}>
               Sin existencia en este momento. Consulta disponibilidad con un asesor.
             </Text>
+            <Pressable
+              onPress={onNotifyRestock}
+              disabled={restockState !== "idle"}
+              style={({ pressed }) => ({
+                height: 56,
+                borderWidth: 1,
+                borderColor: restockState === "done" ? c.success : c.foreground,
+                backgroundColor: restockState === "done" ? c.background : pressed ? c.neutral900 : c.foreground,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                opacity: restockState === "loading" ? 0.7 : 1,
+              })}
+            >
+              <Feather
+                name={restockState === "done" ? "check" : "bell"}
+                size={16}
+                color={restockState === "done" ? c.success : c.background}
+              />
+              <Text
+                style={{
+                  color: restockState === "done" ? c.success : c.background,
+                  fontFamily: Fonts.bold,
+                  fontSize: 11,
+                  letterSpacing: 1.5,
+                  textTransform: "uppercase",
+                }}
+              >
+                {restockState === "loading"
+                  ? "Registrando…"
+                  : restockState === "done"
+                    ? "Te avisaremos"
+                    : "Avísame cuando vuelva a haber"}
+              </Text>
+            </Pressable>
             <View style={{ flexDirection: "row", gap: 12 }}>
               <Pressable
                 onPress={consultarWhatsApp}

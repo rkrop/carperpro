@@ -35,12 +35,15 @@ import type {
   HealthStatus,
   ListProductsParams,
   ListSubcategoriesParams,
+  OkResult,
   OrderHistoryItem,
   OrderInput,
   OrderResult,
   PostalCode,
   Product,
   ProductPage,
+  PushRegisterInput,
+  RestockSubscribeInput,
   ScanIdentifyInput,
   ScanResult,
   Subcategory,
@@ -1019,6 +1022,149 @@ export const useCreateOrder = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getCreateOrderMutationOptions(options));
+    }
+
+export const getRegisterPushTokenUrl = () => {
+
+
+
+
+  return `/api/push/register`
+}
+
+/**
+ * @summary Register (upsert) an Expo push token for this device
+ */
+export const registerPushToken = async (pushRegisterInput: PushRegisterInput, options?: RequestInit): Promise<OkResult> => {
+
+  return customFetch<OkResult>(getRegisterPushTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      pushRegisterInput,)
+  }
+);}
+
+
+
+
+export const getRegisterPushTokenMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerPushToken>>, TError,{data: BodyType<PushRegisterInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof registerPushToken>>, TError,{data: BodyType<PushRegisterInput>}, TContext> => {
+
+const mutationKey = ['registerPushToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerPushToken>>, {data: BodyType<PushRegisterInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  registerPushToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegisterPushTokenMutationResult = NonNullable<Awaited<ReturnType<typeof registerPushToken>>>
+    export type RegisterPushTokenMutationBody = BodyType<PushRegisterInput>
+    export type RegisterPushTokenMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Register (upsert) an Expo push token for this device
+ */
+export const useRegisterPushToken = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerPushToken>>, TError,{data: BodyType<PushRegisterInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof registerPushToken>>,
+        TError,
+        {data: BodyType<PushRegisterInput>},
+        TContext
+      > => {
+      return useMutation(getRegisterPushTokenMutationOptions(options));
+    }
+
+export const getSubscribeRestockUrl = (id: string,) => {
+
+
+
+
+  return `/api/products/${id}/restock-subscribe`
+}
+
+/**
+ * @summary Notify this device (push) when the product is back in stock
+ */
+export const subscribeRestock = async (id: string,
+    restockSubscribeInput: RestockSubscribeInput, options?: RequestInit): Promise<OkResult> => {
+
+  return customFetch<OkResult>(getSubscribeRestockUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      restockSubscribeInput,)
+  }
+);}
+
+
+
+
+export const getSubscribeRestockMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeRestock>>, TError,{id: string;data: BodyType<RestockSubscribeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof subscribeRestock>>, TError,{id: string;data: BodyType<RestockSubscribeInput>}, TContext> => {
+
+const mutationKey = ['subscribeRestock'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof subscribeRestock>>, {id: string;data: BodyType<RestockSubscribeInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  subscribeRestock(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubscribeRestockMutationResult = NonNullable<Awaited<ReturnType<typeof subscribeRestock>>>
+    export type SubscribeRestockMutationBody = BodyType<RestockSubscribeInput>
+    export type SubscribeRestockMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Notify this device (push) when the product is back in stock
+ */
+export const useSubscribeRestock = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeRestock>>, TError,{id: string;data: BodyType<RestockSubscribeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof subscribeRestock>>,
+        TError,
+        {id: string;data: BodyType<RestockSubscribeInput>},
+        TContext
+      > => {
+      return useMutation(getSubscribeRestockMutationOptions(options));
     }
 
 export const getCreateAssistantChatUrl = () => {
