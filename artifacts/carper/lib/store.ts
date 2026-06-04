@@ -32,6 +32,14 @@ export interface Store {
   mapsUrl: string;
   /** Home-delivery details. */
   delivery: { gratis: boolean; eta: string; zona: string };
+  /** Bank account for SPEI / interbank transfers. */
+  bank: {
+    banco: string;
+    beneficiario: string;
+    cuenta: string;
+    clabe: string;
+    swift: string;
+  };
 }
 
 export const STORE: Store = {
@@ -51,4 +59,11 @@ export const STORE: Store = {
     "https://www.google.com/maps/search/?api=1&query=" +
     encodeURIComponent("Carper Autopartes, Blvd. Ignacio Ramírez 290, Ciudad Obregón, Sonora, 85160"),
   delivery: { gratis: true, eta: "30 a 60 min", zona: "Toda la ciudad" },
+  bank: {
+    banco: "BBVA",
+    beneficiario: "Carper Autopartes",
+    cuenta: "155 300 4058",
+    clabe: "012 767 01553004058 4",
+    swift: "BCMRMXMMPYM",
+  },
 };

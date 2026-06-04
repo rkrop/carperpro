@@ -60,6 +60,7 @@
     "@expo-google-fonts/space-mono": "^0.4.2",
     "expo-auth-session": "~7.0.11",
     "expo-camera": "~17.0.10",
+    "expo-clipboard": "~8.0.8",
     "expo-crypto": "~15.0.9",
     "expo-device": "~8.0.10",
     "expo-notifications": "~0.32.17",

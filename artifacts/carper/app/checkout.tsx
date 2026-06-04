@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
@@ -45,6 +46,7 @@ function buildWhatsAppMessage(opts: {
   address: string;
   referencias: string;
   mapsUrl: string;
+  pago: Pago | null;
   pagoLabel: string;
   name: string;
   phone: string;
@@ -69,6 +71,11 @@ function buildWhatsAppMessage(opts: {
     if (opts.mapsUrl) lines.push(`📍 Ubicación: ${opts.mapsUrl}`);
   }
   lines.push(`*Pago:* ${opts.pagoLabel}`);
+  if (opts.pago === "spei") {
+    lines.push(
+      `Realicé / realizaré una transferencia SPEI a la cuenta ${STORE.bank.banco} de ${STORE.bank.beneficiario}. Adjunto mi comprobante de pago en este chat.`,
+    );
+  }
   lines.push("");
   lines.push(`*Cliente:* ${opts.name}`);
   lines.push(`*Teléfono:* ${opts.phone}`);
@@ -505,6 +512,7 @@ export default function Checkout() {
         address: addressLine(),
         referencias: referencias.trim(),
         mapsUrl: buildMapsUrl(),
+        pago,
         pagoLabel,
         name: name.trim(),
         phone: phone.trim(),
@@ -650,6 +658,7 @@ export default function Checkout() {
                 <SelectCard active={pago === p.id} icon={p.icon} title={p.label} sub={p.sub} onPress={() => setPago(p.id)} />
               </View>
             ))}
+            {pago === "spei" ? <SpeiBankDetails c={c} /> : null}
           </>
         ) : (
           <>
@@ -715,12 +724,16 @@ export default function Checkout() {
               <Text style={{ fontFamily: Fonts.monoBold, fontSize: 20, letterSpacing: -0.8, color: c.foreground }}>{formatMXN(cart.total)}</Text>
             </View>
 
+            {pago === "spei" ? <SpeiBankDetails c={c} /> : null}
+
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 20, borderWidth: 1, borderColor: c.border, padding: 14 }}>
               <Feather name={pago === "tarjeta" ? "credit-card" : "message-circle"} size={16} color={c.primary} />
               <Text style={{ flex: 1, fontFamily: Fonts.medium, fontSize: 11, letterSpacing: 0.3, color: c.mutedForeground }}>
                 {pago === "tarjeta"
                   ? "Pagarás de forma segura con tarjeta. Al confirmar el pago coordinaremos la entrega contigo."
-                  : "Tu pedido se enviará por WhatsApp a Carper Autopartes para confirmar disponibilidad y entrega."}
+                  : pago === "spei"
+                    ? "Realiza tu transferencia con los datos de arriba y envía tu pedido por WhatsApp adjuntando tu comprobante de pago. Carper confirmará la recepción del pago contigo directamente."
+                    : "Tu pedido se enviará por WhatsApp a Carper Autopartes para confirmar disponibilidad y entrega."}
               </Text>
             </View>
           </>
@@ -755,6 +768,89 @@ function SelectCard({ active, icon, title, sub, onPress }: { active: boolean; ic
         {active ? <Feather name="check" size={12} color={c.primaryForeground} /> : null}
       </View>
     </Pressable>
+  );
+}
+
+// Carper's bank account for SPEI transfers, shown the moment the shopper picks
+// "Transferencia SPEI". Each field can be copied to the clipboard (CLABE is the
+// one that matters for an interbank transfer), and a notice reminds the buyer
+// that Carper confirms payment manually — they must send their receipt by
+// WhatsApp and verify reception directly with the store.
+function SpeiBankDetails({ c }: { c: ReturnType<typeof useColors> }) {
+  const b = STORE.bank;
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = async (field: string, value: string) => {
+    try {
+      await Clipboard.setStringAsync(value.replace(/\s/g, ""));
+      setCopied(field);
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+      setTimeout(() => setCopied((cur) => (cur === field ? null : cur)), 1500);
+    } catch {
+      // Clipboard may be unavailable; the value is still visible to type manually.
+    }
+  };
+  return (
+    <View style={{ marginTop: 16, borderWidth: 1, borderColor: c.primary, backgroundColor: c.primarySoft, padding: 18, gap: 14 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Feather name="credit-card" size={16} color={c.primary} />
+        <Text style={{ fontFamily: Fonts.bold, fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase", color: c.primary }}>
+          Datos para transferencia
+        </Text>
+      </View>
+      <Text style={{ fontFamily: Fonts.medium, fontSize: 11, lineHeight: 16, color: c.mutedForeground }}>
+        Realiza tu depósito o transferencia SPEI a la siguiente cuenta y guarda tu comprobante.
+      </Text>
+
+      <BankRow label="Banco" value={b.banco} c={c} />
+      <BankRow label="Beneficiario" value={b.beneficiario} c={c} />
+      <BankRow label="Cuenta" value={b.cuenta} copyable copied={copied === "cuenta"} onCopy={() => copy("cuenta", b.cuenta)} c={c} />
+      <BankRow label="CLABE" value={b.clabe} copyable copied={copied === "clabe"} onCopy={() => copy("clabe", b.clabe)} c={c} />
+      <BankRow label="SWIFT" value={b.swift} copyable copied={copied === "swift"} onCopy={() => copy("swift", b.swift)} c={c} />
+
+      <View style={{ flexDirection: "row", gap: 10, borderTopWidth: 1, borderTopColor: c.border, paddingTop: 14 }}>
+        <Feather name="alert-circle" size={15} color={c.foreground} style={{ marginTop: 1 }} />
+        <Text style={{ flex: 1, fontFamily: Fonts.medium, fontSize: 11, lineHeight: 16, color: c.foreground }}>
+          Carper confirma cada pago manualmente. Envía tu pedido por WhatsApp adjuntando tu comprobante y verifica directamente con Carper que el pago se haya recibido correctamente.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function BankRow({
+  label,
+  value,
+  c,
+  copyable,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  c: ReturnType<typeof useColors>;
+  copyable?: boolean;
+  copied?: boolean;
+  onCopy?: () => void;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 3 }}>{label}</Text>
+        <Text style={{ fontFamily: Fonts.mono, fontSize: 14, color: c.foreground }} selectable>{value}</Text>
+      </View>
+      {copyable ? (
+        <Pressable
+          onPress={onCopy}
+          hitSlop={8}
+          style={{ flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderColor: copied ? c.success : c.primary, paddingHorizontal: 10, paddingVertical: 7 }}
+        >
+          <Feather name={copied ? "check" : "copy"} size={12} color={copied ? c.success : c.primary} />
+          <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: copied ? c.success : c.primary }}>
+            {copied ? "Copiado" : "Copiar"}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
