@@ -5,7 +5,6 @@ import { Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { EmptyState, SectionLabel, Skeleton } from "@/components/CarperUI";
 import { SearchHeader } from "@/components/SearchHeader";
-import { MasBuscados } from "@/components/home/MasBuscados";
 import { Fonts, TAB_BAR_HEIGHT } from "@/constants/fonts";
 import { useCategories } from "@/data/catalog";
 import { FEATURED_CATEGORIES } from "@/lib/categoryAssets";
@@ -66,9 +65,6 @@ export default function Categorias() {
               ))}
             </View>
           </View>
-
-          {/* Más buscados — real catalog products */}
-          <MasBuscados />
 
           {/* Full list */}
           <SectionLabel style={{ paddingHorizontal: 24, marginTop: 24, marginBottom: 8 }}>Todas las categorías</SectionLabel>
