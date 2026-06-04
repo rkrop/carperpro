@@ -2,7 +2,6 @@ import { eq, inArray, and, isNotNull, gt, lt, or } from "drizzle-orm";
 import {
   db,
   outboundOrdersTable,
-  sucursalesTable,
   productsTable,
   type OutboundOrder,
   type OutboundOrderLine,
@@ -10,7 +9,7 @@ import {
 } from "@workspace/db";
 import type Stripe from "stripe";
 import { getUncachableStripeClient } from "./client";
-import { getWebhookSucursalId } from "../admintotal/config";
+import { resolveSucursalId } from "../sucursal";
 import { pushOrder } from "../admintotal/outbound";
 import { getLiveSellableStock } from "../admintotal/liveStock";
 import { effectivePrice } from "../pricing";
@@ -110,14 +109,10 @@ export async function createCardCheckoutSession(
     throw new CheckoutError(400, "Falta la URL de retorno (dest)");
   }
 
-  // Resolve the sucursal: client value if valid, else the main store (Matriz).
-  const sucursalId = input.sucursalId?.trim() || getWebhookSucursalId();
-  const suc = await db
-    .select({ id: sucursalesTable.id })
-    .from(sucursalesTable)
-    .where(eq(sucursalesTable.id, sucursalId))
-    .limit(1);
-  if (suc.length === 0) {
+  // Resolve the sucursal: client value if valid, else the configured webhook
+  // branch, else any existing branch (single-store app sends a blank id).
+  const sucursalId = await resolveSucursalId(input.sucursalId);
+  if (!sucursalId) {
     throw new CheckoutError(400, "Sucursal no válida");
   }
 

@@ -3,14 +3,13 @@ import { eq, inArray } from "drizzle-orm";
 import {
   db,
   outboundOrdersTable,
-  sucursalesTable,
   productsTable,
   type OutboundOrder,
   type OutboundOrderLine,
 } from "@workspace/db";
 import { CreateOrderBody } from "@workspace/api-zod";
 import { pushOrder } from "../lib/admintotal/outbound";
-import { getWebhookSucursalId } from "../lib/admintotal/config";
+import { resolveSucursalId } from "../lib/sucursal";
 import { effectivePrice } from "../lib/pricing";
 import { normalizeShippingAddress } from "../lib/shippingAddress";
 import { getOptionalUserId, ensureUser } from "../middlewares/requireAuth";
@@ -51,16 +50,11 @@ router.post("/orders", writeLimiter, async (req: Request, res: Response): Promis
     return;
   }
 
-  // Resolve the sucursal: client value if valid, else the main store (Matriz).
-  // Mirrors the Stripe checkout path so the single-store app can submit with a
-  // blank sucursalId and still get a valid, ERP-backed branch.
-  const sucursalId = input.sucursalId?.trim() || getWebhookSucursalId();
-  const suc = await db
-    .select({ id: sucursalesTable.id })
-    .from(sucursalesTable)
-    .where(eq(sucursalesTable.id, sucursalId))
-    .limit(1);
-  if (suc.length === 0) {
+  // Resolve the sucursal: client value if valid, else the configured webhook
+  // branch, else any existing branch. The single-store app submits a blank
+  // sucursalId on purpose, so we must supply a real seeded branch here.
+  const sucursalId = await resolveSucursalId(input.sucursalId);
+  if (!sucursalId) {
     res.status(400).json({ error: "Sucursal no válida" });
     return;
   }

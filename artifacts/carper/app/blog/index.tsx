@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Fonts } from "@/constants/fonts";
@@ -145,21 +145,20 @@ export default function BlogIndex() {
             })}
           >
             <View style={{ flexDirection: "row", gap: 0 }}>
-              {/* Editorial photo column */}
+              {/* Editorial photo column — absoluteFill so the image fills the
+                  row's height (driven by the text column) instead of relying on
+                  an ambiguous height:"100%" against a min-height-only parent. */}
               <View
                 style={{
                   width: 110,
                   minHeight: 110,
+                  alignSelf: "stretch",
                   backgroundColor: post.accentColor,
                   flexShrink: 0,
                   overflow: "hidden",
                 }}
               >
-                <Image
-                  source={post.image}
-                  resizeMode="cover"
-                  style={{ width: "100%", height: "100%" }}
-                />
+                <Image source={post.image} resizeMode="cover" style={StyleSheet.absoluteFill} />
               </View>
 
               {/* Text content */}
