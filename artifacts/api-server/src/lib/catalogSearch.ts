@@ -1,6 +1,5 @@
 import { and, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { db, productsTable, type Product as DbProduct } from "@workspace/db";
-import { effectivePrice, withIva } from "./pricing";
 import { tokenizeQuery, buildFtsSearch, buildFallbackSearch } from "./productSearch";
 import { interpretQuery } from "./nlSearch";
 import { embedQuery, isEmbeddingsConfigured, toVectorLiteral } from "./embeddings";
@@ -13,47 +12,20 @@ void _omitEmbedding;
 export { productColumns };
 export type CatalogProduct = Omit<DbProduct, "embedding">;
 
-// Test/placeholder rows that leak in from the Admintotal ERP sync (e.g.
-// "ARTICULO PRUEBA", "REPTIL TEST BRAND"). Excluded at the query layer so they
-// never surface in the app, even after a re-sync re-inserts them. Real
-// diagnostic tools ("pinza de prueba", "foco de prueba") are intentionally NOT
-// matched — only generic test placeholders and test brands.
+// Sin reglas de filtrado activas — se muestran todos los productos cargados.
+// Las reglas de negocio (stock mínimo, precio mínimo, filtros de prueba) se
+// definirán a partir del archivo maestro que el usuario proporcionará.
 export function notTestProduct(): SQL {
-  return sql`not (
-    unaccent(lower(${productsTable.name})) = 'articulo prueba'
-    or unaccent(lower(${productsTable.name})) like '%producto de prueba%'
-    or lower(${productsTable.brand}) like '%test brand%'
-    or lower(${productsTable.brand}) like '%reptil test%'
-  )`;
+  return sql`true`;
 }
 
-// Unsellable / junk rows hidden from the catalog:
-//  - CONFIRMED 0 stock → hidden. A product is only hidden for stock when its
-//    erpStockQty is 0 (i.e. the ERP told us it's off the shelf). Products whose
-//    erpStockQty is NULL are treated as "stock unknown" and stay VISIBLE — the
-//    ERP reports stock sparsely (per-SKU webhooks fill it in over time), so
-//    treating "no data" as "out of stock" would hide most of the catalog.
-//    Checkout performs a live stock check, so showing an unknown-stock item
-//    never lets a customer over-buy.
-//  - no price AND no cost (price=0 and costo=0/null) → nothing to sell
-//  - no name AND no description → empty junk row
-// Like notTestProduct(), enforced at the query layer so a re-sync from
-// Admintotal can't resurface them.
 export function sellableProduct(): SQL {
-  return sql`(
-    coalesce(${productsTable.erpStockQty}, 1) > 0
-    and (coalesce(${productsTable.price}, 0) > 0 or coalesce(${productsTable.costo}, 0) > 0)
-    and (
-      btrim(coalesce(${productsTable.name}, '')) <> ''
-      or btrim(coalesce(${productsTable.descripcion}, '')) <> ''
-    )
-  )`;
+  return sql`true`;
 }
 
-// Map the stored stock number into the API's (stock, stockState) pair.
-//  - NULL erpStockQty  → unknown availability (count hidden, stays orderable)
-//  - 0                 → confirmed out of stock (hidden from listings)
-//  - > 0               → real on-hand count
+// Serializa un producto para la API. El precio se expone exactamente como
+// está almacenado (sin transformaciones ni IVA adicional). Las reglas de
+// presentación de precio/stock se definirán con el archivo maestro.
 export function serializeProduct(row: CatalogProduct): Record<string, unknown> {
   const qty = row.erpStockQty;
   const stockState =
@@ -67,13 +39,9 @@ export function serializeProduct(row: CatalogProduct): Record<string, unknown> {
     sku: row.sku,
     name: row.name,
     brand: row.brand,
-    price: effectivePrice(row),
-    // Strike-through "precio anterior" must carry IVA too, so the displayed
-    // discount stays consistent with the IVA-included current price.
+    price: row.price ?? 0,
     originalPrice:
-      row.originalPrice && row.originalPrice > 0
-        ? withIva(row.originalPrice)
-        : null,
+      row.originalPrice && row.originalPrice > 0 ? row.originalPrice : null,
     stock: qty ?? null,
     stockState,
     categoryId: row.categoryId ?? null,
@@ -84,9 +52,6 @@ export function serializeProduct(row: CatalogProduct): Record<string, unknown> {
     vehicles: row.vehicles ?? [],
     oem: row.oem ?? null,
     equivalents: row.equivalents ?? null,
-    // Real ERP copy wins; the AI-generated description (Task #49) is only a
-    // fallback for the ~all products the ERP leaves without one. The client can't
-    // tell them apart — same field — so a product never shows up "sin descripción".
     descripcion:
       (row.descripcion && row.descripcion.trim()) ||
       row.descripcionGenerada ||

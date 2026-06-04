@@ -21,8 +21,6 @@ import {
   GetSyncStatusResponse,
 } from "@workspace/api-zod";
 import {
-  notTestProduct,
-  sellableProduct,
   productColumns,
   serializeProduct,
   searchCatalog,
@@ -58,11 +56,7 @@ router.get("/subcategories", async (req: Request, res: Response): Promise<void> 
     .from(subcategoriesTable)
     .innerJoin(
       productsTable,
-      and(
-        eq(productsTable.subcategoryId, subcategoriesTable.id),
-        notTestProduct(),
-        sellableProduct(),
-      ),
+      eq(productsTable.subcategoryId, subcategoriesTable.id),
     )
     .where(categoryId ? eq(subcategoriesTable.categoryId, categoryId) : undefined)
     .groupBy(subcategoriesTable.id, subcategoriesTable.categoryId, subcategoriesTable.name)
@@ -79,11 +73,7 @@ router.get("/subcategories", async (req: Request, res: Response): Promise<void> 
 });
 
 router.get("/brands", async (_req: Request, res: Response): Promise<void> => {
-  const rows = await db
-    .select()
-    .from(brandsTable)
-    .where(sql`not (lower(${brandsTable.name}) like '%test brand%' or lower(${brandsTable.name}) like '%reptil test%')`)
-    .orderBy(brandsTable.name);
+  const rows = await db.select().from(brandsTable).orderBy(brandsTable.name);
   const data = ListBrandsResponse.parse(rows.map((r) => r.name));
   res.json(data);
 });
@@ -184,7 +174,7 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
   const rows = await db
     .select(productColumns)
     .from(productsTable)
-    .where(and(eq(productsTable.id, id), notTestProduct(), sellableProduct()))
+    .where(eq(productsTable.id, id))
     .limit(1);
   const row = rows[0];
   if (!row) {
@@ -196,21 +186,16 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
 });
 
 router.get("/deals", async (_req: Request, res: Response): Promise<void> => {
-  // Compare/rank against the EFFECTIVE price (precio de venta, else costo) so a
-  // product priced from its costo can't show a bogus discount vs a raw 0 price.
-  const effPrice = sql`(case when ${productsTable.price} > 0 then ${productsTable.price} else coalesce(${productsTable.costo}, 0) end)`;
   const rows = await db
     .select(productColumns)
     .from(productsTable)
     .where(
       and(
-        notTestProduct(),
-        sellableProduct(),
         sql`${productsTable.originalPrice} is not null`,
-        sql`${productsTable.originalPrice} > ${effPrice}`,
+        sql`${productsTable.originalPrice} > coalesce(${productsTable.price}, 0)`,
       ),
     )
-    .orderBy(desc(sql`${productsTable.originalPrice} - ${effPrice}`))
+    .orderBy(desc(sql`${productsTable.originalPrice} - coalesce(${productsTable.price}, 0)`))
     .limit(20);
 
   const ofertas = rows.map((r) => serializeProduct(r));
