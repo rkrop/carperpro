@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/tienda/"
+previewPath = "/"
 title = "Carper Tienda"
 version = "1.0.0"
 id = "artifacts/tienda"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/tienda/" ]
+paths = [ "/" ]
 localPort = 22179
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "22179"
-BASE_PATH = "/tienda/"
+BASE_PATH = "/"

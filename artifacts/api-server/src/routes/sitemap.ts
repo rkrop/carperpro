@@ -5,9 +5,9 @@ import { notTestProduct, sellableProduct } from "../lib/catalogSearch";
 
 const router: IRouter = Router();
 
-// The catalog showcase site (artifacts/tienda) is served under this base path.
+// The catalog showcase site (artifacts/tienda) is served at the domain root.
 // Product/category URLs in the sitemap point at that SPA, not at the API.
-const TIENDA_BASE = "/tienda";
+const TIENDA_BASE = "";
 
 // Sitemaps are capped at 50,000 URLs per file. The catalog is comfortably under
 // that, but we cap defensively so a runaway catalog can't produce an invalid
