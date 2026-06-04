@@ -29,6 +29,14 @@ config + the whatsappUrl() helper live in `src/lib/store.ts` (mirrors
 white/off-white bg, near-black text, SHARP corners (radius 0), Inter Black uppercase
 headers, Space Mono for SKUs/prices, wordmark "Carper.".
 
+**Catalog filters** (`src/pages/catalogo.tsx`): Línea + Sublínea + Marca + free text.
+Sublínea (`useListSubcategories({categoryId})`, enabled only when a línea is picked)
+renders between Líneas and Marcas with a "Ver todo" reset. All filters hydrate from
+URL query params (deep-link friendly). KEY: reset a dependent filter (sublínea) in the
+línea CLICK HANDLER, never in a `useEffect([categoryId])` — the effect also fires on
+mount and would wipe an initial `subcategoryId` from the URL.
+**Why:** deep links like `?categoryId=…&subcategoryId=…` must survive first render.
+
 **Gotchas hit during build:**
 - react-query v5: use `placeholderData: keepPreviousData` (not `keepPreviousData: true`);
   when passing a `query` options object you must also include `queryKey`.

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { keepPreviousData } from "@tanstack/react-query";
-import { useListProducts, useListCategories, useListBrands, getListProductsQueryKey } from "@workspace/api-client-react";
+import { useListProducts, useListCategories, useListSubcategories, useListBrands, getListProductsQueryKey, getListSubcategoriesQueryKey } from "@workspace/api-client-react";
 import { ProductCard } from "@/components/product/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ export default function Catalogo() {
   
   const [q, setQ] = useState(searchParams.get("q") || "");
   const [categoryId, setCategoryId] = useState(searchParams.get("categoryId") || "");
+  const [subcategoryId, setSubcategoryId] = useState(searchParams.get("subcategoryId") || "");
   const [brand, setBrand] = useState(searchParams.get("brand") || "");
   
   const [page, setPage] = useState(1);
@@ -25,11 +26,20 @@ export default function Catalogo() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [q, categoryId, brand]);
+  }, [q, categoryId, subcategoryId, brand]);
+
+  // Switch línea and drop any selected sublínea (a sublínea only belongs to its
+  // línea). Done in the click handler — NOT a useEffect on categoryId — so an
+  // initial subcategoryId from the URL (deep link) survives mount.
+  const selectCategory = (id: string) => {
+    setCategoryId(id);
+    setSubcategoryId("");
+  };
 
   const productParams = {
     q: q || undefined,
     categoryId: categoryId || undefined,
+    subcategoryId: subcategoryId || undefined,
     brand: brand || undefined,
     // Natural-language assist: when a free-text query yields few results, the API
     // rewrites the phrase into catalog keywords via AI. The interpretation is
@@ -46,6 +56,11 @@ export default function Catalogo() {
   });
 
   const { data: categories } = useListCategories();
+  // Sublíneas belong to a línea, so only fetch when one is selected.
+  const { data: subcategories } = useListSubcategories(
+    { categoryId },
+    { query: { enabled: !!categoryId, queryKey: getListSubcategoriesQueryKey({ categoryId }) } },
+  );
   const { data: brands } = useListBrands();
 
   const totalPages = productsData ? Math.ceil(productsData.total / limit) : 0;
@@ -114,7 +129,7 @@ export default function Catalogo() {
         <h3 className="font-display text-lg tracking-tight mb-4 uppercase border-b pb-2">Líneas</h3>
         <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
           <button
-            onClick={() => setCategoryId("")}
+            onClick={() => selectCategory("")}
             className={`block w-full text-left text-sm font-mono uppercase tracking-widest py-1 transition-colors ${!categoryId ? 'text-primary font-bold' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Todas las líneas
@@ -122,7 +137,7 @@ export default function Catalogo() {
           {categories?.map((cat) => (
             <button
               key={cat.id}
-              onClick={() => setCategoryId(cat.id)}
+              onClick={() => selectCategory(cat.id)}
               className={`block w-full text-left text-sm font-mono uppercase tracking-widest py-1 transition-colors ${categoryId === cat.id ? 'text-primary font-bold' : 'text-muted-foreground hover:text-foreground'}`}
             >
               {cat.name} ({cat.count})
@@ -130,6 +145,29 @@ export default function Catalogo() {
           ))}
         </div>
       </div>
+
+      {categoryId && subcategories && subcategories.length > 0 && (
+        <div>
+          <h3 className="font-display text-lg tracking-tight mb-4 uppercase border-b pb-2">Sublíneas</h3>
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+            <button
+              onClick={() => setSubcategoryId("")}
+              className={`block w-full text-left text-sm font-mono uppercase tracking-widest py-1 transition-colors ${!subcategoryId ? 'text-primary font-bold' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Ver todo
+            </button>
+            {subcategories.map((sub) => (
+              <button
+                key={sub.id}
+                onClick={() => setSubcategoryId(sub.id)}
+                className={`block w-full text-left text-sm font-mono uppercase tracking-widest py-1 transition-colors ${subcategoryId === sub.id ? 'text-primary font-bold' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {sub.name} ({sub.count})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <h3 className="font-display text-lg tracking-tight mb-4 uppercase border-b pb-2">Marcas</h3>
@@ -206,7 +244,7 @@ export default function Catalogo() {
                 <Button 
                   variant="outline" 
                   className="mt-6 rounded-none font-bold uppercase"
-                  onClick={() => { setQ(""); setCategoryId(""); setBrand(""); }}
+                  onClick={() => { setQ(""); setCategoryId(""); setSubcategoryId(""); setBrand(""); }}
                 >
                   Limpiar Filtros
                 </Button>
