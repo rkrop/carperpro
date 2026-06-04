@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Package } from "lucide-react";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useListProducts, getListProductsQueryKey } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
@@ -153,6 +153,18 @@ export function SearchBar({
                         i === activeIndex ? "bg-accent" : "hover:bg-card"
                       }`}
                     >
+                      <div className="shrink-0 w-10 h-10 border border-border bg-white flex items-center justify-center overflow-hidden">
+                        {p.image ? (
+                          <img
+                            src={p.image}
+                            alt={p.name}
+                            className="w-full h-full object-contain"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <Package className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-bold text-foreground line-clamp-1">
                           {p.name}
