@@ -7,7 +7,9 @@
 // within 24 h of the recipient last messaging the sender). Outside that window
 // Twilio returns error 63016 and the message is not delivered. Set
 // CARPER_NOTIFY_WHATSAPP_TEMPLATE_SID to an approved Content template SID to
-// switch to a template (variable {{1}} carries the full order detail).
+// switch to a template. WhatsApp forbids newlines/tabs inside template
+// parameter values, so the template uses 7 single-line variables (folio, fecha,
+// pago, entrega, total, productos, datos de entrega) — see buildOrderPaidVariables.
 import type { OutboundOrder, OutboundOrderLine } from "@workspace/db";
 import { logger } from "../logger";
 import { getTwilioCredentials, twilioBasicAuth } from "./credentials";
@@ -88,6 +90,65 @@ export function buildOrderPaidMessage(order: OutboundOrder): string {
   return parts.join("\n");
 }
 
+// WhatsApp template parameters must be single-line: no newlines, tabs, or runs
+// of >4 spaces. Collapse any such whitespace before substitution.
+function sanitizeLine(v: string): string {
+  return v.replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").trim();
+}
+
+function productsOneLine(lines: OutboundOrderLine[]): string {
+  if (lines.length === 0) return "(sin detalle de productos)";
+  return lines
+    .map((l) => {
+      const qty = Math.max(1, Math.round(Number(l.qty) || 1));
+      const sku = l.sku ? ` (SKU ${l.sku})` : "";
+      return `${qty} × ${l.name}${sku} ${moneyMx((Number(l.price) || 0) * qty)}`;
+    })
+    .join(" | ");
+}
+
+function deliveryOneLine(order: OutboundOrder): string {
+  if (order.entrega === "tienda") return "Recoger en tienda";
+  const a = order.shippingAddress;
+  if (!a) return "Envío a domicilio (sin dirección)";
+  const numInt = a.numInterior ? ` Int. ${a.numInterior}` : "";
+  const seg = [
+    `${a.calle} ${a.numExterior}${numInt}`,
+    `Col. ${a.colonia}`,
+    `C.P. ${a.cp}`,
+    [a.municipio, a.estado].filter(Boolean).join(", "),
+    a.referencias ? `Ref: ${a.referencias}` : "",
+  ].filter(Boolean);
+  let line = seg.join(", ");
+  if (a.mapsUrl) line += ` · Mapa: ${a.mapsUrl}`;
+  return line;
+}
+
+/**
+ * Single-line variables for the approved WhatsApp template. Order matches the
+ * template body: {{1}} folio, {{2}} fecha, {{3}} pago, {{4}} entrega,
+ * {{5}} total, {{6}} productos, {{7}} datos de entrega.
+ */
+export function buildOrderPaidVariables(
+  order: OutboundOrder,
+): Record<string, string> {
+  const lines = Array.isArray(order.lines) ? order.lines : [];
+  const fecha = (order.paidAt ?? new Date()).toLocaleString("es-MX", {
+    timeZone: "America/Mexico_City",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  return {
+    "1": sanitizeLine(order.folio),
+    "2": sanitizeLine(fecha),
+    "3": sanitizeLine(order.pago || "Tarjeta"),
+    "4": sanitizeLine(entregaLabel(order.entrega)),
+    "5": sanitizeLine(moneyMx(Number(order.total) || 0)),
+    "6": sanitizeLine(productsOneLine(lines)),
+    "7": sanitizeLine(deliveryOneLine(order)),
+  };
+}
+
 function toWhatsAppAddress(e164: string): string {
   const trimmed = e164.trim();
   return trimmed.startsWith("whatsapp:") ? trimmed : `whatsapp:${trimmed}`;
@@ -151,13 +212,13 @@ export async function sendOrderPaidWhatsApp(
   });
 
   const templateSid = process.env.CARPER_NOTIFY_WHATSAPP_TEMPLATE_SID;
-  const message = buildOrderPaidMessage(order);
   if (templateSid) {
-    // Approved template path: the full detail rides in variable {{1}}.
+    // Approved template path: discrete single-line variables (WhatsApp forbids
+    // newlines/tabs inside template parameter values).
     body.set("ContentSid", templateSid);
-    body.set("ContentVariables", JSON.stringify({ "1": message }));
+    body.set("ContentVariables", JSON.stringify(buildOrderPaidVariables(order)));
   } else {
-    body.set("Body", message);
+    body.set("Body", buildOrderPaidMessage(order));
   }
 
   const r = await fetch(`${API_BASE}/Accounts/${accountSid}/Messages.json`, {
