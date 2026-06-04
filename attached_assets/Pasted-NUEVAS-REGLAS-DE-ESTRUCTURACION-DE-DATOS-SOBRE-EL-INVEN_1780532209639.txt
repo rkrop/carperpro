@@ -1,0 +1,137 @@
+NUEVAS REGLAS DE ESTRUCTURACION DE DATOS SOBRE EL INVENTARIO:
+
+
+
+- FASE 1 (carga inicial MANUAL): se importa un archivo maestro (INVENTARIO_MAESTRO.xlsx)
+
+  que trae el inventario completo y curado: código, nombre, descripción adicional,
+
+  descripción e-commerce, marca, línea/sublínea, existencia y disponible POR ALMACÉN
+
+  (Matriz=001, Bodega=005), precio de venta, costo, código proveedor, código de barras,
+
+  ClaveProdServ (SAT) e imagen.
+
+- FASE 2 (actualización EN VIVO): el ERP AdminTotal manda webhooks. Según su doc oficial
+
+  (developers.admintotal.com), el webhook de precios/existencias envía un ARREGLO de
+
+  objetos { "sku", "precio", "costo", "stock" }, máx 50 cada 4 min, donde "stock" YA VIENE
+
+  SUMADO de los almacenes configurados (un solo número total, NO por almacén). El webhook
+
+  de creación de productos manda { id, codigo, descripcion, precio, costo, unidad, ... }.
+
+
+
+Diseña el esquema de base de datos (Drizzle ORM) tomando en cuenta ese ciclo de vida.
+
+Requisitos:
+
+
+
+1) NORMALIZACIÓN DE CÓDIGO (la pieza crítica que arregla el empate con el webhook).
+
+   En la tabla "products":
+
+   - "sku": código COMPLETO del ERP, con sufijo si lo trae (ej. "U52351-UNIFLOW").
+
+   - "skuBase": código SIN sufijo, normalizado (parte antes del primer "-", mayúsculas,
+
+     sin espacios; ej. "U52351"). INDEXADO y único cuando sea posible. Es el campo por el
+
+     que se cruza el webhook, la búsqueda y las fichas.
+
+   - "proveedorSufijo": el sufijo (ej. "UNIFLOW"), opcional.
+
+   Genera skuBase automáticamente al escribir (en el mapper o trigger), nunca a mano.
+
+   El webhook de precios/existencias debe localizar el producto por skuBase del "sku"
+
+   que recibe (normalizándolo igual), para que "U52351" actualice a "U52351-UNIFLOW".
+
+
+
+2) MODELO DE STOCK acorde a las dos fases:
+
+   - "erpStockQty" (integer, en products) = stock LIVE total vendible. Es la fuente de
+
+     verdad para catálogo y checkout, y es lo que ACTUALIZA el webhook (su número ya
+
+     viene sumado). NULL = desconocido (visible, sin contador); 0 = agotado confirmado.
+
+   - "stockUpdatedAt" = cuándo lo actualizó el webhook por última vez.
+
+   - Tabla "product_stock_inicial" (productId, almacenId, existencia, disponible,
+
+     importedAt): SOLO para el desglose por almacén de la CARGA INICIAL del maestro.
+
+     Es referencia/auditoría; NO la actualiza el webhook (porque el webhook no manda
+
+     desglose). Déjalo claramente documentado para no confundirlo con stock en vivo.
+
+
+
+3) CAMPOS DE PRODUCTO (agregar los que falten, reutilizar los existentes):
+
+   nuevos -> descripcionEcommerce, descripcionAdicional, codigoBarras, claveSat,
+
+   subLinea, priceSource ("Matriz"|"Bodega"|"Estimado"|"Webhook"|"Manual").
+
+   existentes a reutilizar -> id, name, brand, categoryId(línea), price, costo,
+
+   originalPrice, descripcion, proveedor, skuProveedor, image, specs, compatible,
+
+   vehicles, oem, equivalents, searchVector, updatedAt.
+
+
+
+4) REGLA "NUNCA PRECIO 0" (en la capa de escritura: import, webhook y mapper):
+
+   si llega precio 0 pero hay costo, fija price = costo * 1.30 y priceSource = "Estimado";
+
+   si no hay precio NI costo, el producto NO es vendible: no lo muestres en catálogo
+
+   (estatus "sin_precio") en vez de mostrarlo en $0. El webhook nunca debe bajar un
+
+   precio válido a 0 (ignora precio 0 entrante si ya hay uno bueno).
+
+
+
+5) BÚSQUEDA: search_vector debe indexar skuBase, sku, name, marca, descripcionEcommerce
+
+   y descripcionAdicional (códigos y nombre con mayor peso), con matching tolerante por
+
+   skuBase y unaccent.
+
+
+
+6) IMPORTADOR DEL MAESTRO: script idempotente que cargue INVENTARIO_MAESTRO.xlsx →
+
+   products (upsert por sku) + product_stock_inicial (un renglón por almacén). Calcula
+
+   erpStockQty inicial = suma de "disponible" de los almacenes del maestro.
+
+
+
+RESTRICCIONES CRÍTICAS:
+
+- search_vector DEBE permanecer en el schema de Drizzle como customType tsvector; si un
+
+  push lo elimina, el trigger escribe a una columna inexistente y TODA escritura a
+
+  products se rompe.
+
+- Config de text-search (simple + unaccent) consistente con cómo se arma el vector.
+
+- Migraciones aplicadas en dev Y producción.
+
+- No cambies la autenticación de webhooks (Api-key / Basic ya funciona).
+
+
+
+Al terminar muéstrame: el schema de products y product_stock_inicial, el importador, el
+
+handler del webhook ajustado para empatar por skuBase, y un conteo de productos cargados,
+
+con stock, y excluidos por "sin_precio".

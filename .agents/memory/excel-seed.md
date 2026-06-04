@@ -1,40 +1,41 @@
 ---
-name: Excel seed script
-description: How seed-excel.mjs mirrors the DB to the Admintotal Excel exports, and the IVA read-boundary convention.
+name: Master inventory importer
+description: How import-maestro.mjs loads the INVENTARIO MAESTRO Excel (FASE 1) and the never-price-0 / exact-mirror rules.
 ---
 
-# Excel seed (`artifacts/api-server/seed-excel.mjs`)
+# Master importer (`artifacts/api-server/import-maestro.mjs`)
 
-Run from `artifacts/api-server` with `node seed-excel.mjs`. It makes the
-`products` table an **exact mirror** of the current Admintotal catalog as given
-by the warehouse Excel exports in `attached_assets/`.
+FASE 1 of the inventory lifecycle: a **manual** master Excel load that is the
+source of truth for the catalog. FASE 2 = live AdminTotal webhooks. Auto API sync
+stays disabled. Run from `artifacts/api-server`:
+`node import-maestro.mjs` (`--dry-run` is truly read-only; `--force` bypasses guards).
 
-- **Source files:** stable names `productos-001.xlsx` (Bodega) + `productos-005.xlsx`
-  (Matriz). These two together = ALL current Admintotal products. Replace the
-  contents of both files (keep the names) to re-mirror. The old single backup
-  `inventario_carper_*.xlsx` was deleted — do not reintroduce it.
-- **Column keys (exact):** `Código`(sku), `Descripción`(name), `Línea`(category),
-  `Precio Venta MXN`(base price, sin IVA), `Precio Neto MXN`(con IVA),
-  `Costo Promedio`, `Disponible`(stock), `Proveedor`, `Código Origen`(sku_proveedor).
-- **Aggregation:** a `Código` can appear in BOTH files (same product, 2 warehouses).
-  stock = SUM(Disponible) across files; price/costo = MAX (one warehouse often
-  exports 0). Base price falls back to `Precio Neto / 1.16` when venta is 0.
-- **Preserves enrichment:** matches existing rows by SKU to keep the Admintotal
-  numeric `id` + brand/image/descripcion/oem/vehicles/original_price/category.
-  ON CONFLICT updates ONLY Excel fields (sku,name,price,costo,proveedor,
-  sku_proveedor coalesce, erp_stock_qty). New products get brand `SIN MARCA`.
-- **Exact mirror = it DELETES** every product whose id is not in the Excel (uses a
-  TEMP `keep_ids` table — NOTE: no transaction wraps the script, so the temp table
-  must NOT use `ON COMMIT DROP` or it vanishes before the inserts).
-- Categories matched by normalized `Línea` name → existing numeric ERP id; missing
-  ones created as slug categories. Single `matriz` sucursal; `inventory` table dead.
+- **Source:** `attached_assets/INVENTARIO_MAESTRO_*.xlsx`, sheet `MAESTRO`, ONE row
+  per product (~13,905). Replace the file to re-import. `pg` from `lib/db/node_modules`,
+  `xlsx` via `require("xlsx")`. The OLD `seed-excel.mjs` + `productos-001/005.xlsx`
+  two-file warehouse flow is DELETED — do not reintroduce.
+- **Identity = Código** → `products.id` AND `sku` (so FASE 1 import and FASE 2
+  webhooks converge on the same row). Upsert ON CONFLICT(id).
+- **Stock:** `erp_stock_qty = Disp. Matriz + Disp. Bodega`. Per-warehouse breakdown
+  saved to `product_stock_inicial` (2 rows/product: almacén `001`=Matriz, `005`=Bodega;
+  existencia + disponible). 13905×2 = 27810 rows.
+- **Never-price-0:** `resolvePrice()` (mirror of `src/lib/admintotal/sku.ts`):
+  Precio Venta>0 → use it, `price_source` = the Excel "Fuente Precio" column (e.g.
+  "Bodega"/"Matriz"/"Estimado (costo+30%)" — the master pre-computes its own
+  estimates); else costo>0 → costo*1.30 source "Estimado"; else `status='sin_precio'`.
+  In the current master EVERY row has a price, so 0 fall to estimate/sin_precio.
+- **Categories/sublíneas:** Línea matched by normalized name → existing id, else
+  `cat-<slug>`. SubLínea has NO id in the Excel, so a stable `sub-<slugLinea>-<slugSub>`
+  is generated; products reference it; `/subcategories` counts live by join.
+- **Exact mirror:** DELETES products not in the master (guards: MIN_PRODUCTS 5000,
+  MAX_DELETE_PCT 0.7), cleans orphan `product_stock_inicial`/`inventory`, drops
+  non-`matriz` sucursales and product-less subcategories. Recomputes category +
+  subcategory counts (excluding sin_precio). Recreates the search_vector trigger
+  (KEEP body in sync with `ensure-search-trigger.ts`).
+- **Preserves enrichment** the master lacks: `descripcion` (AI), `oem`, `vehicles`,
+  `original_price`, `specs`, and `image`/proveedor fields via COALESCE; real `brand`
+  is only overwritten when the master brand ≠ 'SIN MARCA'.
 
-# IVA convention (the key rule)
-
-Prices are stored EVERYWHERE as the **base price (sin IVA)** — seed, ERP sync,
-mapper, and the price/stock webhook all write base. The 16% IVA is added at the
-**single read boundary** `effectivePrice()` in `src/lib/pricing.ts` via
-`withIva()` (IVA_RATE=0.16). catalog/orders/stripe all read through
-`effectivePrice`, so the customer sees Precio Neto. `serializeProduct` also wraps
-`originalPrice` in `withIva()`. **Why:** keeps ingestion paths zero-risk (no
-double-IVA) while showing IVA-inclusive prices. Do NOT add IVA in ingestion.
+# IVA note
+Prices are stored as given by the master (the "Precio Venta" base). Read-boundary
+IVA handling lives in `effectivePrice()`/pricing — see pricing-fallback.md.

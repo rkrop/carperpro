@@ -6,6 +6,7 @@ import type {
   ProductSpec,
 } from "@workspace/db";
 import { getSellableWarehouseIds } from "./config";
+import { resolvePrice } from "./sku";
 
 // Resolved once: the warehouse ids whose `disponible` counts as sellable stock
 // (Matriz + Bodega by default). Anything outside this set — other branches,
@@ -204,14 +205,17 @@ function parseInventory(raw: Raw): {
 }
 
 export function mapProduct(raw: Raw): MappedProduct | null {
-  const id = asId(pick(raw, ["id", "pk"]));
   const name = asString(
     pick(raw, ["nombre", "descripcion", "name", "producto"]),
   );
-  if (!id || !name) return null;
-
+  // Identity is the ERP CODE (sku), not Admintotal's numeric producto id, so the
+  // FASE 1 master import and the FASE 2 live webhooks converge on the SAME row.
+  // Fall back to the numeric id only when no code is present.
   const sku =
     asString(pick(raw, ["clave", "codigo", "sku", "codigo_barras"])) ?? "";
+  const id = sku || asId(pick(raw, ["id", "pk"]));
+  if (!id || !name) return null;
+
   const brand =
     asString(pick(raw, ["marca", "brand", "fabricante"])) ?? "SIN MARCA";
   const categoryId = lineaId(raw) ?? null;
@@ -220,9 +224,16 @@ export function mapProduct(raw: Raw): MappedProduct | null {
   // narrows this to ids that actually exist in the subcategories table.
   const subRaw = sublineaId(raw) ?? null;
   const subcategoryId = subRaw && subRaw !== categoryId ? subRaw : null;
-  const price = asNumber(pick(raw, ["precio", "precio_publico", "precio1"])) ?? 0;
+  const subLinea =
+    asString(pick(raw, ["sublinea_nombre", "sub_linea", "sublinea_descripcion"])) ??
+    null;
+  // Never-price-0 rule: a usable sale price wins; otherwise estimate from costo;
+  // otherwise the product is "sin_precio" (hidden by the catalog). A live ERP push
+  // is recorded as source "Webhook".
+  const precio = asNumber(pick(raw, ["precio", "precio_publico", "precio1"]));
   const costo =
     asNumber(pick(raw, ["costo", "precio_costo", "costo_promedio"])) ?? null;
+  const { price, priceSource, status } = resolvePrice(precio, costo, "Webhook");
   const originalPrice =
     asNumber(pick(raw, ["precio_lista", "precio_anterior", "precio_regular"])) ??
     null;
@@ -255,10 +266,30 @@ export function mapProduct(raw: Raw): MappedProduct | null {
     brand,
     categoryId,
     subcategoryId,
+    subLinea,
     price,
+    priceSource,
+    status,
     costo,
     originalPrice:
       originalPrice !== null && originalPrice > price ? originalPrice : null,
+    descripcionEcommerce:
+      asString(pick(raw, ["descripcion_ecommerce", "descripcion_web"])) ?? null,
+    descripcionAdicional:
+      asString(pick(raw, ["descripcion_adicional", "notas", "observaciones"])) ??
+      null,
+    codigoBarras:
+      asString(pick(raw, ["codigo_barras", "codigobarras", "barcode", "ean"])) ??
+      null,
+    claveSat:
+      asString(
+        pick(raw, ["clave_sat", "claveprodserv", "clave_prod_serv", "clave_sat_producto"]),
+      ) ?? null,
+    proveedor: asString(pick(raw, ["proveedor", "proveedor_nombre"])) ?? null,
+    skuProveedor:
+      asString(
+        pick(raw, ["codigo_proveedor", "sku_proveedor", "clave_proveedor"]),
+      ) ?? null,
     image,
     specs: buildSpecs(raw),
     compatible: false,

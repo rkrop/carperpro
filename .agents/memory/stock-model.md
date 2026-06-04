@@ -12,7 +12,9 @@ Stock is **one number per product, stored on the product row** (`products.erpSto
 
 **API contract** (`lib/api-spec/openapi.yaml`, regenerated into api-zod + api-client-react): every product carries `stock: integer|null` AND `stockState: "in_stock"|"out_of_stock"|"unknown"`. `serializeProduct()` in `artifacts/api-server/src/routes/catalog.ts` derives `stockState` from `erpStockQty`.
 
-**Query layer** (catalog.ts): `sellableProduct()` keeps a row when `coalesce(erpStockQty, 1) > 0` — i.e. unknown (NULL→1) stays visible, only a real 0 is hidden. The old `UNKNOWN_STOCK = 10` sentinel and `stockExpr()` inventory-subquery are GONE. The `sucursalId` query param is still accepted but ignored (single store).
+**Query layer** (catalog.ts): `sellableProduct()` now hides on `status = 'sin_precio'` (the never-price-0 rule, see excel-seed.md / pricing-fallback.md), NOT on stock — unknown AND confirmed-0 stock both stay visible/orderable. The old stock-based hide (`coalesce(erpStockQty,1)>0`), `UNKNOWN_STOCK=10` sentinel and `stockExpr()` inventory-subquery are GONE. The `sucursalId` query param is still accepted but ignored (single store).
+
+**Per-warehouse initial stock:** `product_stock_inicial` (PK productId+almacenId; 001=Matriz, 005=Bodega; existencia+disponible) is the snapshot loaded by the master importer. `erpStockQty` on the product row = sum of disponible and is what catalog/checkout read; the inicial table is the breakdown record, not the live read path.
 
 **Checkout fallback** (`lib/admintotal/liveStock.ts` getDbStock): reads `erpStockQty`, treating NULL as **0 on purpose** — this only runs when the live ERP is unreachable, and blocking an unconfirmable sale beats overselling. The live Stripe checkout stock gate itself is unchanged.
 

@@ -6,11 +6,12 @@ import {
   type NextFunction,
 } from "express";
 import { timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, productsTable, brandsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { getWebhookToken } from "../lib/admintotal/config";
 import { mapProduct } from "../lib/admintotal/mapper";
+import { normalizeSkuBase, ESTIMATED_PRICE_MARKUP } from "../lib/admintotal/sku";
 
 // Inbound Admintotal webhooks. Admintotal POSTs notifications here for:
 //  - price/stock changes  -> /webhooks/admintotal/precios-existencias
@@ -163,7 +164,11 @@ router.post(
       const sku = asSku(
         pick(item, ["sku", "clave", "codigo", "codigo_barras", "clave_producto"]),
       );
-      if (!sku) {
+      // Match on the NORMALIZED base code, so a bare "U52351" updates the stored
+      // "U52351-UNIFLOW" (and any other product sharing that base). Same rule as
+      // the trigger that maintains products.sku_base.
+      const base = normalizeSkuBase(sku);
+      if (!base) {
         // No recognizable identifier: count it instead of silently skipping.
         notFound += 1;
         notFoundSkus.push("(sin identificador)");
@@ -176,33 +181,60 @@ router.post(
         pick(item, ["stock", "existencia", "existencias", "cantidad", "inventario", "disponible"]),
       );
 
-      // Stock lives on the product row (one-number-per-product). Price, cost and
-      // stock all update the same row in a single statement, matched by SKU.
-      const set: Partial<typeof productsTable.$inferInsert> = {};
-      if (precio !== undefined) set.price = precio;
-      if (costo !== undefined) set.costo = costo;
-      if (stock !== undefined) {
-        set.erpStockQty = Math.max(0, Math.round(stock));
+      const hasPriceSignal = precio !== undefined || costo !== undefined;
+      const hasStock = stock !== undefined;
+      if (!hasPriceSignal && !hasStock) continue;
+
+      // Bind null when a field is absent so the SQL CASEs can tell "not sent"
+      // apart and fall through to the stored value.
+      const precioParam = precio !== undefined ? precio : null;
+      const costoParam = costo !== undefined ? costo : null;
+
+      const set: Record<string, unknown> = {};
+      if (hasPriceSignal) {
+        // NEVER-PRICE-0 + never-lower-a-good-price: a usable incoming price wins;
+        // otherwise keep the existing valid price; otherwise estimate from costo
+        // (incoming or stored); otherwise leave it. Status/source follow the same
+        // resolution so the row is consistent.
+        set.price = sql`CASE
+          WHEN ${precioParam}::double precision > 0 THEN ${precioParam}::double precision
+          WHEN ${productsTable.price} > 0 THEN ${productsTable.price}
+          WHEN COALESCE(${costoParam}::double precision, ${productsTable.costo}) > 0
+            THEN round((COALESCE(${costoParam}::double precision, ${productsTable.costo}) * ${ESTIMATED_PRICE_MARKUP})::numeric, 2)::double precision
+          ELSE ${productsTable.price} END`;
+        set.priceSource = sql`CASE
+          WHEN ${precioParam}::double precision > 0 THEN 'Webhook'
+          WHEN ${productsTable.price} > 0 THEN ${productsTable.priceSource}
+          WHEN COALESCE(${costoParam}::double precision, ${productsTable.costo}) > 0 THEN 'Estimado'
+          ELSE ${productsTable.priceSource} END`;
+        set.status = sql`CASE
+          WHEN ${precioParam}::double precision > 0 THEN 'activo'
+          WHEN ${productsTable.price} > 0 THEN 'activo'
+          WHEN COALESCE(${costoParam}::double precision, ${productsTable.costo}) > 0 THEN 'activo'
+          ELSE 'sin_precio' END`;
+        // Only overwrite costo when one actually arrived.
+        if (costoParam !== null) set.costo = costoParam;
+      }
+      if (hasStock) {
+        set.erpStockQty = Math.max(0, Math.round(stock as number));
         set.stockUpdatedAt = new Date();
       }
-
-      if (Object.keys(set).length === 0) continue;
 
       const updated = await db
         .update(productsTable)
         .set(set)
-        .where(eq(productsTable.sku, sku))
+        .where(eq(productsTable.skuBase, base))
         .returning({ id: productsTable.id });
 
       if (updated.length === 0) {
         // Valid identifier but no product matched it: surface it instead of
         // failing silently, so a SKU/clave mismatch is visible in the response.
         notFound += 1;
-        notFoundSkus.push(sku);
+        notFoundSkus.push(base);
         continue;
       }
-      if (precio !== undefined || costo !== undefined) pricesUpdated += updated.length;
-      if (stock !== undefined) stockUpdated += updated.length;
+      if (hasPriceSignal) pricesUpdated += updated.length;
+      if (hasStock) stockUpdated += updated.length;
     }
 
     logger.info(
@@ -278,10 +310,24 @@ router.post(
               name: product.name,
               brand: product.brand,
               categoryId: product.categoryId,
-              price: product.price,
-              costo: product.costo,
+              // Don't let a creation payload that omits a field erase curated
+              // master data — COALESCE keeps the stored value when none arrived.
+              subcategoryId: sql`coalesce(excluded.subcategory_id, ${productsTable.subcategoryId})`,
+              subLinea: sql`coalesce(excluded.sub_linea, ${productsTable.subLinea})`,
+              // NEVER lower a valid price to 0: only adopt the mapped price/source
+              // when it's usable; otherwise keep what's stored.
+              price: sql`CASE WHEN excluded.price > 0 THEN excluded.price ELSE ${productsTable.price} END`,
+              priceSource: sql`CASE WHEN excluded.price > 0 THEN excluded.price_source ELSE ${productsTable.priceSource} END`,
+              status: sql`CASE WHEN excluded.price > 0 THEN 'activo' WHEN ${productsTable.price} > 0 THEN 'activo' ELSE 'sin_precio' END`,
+              costo: sql`coalesce(excluded.costo, ${productsTable.costo})`,
               originalPrice: product.originalPrice,
-              image: product.image,
+              descripcionEcommerce: sql`coalesce(excluded.descripcion_ecommerce, ${productsTable.descripcionEcommerce})`,
+              descripcionAdicional: sql`coalesce(excluded.descripcion_adicional, ${productsTable.descripcionAdicional})`,
+              codigoBarras: sql`coalesce(excluded.codigo_barras, ${productsTable.codigoBarras})`,
+              claveSat: sql`coalesce(excluded.clave_sat, ${productsTable.claveSat})`,
+              proveedor: sql`coalesce(excluded.proveedor, ${productsTable.proveedor})`,
+              skuProveedor: sql`coalesce(excluded.sku_proveedor, ${productsTable.skuProveedor})`,
+              image: sql`coalesce(excluded.image, ${productsTable.image})`,
               specs: product.specs,
               ...stockSet,
             },

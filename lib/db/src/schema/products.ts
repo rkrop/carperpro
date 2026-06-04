@@ -7,6 +7,8 @@ import {
   jsonb,
   timestamp,
   customType,
+  index,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -57,7 +59,19 @@ const vector = customType<{ data: number[]; driverData: string }>({
 // (stringified) so upserts are idempotent. Catalog is a read-only mirror.
 export const productsTable = pgTable("products", {
   id: text("id").primaryKey(),
+  // Full ERP code, WITH supplier suffix if present (e.g. "U52351-UNIFLOW").
   sku: text("sku").notNull().default(""),
+  // Normalized code WITHOUT suffix: part before the first "-", uppercased, spaces
+  // stripped (e.g. "U52351"). This is the join key the price/stock webhook matches
+  // on (it receives the bare "sku" and we normalize it the same way). Maintained
+  // automatically by the `products_search_vector_update` BEFORE INSERT/UPDATE
+  // trigger (never written by hand), so it's omitted from the insert schema below.
+  // Indexed (see table-level index) for fast webhook lookups; NOT unique because
+  // two suffixed products can legitimately share a base.
+  skuBase: text("sku_base"),
+  // Supplier suffix: everything after the first "-" (e.g. "UNIFLOW"), NULL when the
+  // code has no suffix. Also trigger-maintained from `sku`, hence omitted from insert.
+  proveedorSufijo: text("proveedor_sufijo"),
   name: text("name").notNull(),
   brand: text("brand").notNull().default("SIN MARCA"),
   categoryId: text("category_id"),
@@ -65,11 +79,25 @@ export const productsTable = pgTable("products", {
   // when the ERP product has no real (named, non-self) sublinea. Set during
   // sync and only ever points at an existing subcategories row.
   subcategoryId: text("subcategory_id"),
+  // Raw sublínea NAME from the master Excel (e.g. "AISLANTES"). Kept verbatim for
+  // display/search even before a matching `subcategories` row exists; subcategoryId
+  // is the normalized FK, this is the human label.
+  subLinea: text("sub_linea"),
   price: doublePrecision("price").notNull().default(0),
+  // Where `price` came from: "Matriz"/"Bodega" (master Excel Fuente Precio),
+  // "Estimado" (derived costo*1.30 by the never-price-0 rule), "Webhook" (live ERP
+  // price/stock push) or "Manual". NULL when status = "sin_precio".
+  priceSource: text("price_source"),
   originalPrice: doublePrecision("original_price"),
   // Rich product description: vehicle applications, OEM codes, specs, etc.
   // Used for full-text search (tsvector index maintained via DB trigger).
   descripcion: text("descripcion"),
+  // Curated e-commerce description from the master Excel ("Descripción e-commerce").
+  // Customer-facing marketing copy; indexed for search (weight C).
+  descripcionEcommerce: text("descripcion_ecommerce"),
+  // Extra free-form notes from the master Excel ("Descripción Adicional"). Indexed
+  // for search (weight C) so its keywords surface the product.
+  descripcionAdicional: text("descripcion_adicional"),
   // AI-generated sales description (Task #49). Produced offline in batch by
   // description-backfill.ts from the product's REAL ERP data (name, brand,
   // category, specs, vehicles, OEM) — never invented specs/compatibility. Served
@@ -84,6 +112,11 @@ export const productsTable = pgTable("products", {
   costo: doublePrecision("costo"),
   proveedor: text("proveedor"),
   skuProveedor: text("sku_proveedor"),
+  // Supplier barcode ("Código Barras") and SAT product/service key
+  // ("ClaveProdServ (SAT)") from the master Excel. Reference data for invoicing
+  // and scanning; not used for catalog identity.
+  codigoBarras: text("codigo_barras"),
+  claveSat: text("clave_sat"),
   image: text("image"),
   // On-hand stock, mirrored from Admintotal onto the product row — the proven
   // one-number-per-product model. NULL means stock is UNKNOWN (the ERP hasn't
@@ -100,6 +133,11 @@ export const productsTable = pgTable("products", {
   vehicles: text("vehicles").array().notNull().default([]),
   oem: text("oem").array(),
   equivalents: text("equivalents").array(),
+  // Catalog sellability flag set at write time by the never-price-0 rule:
+  //   "activo"     — has a usable price (real, or estimated from costo*1.30).
+  //   "sin_precio" — no price AND no costo: NOT sellable, hidden from the catalog
+  //                  (instead of showing $0). The catalog query filters this out.
+  status: text("status").notNull().default("activo"),
   // Full-text search vector, populated by the `products_search_trigger` DB
   // trigger on every insert/update. The app never writes this directly (hence
   // omitted from the insert schema below); it exists here only so the schema
@@ -116,13 +154,49 @@ export const productsTable = pgTable("products", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
-});
+}, (t) => [
+  // Webhook + catalog lookups join on the normalized base code, so index it.
+  index("products_sku_base_idx").on(t.skuBase),
+]);
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({
   updatedAt: true,
   searchVector: true,
   embedding: true,
   descripcionGenerada: true,
+  // Trigger-maintained from `sku`; never written by the app.
+  skuBase: true,
+  proveedorSufijo: true,
 });
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof productsTable.$inferSelect;
+
+// ── product_stock_inicial ───────────────────────────────────────────────────
+// Per-warehouse stock breakdown captured ONLY at the FASE 1 master-Excel import:
+// one row per (product, almacén) — Matriz = "001", Bodega = "005" — recording the
+// initial `existencia` (on-hand) and `disponible` (sellable). This is an audit /
+// reference snapshot of the import; it is NOT live stock and is NEVER touched by
+// the FASE 2 webhooks (those send a single pre-summed total that updates
+// products.erpStockQty instead). Do not read this for availability — use
+// products.erpStockQty.
+export const productStockInicialTable = pgTable(
+  "product_stock_inicial",
+  {
+    productId: text("product_id").notNull(),
+    almacenId: text("almacen_id").notNull(),
+    existencia: integer("existencia").notNull().default(0),
+    disponible: integer("disponible").notNull().default(0),
+    importedAt: timestamp("imported_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.productId, t.almacenId] })],
+);
+
+export const insertProductStockInicialSchema = createInsertSchema(
+  productStockInicialTable,
+).omit({ importedAt: true });
+export type InsertProductStockInicial = z.infer<
+  typeof insertProductStockInicialSchema
+>;
+export type ProductStockInicial = typeof productStockInicialTable.$inferSelect;

@@ -24,6 +24,8 @@ import {
   productColumns,
   serializeProduct,
   searchCatalog,
+  notTestProduct,
+  sellableProduct,
 } from "../lib/catalogSearch";
 
 const router: IRouter = Router();
@@ -58,7 +60,13 @@ router.get("/subcategories", async (req: Request, res: Response): Promise<void> 
       productsTable,
       eq(productsTable.subcategoryId, subcategoriesTable.id),
     )
-    .where(categoryId ? eq(subcategoriesTable.categoryId, categoryId) : undefined)
+    .where(
+      and(
+        categoryId ? eq(subcategoriesTable.categoryId, categoryId) : undefined,
+        notTestProduct(),
+        sellableProduct(),
+      ),
+    )
     .groupBy(subcategoriesTable.id, subcategoriesTable.categoryId, subcategoriesTable.name)
     .orderBy(subcategoriesTable.name);
   const data = ListSubcategoriesResponse.parse(
@@ -174,7 +182,7 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
   const rows = await db
     .select(productColumns)
     .from(productsTable)
-    .where(eq(productsTable.id, id))
+    .where(and(eq(productsTable.id, id), notTestProduct(), sellableProduct()))
     .limit(1);
   const row = rows[0];
   if (!row) {
@@ -193,6 +201,8 @@ router.get("/deals", async (_req: Request, res: Response): Promise<void> => {
       and(
         sql`${productsTable.originalPrice} is not null`,
         sql`${productsTable.originalPrice} > coalesce(${productsTable.price}, 0)`,
+        notTestProduct(),
+        sellableProduct(),
       ),
     )
     .orderBy(desc(sql`${productsTable.originalPrice} - coalesce(${productsTable.price}, 0)`))

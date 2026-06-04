@@ -11,19 +11,31 @@ import { logger } from "./logger";
 // every `search_vector` so the batched backfill that runs right after re-indexes
 // the whole catalog under the new rules.
 //
-// Weights: sku/name = A, brand/oem = B, descripcion = C, vehicles/specs = D
-// (lowest) so a vehicle/spec match surfaces the product without outranking
-// name/SKU. Config is 'simple' + unaccent to match the tsquery the search route
-// builds — using a different config/accents makes matches silently return 0.
+// This same trigger ALSO derives the normalized code columns from `sku` so they
+// can never drift or be set by hand (the spec requires sku_base auto-generation):
+//   sku_base       = part before the first "-", uppercased, whitespace stripped.
+//   proveedor_sufijo = the part after the first "-" (NULL when there is none).
+// They're computed FIRST so the freshly-set NEW.sku_base feeds the search vector.
 //
-// IMPORTANT: keep this body in sync with the copy in `seed-excel.mjs`, which
-// recreates the same function so a standalone reseed indexes vehicles/specs too.
+// Weights: sku_base/sku/name = A, brand/oem = B, the three descriptions = C,
+// vehicles/specs = D (lowest) so a vehicle/spec match surfaces the product without
+// outranking name/SKU. Config is 'simple' + unaccent to match the tsquery the
+// search route builds — using a different config/accents makes matches silently
+// return 0.
+//
+// IMPORTANT: keep this body in sync with the copy in `import-maestro.mjs`, which
+// recreates the same function so a standalone import indexes everything too.
 const FUNCTION_BODY = `
       BEGIN
+        NEW.sku_base := upper(regexp_replace(split_part(coalesce(NEW.sku, ''), '-', 1), '[[:space:]]+', '', 'g'));
+        NEW.proveedor_sufijo := nullif(trim(substring(coalesce(NEW.sku, '') from '-(.*)$')), '');
         NEW.search_vector :=
+          setweight(to_tsvector('simple', unaccent(coalesce(NEW.sku_base, ''))), 'A') ||
           setweight(to_tsvector('simple', unaccent(coalesce(NEW.sku, ''))), 'A') ||
           setweight(to_tsvector('simple', unaccent(coalesce(NEW.name, ''))), 'A') ||
           setweight(to_tsvector('simple', unaccent(coalesce(NEW.brand, ''))), 'B') ||
+          setweight(to_tsvector('simple', unaccent(coalesce(NEW.descripcion_ecommerce, ''))), 'C') ||
+          setweight(to_tsvector('simple', unaccent(coalesce(NEW.descripcion_adicional, ''))), 'C') ||
           setweight(to_tsvector('simple', unaccent(coalesce(NEW.descripcion, ''))), 'C') ||
           setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.oem, ' '), ''))), 'B') ||
           setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.vehicles, ' '), ''))), 'D') ||

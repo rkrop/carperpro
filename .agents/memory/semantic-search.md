@@ -38,8 +38,8 @@ the background. A paid key removes the wait.
 
 ## Auto re-embed (no hot-path cost) — boot is NOT enough
 A `BEFORE UPDATE` trigger NULLs `embedding` only when searchable content changes
-(name/brand/descripcion/specs/vehicles/oem/category); price/stock churn from ERP
-sync + webhooks does NOT re-embed. The backfill's own embedding-only UPDATE
+(name/brand/descripcion/desc_ecommerce/desc_adicional/specs/vehicles/oem/category);
+price/stock churn from ERP sync + webhooks does NOT re-embed. The backfill's own embedding-only UPDATE
 doesn't self-trigger (content unchanged).
 **Why:** re-embedding ONLY at server boot is a correctness gap — products
 created/content-changed by the recurring sync or webhooks would stay unembedded

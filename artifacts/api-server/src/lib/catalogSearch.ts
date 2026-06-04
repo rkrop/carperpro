@@ -12,15 +12,18 @@ void _omitEmbedding;
 export { productColumns };
 export type CatalogProduct = Omit<DbProduct, "embedding">;
 
-// Sin reglas de filtrado activas — se muestran todos los productos cargados.
-// Las reglas de negocio (stock mínimo, precio mínimo, filtros de prueba) se
-// definirán a partir del archivo maestro que el usuario proporcionará.
+// No hay catálogo de "productos de prueba" que filtrar: el inventario es un
+// espejo real del ERP. Se conserva como no-op para no reescribir cada query.
 export function notTestProduct(): SQL {
   return sql`true`;
 }
 
+// Regla de negocio del maestro: un producto sin precio válido (status
+// 'sin_precio', es decir sin precio de venta ni costo del cual estimar) NO se
+// muestra en el catálogo. Cualquier otro estado es vendible. Aplica la regla
+// "nunca precio 0" desde el lado de la presentación.
 export function sellableProduct(): SQL {
-  return sql`true`;
+  return sql`${productsTable.status} <> 'sin_precio'`;
 }
 
 // Serializa un producto para la API. El precio se expone exactamente como

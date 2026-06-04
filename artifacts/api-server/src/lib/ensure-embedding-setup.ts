@@ -23,6 +23,8 @@ const RESET_FUNCTION = `
       NEW.name IS DISTINCT FROM OLD.name
       OR NEW.brand IS DISTINCT FROM OLD.brand
       OR NEW.descripcion IS DISTINCT FROM OLD.descripcion
+      OR NEW.descripcion_ecommerce IS DISTINCT FROM OLD.descripcion_ecommerce
+      OR NEW.descripcion_adicional IS DISTINCT FROM OLD.descripcion_adicional
       OR NEW.specs IS DISTINCT FROM OLD.specs
       OR NEW.vehicles IS DISTINCT FROM OLD.vehicles
       OR NEW.oem IS DISTINCT FROM OLD.oem
