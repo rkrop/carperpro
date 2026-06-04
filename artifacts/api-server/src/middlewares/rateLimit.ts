@@ -96,21 +96,16 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
   };
 }
 
-// Inbound Admintotal webhooks are verified by a shared token (see webhooks.ts);
-// the Stripe webhook is verified by signature and registered before this
-// limiter. Exempt them so a legitimate burst of ERP price/stock updates (or a
-// retry storm from Stripe) is never throttled.
-function isVerifiedWebhook(req: Request): boolean {
-  return req.path.startsWith("/api/webhooks/") || req.path === "/api/stripe/webhook";
-}
-
 // General limiter for all /api traffic. Generous enough that normal browsing /
 // catalog usage never trips it, while still capping abusive bursts per IP.
+// NOTE: The Stripe webhook is registered before this limiter in the middleware
+// chain (app.ts) so it never reaches this handler. Admintotal webhook paths
+// are intentionally NOT exempted here — authentication must happen first, and
+// exempting by path alone would allow unauthenticated traffic to bypass limits.
 export const generalLimiter: RequestHandler = rateLimit({
   windowMs: 60_000,
   max: 300,
   keyPrefix: "general",
-  skip: isVerifiedWebhook,
   message: "Demasiadas peticiones. Espera un momento e inténtalo de nuevo.",
 });
 

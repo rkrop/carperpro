@@ -74,6 +74,14 @@ app.use(
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
 app.use(cors({ credentials: true, origin: true }));
+
+// Anti-abuse rate limiting. Mounted BEFORE body parsers so that abusive
+// requests are rejected before the server allocates memory to parse their
+// bodies. The Stripe webhook (registered above, before express.json) is
+// already out of this middleware chain. Admintotal webhook paths are NOT
+// exempted — they must prove their token before any special treatment.
+app.use(generalLimiter);
+
 // 8 MB accommodates base64 photo uploads for visual part scanning
 // (/scan/identify); the scan route enforces a tighter per-image ceiling.
 app.use(express.json({ limit: "8mb" }));
@@ -96,12 +104,6 @@ app.use(
 // Clerk session when present, and otherwise resolve our opaque `cps_` token.
 // This makes both login methods transparent to every downstream route.
 app.use(attachPhoneAuth);
-
-// Anti-abuse rate limiting for all /api traffic. Verified webhooks (Admintotal
-// token, Stripe signature) are exempted inside the limiter so legitimate
-// integration traffic is never throttled. Mounted after the body parsers but
-// before the routes so it guards every endpoint.
-app.use(generalLimiter);
 
 app.use("/api", router);
 
