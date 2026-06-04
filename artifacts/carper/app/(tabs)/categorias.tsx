@@ -1,4 +1,4 @@
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
@@ -8,14 +8,13 @@ import { SearchHeader } from "@/components/SearchHeader";
 import { MasBuscados } from "@/components/home/MasBuscados";
 import { Fonts, TAB_BAR_HEIGHT } from "@/constants/fonts";
 import { useCategories } from "@/data/catalog";
-import { categoryIconAsset, FEATURED_CATEGORIES } from "@/lib/categoryAssets";
+import { FEATURED_CATEGORIES } from "@/lib/categoryAssets";
 import { useColors } from "@/hooks/useColors";
 
 export default function Categorias() {
   const c = useColors();
   const router = useRouter();
   const { data: categories, isLoading, isError, error } = useCategories();
-  const popularCats = categories ? [...categories].sort((a, b) => b.count - a.count).slice(0, 9) : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
@@ -45,56 +44,28 @@ export default function Categorias() {
         <EmptyState icon="grid" title="Sin categorías" message="Aún no hay categorías en el catálogo." />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + 24 }}>
-          {/* Destacadas — visual entry points */}
-          <View style={{ paddingTop: 24, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: c.border }}>
-            <SectionLabel style={{ paddingHorizontal: 24, marginBottom: 16 }}>Destacadas</SectionLabel>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, gap: 14, paddingBottom: 16 }}>
+          {/* Destacadas — visual grid entry points */}
+          <View style={{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <SectionLabel style={{ marginBottom: 18 }}>Destacadas</SectionLabel>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
               {FEATURED_CATEGORIES.map((f) => (
                 <Pressable
                   key={f.label}
                   onPress={() => router.push(f.href as never)}
-                  style={({ pressed }) => ({ width: 280, borderWidth: 1, borderColor: pressed ? c.borderStrong : c.border, backgroundColor: c.background })}
+                  style={({ pressed }) => ({ width: "48.5%", marginBottom: 14, borderWidth: 1, borderColor: pressed ? c.borderStrong : c.border, backgroundColor: c.background, overflow: "hidden" })}
                 >
-                  <View style={{ width: "100%", height: 100, backgroundColor: c.neutral100 }}>
+                  <View style={{ width: "100%", aspectRatio: 4 / 3, backgroundColor: c.neutral100 }}>
                     <Image source={f.image} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
                   </View>
-                  <View style={{ paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.border }}>
-                    <Text style={{ fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: c.foreground }} numberOfLines={1}>
+                  <View style={{ paddingHorizontal: 12, paddingVertical: 11, minHeight: 46, justifyContent: "center", borderTopWidth: 1, borderTopColor: c.border }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 0.5, lineHeight: 14, textTransform: "uppercase", color: c.foreground }} numberOfLines={2}>
                       {f.label}
                     </Text>
                   </View>
                 </Pressable>
               ))}
-            </ScrollView>
-          </View>
-
-          {/* Categorías populares — top categories by count */}
-          {popularCats.length > 0 ? (
-            <View style={{ paddingHorizontal: 24, paddingTop: 32, paddingBottom: 8 }}>
-              <SectionLabel style={{ marginBottom: 20 }}>Categorías Populares</SectionLabel>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", borderTopWidth: 1, borderLeftWidth: 1, borderColor: c.border }}>
-                {popularCats.map((cat) => {
-                  const iconAsset = categoryIconAsset(cat.name);
-                  return (
-                    <Pressable
-                      key={cat.id}
-                      onPress={() => router.push(`/subcategorias?category=${cat.id}&name=${encodeURIComponent(cat.name)}`)}
-                      style={({ pressed }) => ({ width: "33.333%", aspectRatio: 1, borderRightWidth: 1, borderBottomWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", gap: 8, padding: 8, backgroundColor: pressed ? c.neutral50 : c.background })}
-                    >
-                      {iconAsset ? (
-                        <Image source={iconAsset} style={{ width: 40, height: 40 }} resizeMode="contain" />
-                      ) : (
-                        <MaterialCommunityIcons name={cat.icon as any} size={22} color={c.foreground} />
-                      )}
-                      <Text style={{ fontFamily: Fonts.bold, fontSize: 8, letterSpacing: 1, textTransform: "uppercase", color: c.foreground, textAlign: "center" }} numberOfLines={2}>
-                        {cat.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
             </View>
-          ) : null}
+          </View>
 
           {/* Más buscados — real catalog products */}
           <MasBuscados />
