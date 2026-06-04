@@ -11,7 +11,7 @@ import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/spac
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ClerkProvider, ClerkLoaded } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
@@ -23,6 +23,7 @@ import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PhoneAuthProvider, useAuth } from "@/lib/auth";
+import { OnboardingProvider, useOnboarding } from "@/lib/onboarding";
 import { registerPushToken } from "@/lib/push";
 import { AppProvider } from "@/context/AppContext";
 import { CartProvider } from "@/context/CartContext";
@@ -54,6 +55,29 @@ function ApiAuthBridge() {
   return null;
 }
 
+// One-time welcome/onboarding gate. Login is OPTIONAL, so this is NOT a hard
+// auth wall: on first launch (flag unset) an un-signed-in user is sent to the
+// welcome screen, which sells the app and offers create-account / sign-in /
+// explore-as-guest. Any of those marks the flag so the gate never fires again.
+function OnboardingGate() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const { loaded, seen } = useOnboarding();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loaded || !isLoaded) return;
+    const top = segments[0];
+    const inWelcome = top === "bienvenida";
+    const inAuth = top === "(auth)";
+    if (!seen && !isSignedIn && !inWelcome && !inAuth) {
+      router.replace("/bienvenida");
+    }
+  }, [loaded, seen, isLoaded, isSignedIn, segments, router]);
+
+  return null;
+}
+
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
@@ -75,6 +99,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="bienvenida" options={{ animation: "fade" }} />
       <Stack.Screen name="(auth)" options={{ presentation: "modal" }} />
       <Stack.Screen name="direcciones" />
       <Stack.Screen name="subcategorias" />
@@ -130,13 +155,16 @@ export default function RootLayout() {
             <QueryClientProvider client={queryClient}>
               <GestureHandlerRootView>
                 <KeyboardProvider>
-                  <ApiAuthBridge />
-                  <AppProvider>
-                    <CartProvider>
-                      <StatusBar style="dark" />
-                      <RootLayoutNav />
-                    </CartProvider>
-                  </AppProvider>
+                  <OnboardingProvider>
+                    <ApiAuthBridge />
+                    <OnboardingGate />
+                    <AppProvider>
+                      <CartProvider>
+                        <StatusBar style="dark" />
+                        <RootLayoutNav />
+                      </CartProvider>
+                    </AppProvider>
+                  </OnboardingProvider>
                 </KeyboardProvider>
               </GestureHandlerRootView>
             </QueryClientProvider>

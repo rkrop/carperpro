@@ -156,6 +156,24 @@ uri = "file://artifacts/carper/assets/images/blog/hilux-partes-mas-pedidas.png"
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "_UGnIcn6I3OR5Vson9hl9"
+uri = "file://artifacts/carper/assets/images/onboarding/click.png"
+type = "image"
+title = "one click shopping"
+
+[[generated]]
+id = "JannoX-53oVa7B0S0SlIZ"
+uri = "file://artifacts/carper/assets/images/onboarding/pocket.png"
+type = "image"
+title = "parts store in pocket"
+
+[[generated]]
+id = "Jr5GReeQ3l-rgKH2qxNlh"
+uri = "file://artifacts/carper/assets/images/onboarding/ai-search.png"
+type = "image"
+title = "ai smart search"
+
 [[outputs]]
 id = "hG-qDlAXGY5g_S3Ui0J5K"
 uri = "file://exports/inventario_carper.xlsx"
