@@ -41,6 +41,8 @@ import type {
   PostalCode,
   Product,
   ProductPage,
+  ScanIdentifyInput,
+  ScanResult,
   Subcategory,
   Sucursal,
   SyncStatus,
@@ -1088,6 +1090,77 @@ export const useCreateAssistantChat = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getCreateAssistantChatMutationOptions(options));
+    }
+
+export const getScanIdentifyUrl = () => {
+
+
+
+
+  return `/api/scan/identify`
+}
+
+/**
+ * @summary Identify an auto part from a photo and return matching catalog products
+ */
+export const scanIdentify = async (scanIdentifyInput: ScanIdentifyInput, options?: RequestInit): Promise<ScanResult> => {
+
+  return customFetch<ScanResult>(getScanIdentifyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      scanIdentifyInput,)
+  }
+);}
+
+
+
+
+export const getScanIdentifyMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof scanIdentify>>, TError,{data: BodyType<ScanIdentifyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof scanIdentify>>, TError,{data: BodyType<ScanIdentifyInput>}, TContext> => {
+
+const mutationKey = ['scanIdentify'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof scanIdentify>>, {data: BodyType<ScanIdentifyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  scanIdentify(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ScanIdentifyMutationResult = NonNullable<Awaited<ReturnType<typeof scanIdentify>>>
+    export type ScanIdentifyMutationBody = BodyType<ScanIdentifyInput>
+    export type ScanIdentifyMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Identify an auto part from a photo and return matching catalog products
+ */
+export const useScanIdentify = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof scanIdentify>>, TError,{data: BodyType<ScanIdentifyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof scanIdentify>>,
+        TError,
+        {data: BodyType<ScanIdentifyInput>},
+        TContext
+      > => {
+      return useMutation(getScanIdentifyMutationOptions(options));
     }
 
 export const getGetMeUrl = () => {

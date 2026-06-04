@@ -107,6 +107,19 @@ export interface AssistantChatResponse {
   products: Product[];
 }
 
+export interface ScanIdentifyInput {
+  imageBase64: string;
+  /** @nullable */
+  mimeType?: string | null;
+}
+
+export interface ScanResult {
+  recognized: boolean;
+  label: string;
+  query: string;
+  products: Product[];
+}
+
 export type ProductAvailabilityStockState = typeof ProductAvailabilityStockState[keyof typeof ProductAvailabilityStockState];
 
 

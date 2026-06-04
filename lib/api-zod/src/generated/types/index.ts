@@ -34,6 +34,8 @@ export * from './productAvailability';
 export * from './productAvailabilityStockState';
 export * from './productPage';
 export * from './productStockState';
+export * from './scanIdentifyInput';
+export * from './scanResult';
 export * from './shippingAddress';
 export * from './spec';
 export * from './subcategory';

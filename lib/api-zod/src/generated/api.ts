@@ -324,6 +324,43 @@ export const CreateAssistantChatResponse = zod.object({
 
 
 /**
+ * @summary Identify an auto part from a photo and return matching catalog products
+ */
+export const ScanIdentifyBody = zod.object({
+  "imageBase64": zod.string(),
+  "mimeType": zod.string().nullish()
+})
+
+export const ScanIdentifyResponse = zod.object({
+  "recognized": zod.boolean(),
+  "label": zod.string(),
+  "query": zod.string(),
+  "products": zod.array(zod.object({
+  "id": zod.string(),
+  "sku": zod.string(),
+  "name": zod.string(),
+  "brand": zod.string(),
+  "price": zod.number(),
+  "originalPrice": zod.number().nullish(),
+  "stock": zod.number().nullable(),
+  "stockState": zod.enum(['in_stock', 'out_of_stock', 'unknown']),
+  "categoryId": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "image": zod.string().nullish(),
+  "compatible": zod.boolean(),
+  "specs": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})),
+  "vehicles": zod.array(zod.string()),
+  "oem": zod.array(zod.string()).nullish(),
+  "equivalents": zod.array(zod.string()).nullish(),
+  "descripcion": zod.string().nullish()
+}))
+})
+
+
+/**
  * @summary Get the signed-in user's profile
  */
 export const GetMeResponse = zod.object({

@@ -308,6 +308,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /scan/identify:
+    post:
+      operationId: scanIdentify
+      tags: [scan]
+      summary: Identify an auto part from a photo and return matching catalog products
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanIdentifyInput"
+      responses:
+        "200":
+          description: Identification result with grounded product matches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanResult"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /me:
     get:
       operationId: getMe
@@ -642,6 +666,31 @@ components:
         # Real catalog products recommended this turn (empty while the assistant
         # is still gathering info or when nothing matched). Rendered as cards by
         # the client — prices/SKUs live here, never invented in `reply`.
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+    ScanIdentifyInput:
+      type: object
+      required: [imageBase64]
+      properties:
+        # Raw base64 of a JPEG/PNG photo of the part (no `data:` URI prefix).
+        imageBase64: { type: string }
+        # MIME type of the image; defaults to image/jpeg when omitted.
+        mimeType: { type: ["string", "null"] }
+    ScanResult:
+      type: object
+      required: [recognized, label, query, products]
+      properties:
+        # Whether the vision model confidently identified an auto part.
+        recognized: { type: boolean }
+        # Short es-MX name of the identified part (e.g. "Bomba de gasolina");
+        # empty string when nothing was recognized.
+        label: { type: string }
+        # Catalog search terms derived from the image (part type + features).
+        query: { type: string }
+        # Real catalog products matching the identified part (empty if none or
+        # nothing recognized). Rendered as cards by the client.
         products:
           type: array
           items:

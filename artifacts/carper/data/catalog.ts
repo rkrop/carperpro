@@ -4,6 +4,7 @@ import { ImageSourcePropType } from "react-native";
 import {
   useCreateAssistantChat,
   useCreateOrder,
+  useScanIdentify,
   useGetDeals,
   getGetProductsAvailabilityQueryKey,
   getListSubcategoriesQueryKey,
@@ -257,6 +258,46 @@ export function useAssistantChat() {
   }
 
   return { send, isPending: mutation.isPending };
+}
+
+/** Result of identifying a part from a photo (Camino B / visual scanner). */
+export interface ScanIdentifyResult {
+  /** True only when a part was recognized AND has catalog matches. */
+  recognized: boolean;
+  /** Short es-MX name of the detected part (e.g. "Bomba de gasolina"). */
+  label: string;
+  /** Search terms the model derived from the photo. */
+  query: string;
+  /** Real catalog products that match the detected part. */
+  products: Product[];
+}
+
+/**
+ * Visual part finder: send a base64 photo of a refacción and get back the
+ * detected part plus REAL catalog products that match it. The server identifies
+ * the part with a multimodal model and grounds the result in the shared catalog
+ * search — it never invents products. Degrades to `recognized:false` when the
+ * part can't be identified or has no catalog matches.
+ */
+export function useScanIdentifyPart() {
+  const mutation = useScanIdentify();
+
+  async function identify(
+    imageBase64: string,
+    mimeType?: string,
+  ): Promise<ScanIdentifyResult> {
+    const res = await mutation.mutateAsync({
+      data: { imageBase64, mimeType: mimeType ?? null },
+    });
+    return {
+      recognized: res.recognized,
+      label: res.label,
+      query: res.query,
+      products: res.products.map(mapProduct),
+    };
+  }
+
+  return { identify, isPending: mutation.isPending };
 }
 
 /** Resolve a local category icon from a category id, using the cached list. */

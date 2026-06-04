@@ -74,7 +74,9 @@ app.use(
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
 app.use(cors({ credentials: true, origin: true }));
-app.use(express.json());
+// 8 MB accommodates base64 photo uploads for visual part scanning
+// (/scan/identify); the scan route enforces a tighter per-image ceiling.
+app.use(express.json({ limit: "8mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Resolve the publishable key from the request host so the same server can
