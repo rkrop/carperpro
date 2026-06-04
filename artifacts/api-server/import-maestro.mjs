@@ -33,7 +33,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const { Pool } = require("../../lib/db/node_modules/pg/lib/index.js");
-const { read: xlsxRead, utils } = require("xlsx");
+const ExcelJS = require("exceljs");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -123,9 +123,31 @@ function resolvePrice(precio, costo, sourceWhenValid) {
 async function main() {
   // ── 1. Leer el maestro ──────────────────────────────────────────────────────
   const filePath = resolve(__dirname, "../../attached_assets/", MASTER_FILE);
-  const wb = xlsxRead(readFileSync(filePath), { type: "buffer" });
-  const ws = wb.Sheets[SHEET] ?? wb.Sheets[wb.SheetNames[0]];
-  const rows = utils.sheet_to_json(ws, { defval: null });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(readFileSync(filePath));
+  const ws = wb.getWorksheet(SHEET) ?? wb.worksheets[0];
+
+  const headers = [];
+  const rows = [];
+  ws.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) {
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        headers[colNumber] = cell.value != null ? String(cell.value) : null;
+      });
+    } else {
+      const obj = {};
+      headers.forEach((header, colNumber) => {
+        if (header) {
+          const cell = row.getCell(colNumber);
+          let v = cell.value;
+          if (v && typeof v === "object" && "result" in v) v = v.result;
+          obj[header] = v ?? null;
+        }
+      });
+      rows.push(obj);
+    }
+  });
+
   console.log(`Leídas ${rows.length} filas de ${MASTER_FILE} (hoja ${SHEET}).`);
 
   const products = [];

@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
 const { Pool } = require("../../lib/db/node_modules/pg/lib/index.js");
-const { utils, writeFile } = require("xlsx");
+const ExcelJS = require("exceljs");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(__dirname, "../../exports/inventario_carper.xlsx");
@@ -38,10 +38,14 @@ async function main() {
 
   const data = rows.map((r) => ({ ...r, OEM: arr(r.OEM) }));
 
+  const wb = new ExcelJS.Workbook();
+
   // Hoja 1: productos
-  const wb = utils.book_new();
-  const ws = utils.json_to_sheet(data);
-  utils.book_append_sheet(wb, ws, "MAESTRO");
+  const ws = wb.addWorksheet("MAESTRO");
+  if (data.length > 0) {
+    ws.columns = Object.keys(data[0]).map((key) => ({ header: key, key }));
+    data.forEach((row) => ws.addRow(row));
+  }
 
   // Hoja 2: resumen por línea
   const { rows: resumen } = await pool.query(`
@@ -55,9 +59,13 @@ async function main() {
     GROUP BY c.name
     ORDER BY count(*) DESC
   `);
-  utils.book_append_sheet(wb, utils.json_to_sheet(resumen), "RESUMEN");
+  const ws2 = wb.addWorksheet("RESUMEN");
+  if (resumen.length > 0) {
+    ws2.columns = Object.keys(resumen[0]).map((key) => ({ header: key, key }));
+    resumen.forEach((row) => ws2.addRow(row));
+  }
 
-  writeFile(wb, OUT);
+  await wb.xlsx.writeFile(OUT);
   console.log(`Exportados ${data.length} productos a ${OUT}`);
   console.log(`Líneas: ${resumen.length}`);
   await pool.end();
