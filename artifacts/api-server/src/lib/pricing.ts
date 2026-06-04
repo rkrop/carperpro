@@ -8,9 +8,14 @@ export function withIva(amount: number): number {
   return Math.round(amount * (1 + IVA_RATE) * 100) / 100;
 }
 
+export const ESTIMATED_PRICE_MARKUP = 1.3;
+
 export function effectivePrice(row: {
   price: number | null;
   costo: number | null;
 }): number {
-  return row.price ?? 0;
+  if (row.price != null && row.price > 0) return row.price;
+  if (row.costo != null && row.costo > 0)
+    return Math.round(row.costo * ESTIMATED_PRICE_MARKUP * 100) / 100;
+  return 0;
 }
