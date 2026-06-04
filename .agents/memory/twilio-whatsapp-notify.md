@@ -33,11 +33,19 @@ and reach Twilio with correct auth yet never deliver until the user registers a
 WhatsApp sender (Meta verification, can take days) or you use the Sandbox
 (`whatsapp:+14155238886`, recipient must `join` first, 24 h window).
 
-**How to apply:** keep the channel configurable via env
-(`CARPER_NOTIFY_WHATSAPP_FROM/TO`, optional `CARPER_NOTIFY_WHATSAPP_TEMPLATE_SID`)
-so switching sender, sandbox, or SMS is a config change, not a code change.
-SMS (plain `From`/`To`, no `whatsapp:`) works immediately with the existing
-`phone_number` and needs no sender registration or template.
+**How to apply:** keep the channel configurable via env so switching sender,
+sandbox, or channel is a config change, not a code change.
+
+## Current state: SMS is the active channel
+Carper's paid-order notification now sends **plain SMS** (the WhatsApp template
+path was removed) because SMS needs no registered sender and no approved Content
+template — it works immediately. Config: `CARPER_NOTIFY_SMS_TO` (required) and
+optional `CARPER_NOTIFY_SMS_FROM` (defaults to the connection's `phone_number`).
+SMS body is **plain text only** — no emojis, no markdown asterisks: asterisks
+render literally and emojis force UCS-2 (fewer chars per billable segment).
+**Why:** WhatsApp delivery was blocked on a fresh account (63007, no sender), so
+the user chose SMS for simpler Twilio setup; the WhatsApp gates above are kept
+for if/when WhatsApp is revisited.
 
 ## Exactly-once paid notification
 Card orders fire the notification at the single-winner unpaid→paid transition:
