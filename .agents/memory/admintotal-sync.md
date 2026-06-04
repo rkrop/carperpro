@@ -135,8 +135,9 @@ fresh between full passes. Per-tick it picks a small batch (`getTargetedRefreshB
 default 25): recently-ordered product ids (parsed from `outbound_orders.lines`
 jsonb, last `getTargetedRefreshOrderLookbackDays` days) first, then backfilled with
 the stalest known-stock rows (`erp_stock_qty is not null` ordered by
-`stock_updated_at asc nulls first`). Each id is refreshed via `getProductoById`
-(detail endpoint), stock recomputed with the shared `mapProduct` → `stockQty`.
+`stock_updated_at asc nulls first`). Each id is refreshed via `getProductoByCodigo`
+(exact-match `?codigo=`, NOT the pk-keyed detail route — see the codigo-lookup
+section above), stock recomputed with the shared mapper → `stockQty`.
 
 **Why coexist, not compete:** the targeted pass SKIPS entirely while `isSyncing()`
 is true (full pass mid-flight) so the two never fight the same ERP rate-limit
@@ -148,6 +149,30 @@ leave untouched (same defensive rule as the full sync).
 `col nulls first asc`; write the whole clause as one raw `sql\`col asc nulls first\``.
 Config knobs: `ADMINTOTAL_TARGETED_REFRESH_INTERVAL_MS` (30s floor),
 `ADMINTOTAL_TARGETED_REFRESH_BATCH` (1..200), `ADMINTOTAL_TARGETED_REFRESH_ORDER_DAYS`.
+
+## Per-product live lookup MUST use `?codigo=`, NOT the detail-by-id route
+Our catalog stores products keyed by **código** (`products.id === código === sku`,
+e.g. `"02537"`), because the mapper derives id from `clave/codigo/sku`. But the
+ERP detail route **`productos/{id}/` keys on Admintotal's INTERNAL numeric pk**.
+So `getProductoById("02537")` makes the ERP read it as **pk 2537** and return a
+COMPLETELY DIFFERENT product (a different part, often inactive/0-stock) — NOT a
+404, so it silently looks "valid". The correct single-product lookup is
+`getProductoByCodigo(codigo)` → exact-match `?codigo=` filter on `productos/`
+(only the first page; require `row.codigo === codigo`, else null = unavailable).
+
+**Why:** a live, in-stock part (código 02537: Bodega 2 + Matriz 1 = 3 sellable,
+activo, $407.57) was reported `disponible: 0` and BLOCKED card checkout, because
+the live stock gate (`liveStock.ts`) and targeted refresh (`targetedRefresh.ts`)
+both passed the código to the pk-keyed detail route and read a wrong product
+(pk 2537 = an inactive "CONECTOR 4 VIAS" at 0). The detail route returns wrong
+data **without erroring** — that's what made it look like a real stockout.
+
+**How to apply:** Any per-product ERP fetch keyed by our stored id MUST go through
+`getProductoByCodigo`. Never reintroduce `getProductoById(ourId)` for stock/price
+checks. `getProductoById` (pk route) is only correct if you genuinely hold an ERP
+pk, which we never store. The `?codigo=` filter is server-honored exact-match
+(confirmed: returns count 1 for the right product); the pk image-probe note below
+still used `productos/{id}/` with a real pk for that one diagnostic.
 
 ## The v2 API exposes only ONE image per product (`imagen_url`)
 The `productos/{id}/` detail payload carries a single `imagen_url` string and no

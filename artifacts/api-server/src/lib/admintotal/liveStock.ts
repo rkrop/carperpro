@@ -93,8 +93,10 @@ export async function getLiveSellableStock(
     while (cursor < toFetch.length) {
       const id = toFetch[cursor++];
       try {
-        const raw = await client.getProductoById(id);
-        // 404 -> the product no longer exists in the ERP: treat as unavailable.
+        // Our ids ARE códigos, so look up by código (the detail-by-id route
+        // keys on the internal pk and returns the WRONG product).
+        const raw = await client.getProductoByCodigo(id);
+        // No match -> the product no longer exists in the ERP: treat as unavailable.
         const value = raw ? sellableFromRaw(raw) : 0;
         available.set(id, value);
         liveStockCache.set(id, { value, at: Date.now() });

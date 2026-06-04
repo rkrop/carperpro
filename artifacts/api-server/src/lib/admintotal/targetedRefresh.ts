@@ -179,9 +179,11 @@ export async function runTargetedStockRefresh(): Promise<TargetedRefreshResult> 
       while (cursor < ids.length) {
         const id = ids[cursor++];
         try {
-          const raw = await client.getProductoById(id);
+          // Our ids ARE códigos; look up by código (detail-by-id route keys on
+          // the internal pk and returns the WRONG product).
+          const raw = await client.getProductoByCodigo(id);
           if (!raw) {
-            // 404 -> the product no longer exists in the ERP. Mark it off-shelf
+            // No match -> the product no longer exists in the ERP. Mark it off-shelf
             // (the full pass will prune it on its next complete cycle).
             await applyStock(id, 0);
             notFound += 1;

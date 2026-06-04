@@ -438,6 +438,58 @@ export class AdmintotalClient {
     }
   }
 
+  /**
+   * Fetch a single product by its CÓDIGO via the exact-match `?codigo=` filter.
+   * This — NOT `getProductoById` — is the correct lookup for the ids we store,
+   * because `products.id === código` while the detail route `productos/{id}/`
+   * keys on Admintotal's INTERNAL numeric pk. Passing a código like "02537" to
+   * the detail route makes the ERP read it as pk 2537 and return a COMPLETELY
+   * DIFFERENT product, which is how a live, in-stock part was being reported as
+   * `disponible: 0` and blocking card checkout.
+   *
+   * Only the first page is fetched (the exact-match filter yields a single row),
+   * keeping this one bounded request. Returns null when no row's código matches
+   * exactly — the fail-safe direction for a stock gate (treat as unavailable
+   * rather than risk approving the wrong product).
+   */
+  async getProductoByCodigo(
+    codigo: string,
+  ): Promise<Record<string, unknown> | null> {
+    const url = this.buildUrl("productos/", { codigo });
+    const resp = await this.request<
+      { results?: Record<string, unknown>[] } | Record<string, unknown>[]
+    >("GET", url);
+    const results = Array.isArray(resp)
+      ? resp
+      : Array.isArray(resp?.results)
+        ? resp.results
+        : [];
+    const want = codigo.trim();
+    const exact = results.filter(
+      (r) =>
+        String((r as Record<string, unknown>).codigo ?? "").trim() === want,
+    );
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) {
+      // Ambiguous: duplicate códigos in the ERP. For a stock gate, fail safe
+      // (treat as unavailable) rather than guess which row is authoritative.
+      logger.warn(
+        { codigo, matches: exact.length },
+        "Admintotal: múltiples productos con el mismo código, se omite por seguridad",
+      );
+      return null;
+    }
+    if (results.length > 0) {
+      // Non-empty response but no exact código match -> the `?codigo=` filter
+      // may have been ignored (it would then return unrelated catalog rows).
+      logger.warn(
+        { codigo, returned: results.length },
+        "Admintotal: ?codigo= devolvió filas sin coincidencia exacta",
+      );
+    }
+    return null;
+  }
+
   async getAlmacenes(): Promise<Record<string, unknown>[]> {
     return this.fetchAll<Record<string, unknown>>("almacenes/");
   }
