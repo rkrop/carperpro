@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "rL174yP_avd4V9fDfGMmb"
@@ -96,3 +95,9 @@ id = "eXkGMumLrk1CyBeKOHrAf"
 uri = "file://artifacts/carper/assets/images/tips/afinacion.png"
 type = "image"
 title = "tune up tip"
+
+[[outputs]]
+id = "hG-qDlAXGY5g_S3Ui0J5K"
+uri = "file://exports/inventario_carper.xlsx"
+type = "table"
+title = "Inventario Carper — 13,905 productos"
