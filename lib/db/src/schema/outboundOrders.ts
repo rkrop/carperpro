@@ -87,6 +87,10 @@ export const outboundOrdersTable = pgTable(
   // reach the buyer even when they checked out as a guest. Null when the device
   // hadn't registered for push (denied permission, web, etc.).
   pushToken: text("push_token"),
+  // Random token issued at checkout for guest orders (userId IS NULL). Required
+  // alongside orderId when a caller tries to read back a guest order — prevents
+  // enumeration via sequential integer ids.
+  guestToken: text("guest_token"),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

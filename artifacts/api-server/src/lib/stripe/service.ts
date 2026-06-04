@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { eq, inArray, and, isNotNull, gt, lt, or } from "drizzle-orm";
 import {
   db,
@@ -105,7 +106,7 @@ export function orderToClient(order: OutboundOrder): ClientOrder {
  */
 export async function createCardCheckoutSession(
   input: CreateCheckoutInput,
-): Promise<{ url: string; orderId: number; folio: string }> {
+): Promise<{ url: string; orderId: number; folio: string; guestToken: string | null }> {
   if (!input.lines || input.lines.length === 0) {
     throw new CheckoutError(400, "El pedido no tiene productos");
   }
@@ -195,6 +196,9 @@ export async function createCardCheckoutSession(
 
   const total = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
   const folio = makeFolio();
+  // Guest orders get a random token that must accompany any read-back request.
+  // This prevents enumeration via sequential integer ids.
+  const guestToken = input.userId ? null : randomUUID();
 
   const inserted = await db
     .insert(outboundOrdersTable)
@@ -202,6 +206,7 @@ export async function createCardCheckoutSession(
       folio,
       status: "awaiting_payment",
       userId: input.userId ?? null,
+      guestToken,
       sucursalId,
       entrega: input.entrega,
       pago: "Tarjeta",
@@ -250,7 +255,7 @@ export async function createCardCheckoutSession(
       .set({ stripeSessionId: session.id })
       .where(eq(outboundOrdersTable.id, order.id));
 
-    return { url: session.url, orderId: order.id, folio };
+    return { url: session.url, orderId: order.id, folio, guestToken };
   } catch (err) {
     // Roll the order back to failed so it never lingers as a phantom order.
     await db

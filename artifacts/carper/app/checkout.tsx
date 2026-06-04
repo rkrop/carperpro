@@ -26,7 +26,7 @@ import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { formatMXN } from "@/lib/format";
 import { STORE } from "@/lib/store";
-import { startCardCheckout, verifyPayment, type VerifiedOrder } from "@/lib/stripeCheckout";
+import { startCardCheckout, verifyPayment, consumeStoredGuestToken, type VerifiedOrder } from "@/lib/stripeCheckout";
 import { getExpoPushToken } from "@/lib/push";
 
 type Entrega = "tienda" | "envio";
@@ -329,12 +329,15 @@ export default function Checkout() {
     if (Platform.OS !== "web" || webReturnHandled.current) return;
     let orderId: number | null = null;
     let status: string | null = null;
+    let guestToken: string | null = null;
     try {
       const params = new URLSearchParams(window.location.search);
       status = params.get("status");
       const fromQuery = params.get("order");
       const fromStore = window.sessionStorage.getItem("carper_stripe_order");
       orderId = fromQuery ? Number(fromQuery) : fromStore ? Number(fromStore) : null;
+      // Consume the stored guest token (one-time use — cleared by the helper).
+      guestToken = consumeStoredGuestToken();
     } catch {
       return;
     }
@@ -355,7 +358,7 @@ export default function Checkout() {
     }
 
     setSubmitting(true);
-    verifyPayment(orderId)
+    verifyPayment(orderId, guestToken)
       .then((order) => {
         if (order && order.status === "cancelled") {
           // Sold out during payment — never treat as a successful purchase, even
@@ -425,7 +428,7 @@ export default function Checkout() {
         });
         if (result.mode === "native") {
           // Browser closed — verify authoritatively before confirming.
-          const order = await verifyPayment(result.orderId);
+          const order = await verifyPayment(result.orderId, result.guestToken);
           if (order && order.status === "cancelled") {
             // Sold out during payment — never treat as a successful purchase,
             // even if paymentStatus is still "paid" (refund pending).

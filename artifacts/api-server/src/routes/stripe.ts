@@ -111,6 +111,25 @@ router.get("/stripe/return", (req: Request, res: Response): void => {
 // the app scheme; "exp" is Expo Go during development.
 const ALLOWED_APP_SCHEMES = new Set(["carper", "exp"]);
 
+/**
+ * Collect the set of bare hostnames (no port) that belong to this deployment.
+ * We read REPLIT_DOMAINS (comma-separated list of all public domains) and
+ * REPLIT_DEV_DOMAIN (the preview tunnel host). Only these exact hosts are
+ * treated as first-party — we do NOT allow arbitrary *.replit.* subdomains
+ * because those could be attacker-controlled Replit deployments.
+ */
+function getFirstPartyHosts(): Set<string> {
+  const hosts = new Set<string>();
+  const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
+  for (const d of domains) {
+    const bare = d.trim().split(":")[0];
+    if (bare) hosts.add(bare);
+  }
+  const dev = process.env.REPLIT_DEV_DOMAIN?.trim().split(":")[0];
+  if (dev) hosts.add(dev);
+  return hosts;
+}
+
 function isAllowedDest(dest: string): boolean {
   const lower = dest.toLowerCase();
 
@@ -120,19 +139,13 @@ function isAllowedDest(dest: string): boolean {
     return match !== null && ALLOWED_APP_SCHEMES.has(match[1]);
   }
 
-  // Web: our own public host, or a first-party Replit-served host (the Expo web
-  // app and the api-server can live on different *.replit.dev/.app subdomains).
+  // Web: only our own domains or localhost (dev). We do not accept arbitrary
+  // *.replit.* domains — those may belong to attacker-controlled deployments.
   try {
-    const destHost = new URL(dest).host;
-    const ownHost = new URL(getPublicBaseUrl()).host;
-    if (destHost === ownHost) return true;
-    const bare = destHost.split(":")[0];
-    return (
-      bare === "localhost" ||
-      bare.endsWith(".replit.dev") ||
-      bare.endsWith(".replit.app") ||
-      bare.endsWith(".repl.co")
-    );
+    const bare = new URL(dest).host.split(":")[0];
+    if (bare === "localhost") return true;
+    const firstParty = getFirstPartyHosts();
+    return firstParty.has(bare);
   } catch {
     return false;
   }
@@ -157,11 +170,20 @@ router.post("/stripe/verify", writeLimiter, async (req: Request, res: Response):
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
     }
-    // Account-linked orders are private: only their owner may read them back.
-    // Guest orders (no userId) stay readable so the guest flow keeps working.
+    // Account-linked orders: only the owner may read them.
     if (order.userId && order.userId !== getOptionalUserId(req)) {
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
+    }
+    // Guest orders: require the per-order token issued at checkout to prevent
+    // enumeration via sequential ids. Orders that pre-date this column (no
+    // guestToken) are treated as unreadable to guests — use the signed-in path.
+    if (!order.userId) {
+      const callerToken = typeof body.guestToken === "string" ? body.guestToken : null;
+      if (!order.guestToken || callerToken !== order.guestToken) {
+        res.status(404).json({ error: "Pedido no encontrado" });
+        return;
+      }
     }
     res.json({ paymentStatus: order.paymentStatus, order: orderToClient(order) });
     // Opportunistically reconcile any other stragglers.
@@ -188,12 +210,22 @@ router.get("/stripe/order/:id", async (req: Request, res: Response): Promise<voi
     res.status(404).json({ error: "Pedido no encontrado" });
     return;
   }
-  // Account-linked orders are private: only their owner may read them back.
-  if (rows[0].userId && rows[0].userId !== getOptionalUserId(req)) {
+  const order = rows[0];
+  // Account-linked orders: only the owner may read them.
+  if (order.userId && order.userId !== getOptionalUserId(req)) {
     res.status(404).json({ error: "Pedido no encontrado" });
     return;
   }
-  res.json({ paymentStatus: rows[0].paymentStatus, order: orderToClient(rows[0]) });
+  // Guest orders: require the per-order token issued at checkout to prevent
+  // enumeration via sequential ids.
+  if (!order.userId) {
+    const callerToken = typeof req.query.token === "string" ? req.query.token : null;
+    if (!order.guestToken || callerToken !== order.guestToken) {
+      res.status(404).json({ error: "Pedido no encontrado" });
+      return;
+    }
+  }
+  res.json({ paymentStatus: order.paymentStatus, order: orderToClient(order) });
 });
 
 export default router;

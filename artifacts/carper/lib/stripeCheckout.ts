@@ -44,7 +44,11 @@ interface CheckoutResponse {
   url: string;
   orderId: number;
   folio: string;
+  /** Random token for guest orders — required to read the order back. */
+  guestToken: string | null;
 }
+
+const GUEST_TOKEN_STORAGE_KEY = "carper_stripe_guest_token";
 
 function apiUrl(path: string): string {
   if (!API_BASE) {
@@ -78,7 +82,7 @@ export async function startCardCheckout(opts: {
   buyerPhone: string;
   shippingAddress?: ShippingAddressInput | null;
   lines: CheckoutLine[];
-}): Promise<{ orderId: number; folio: string; mode: "native" | "web-redirect" }> {
+}): Promise<{ orderId: number; folio: string; guestToken: string | null; mode: "native" | "web-redirect" }> {
   const isWeb = Platform.OS === "web";
 
   // Native returns to the app via deep link; web returns to the checkout page.
@@ -110,31 +114,58 @@ export async function startCardCheckout(opts: {
   }
 
   const data = (await res.json()) as CheckoutResponse;
+  const guestToken = data.guestToken ?? null;
 
   if (isWeb) {
-    // Persist which order we're paying so the page can verify on return.
+    // Persist which order and guest token we're paying so the page can verify
+    // on return. Both are needed to authenticate the guest order lookup.
     try {
       window.sessionStorage.setItem("carper_stripe_order", String(data.orderId));
+      if (guestToken) {
+        window.sessionStorage.setItem(GUEST_TOKEN_STORAGE_KEY, guestToken);
+      } else {
+        window.sessionStorage.removeItem(GUEST_TOKEN_STORAGE_KEY);
+      }
     } catch {
       // sessionStorage may be unavailable; verify-on-return query param covers it.
     }
     window.location.href = data.url;
-    return { orderId: data.orderId, folio: data.folio, mode: "web-redirect" };
+    return { orderId: data.orderId, folio: data.folio, guestToken, mode: "web-redirect" };
   }
 
   // Native: open Stripe in a browser session that closes on the deep-link return.
   await WebBrowser.openAuthSessionAsync(data.url, dest);
-  return { orderId: data.orderId, folio: data.folio, mode: "native" };
+  return { orderId: data.orderId, folio: data.folio, guestToken, mode: "native" };
 }
 
-/** Authoritative payment check. Returns the order with its payment status. */
-export async function verifyPayment(orderId: number): Promise<VerifiedOrder | null> {
+/**
+ * Authoritative payment check. Returns the order with its payment status.
+ * `guestToken` must be provided for guest (unauthenticated) orders.
+ */
+export async function verifyPayment(
+  orderId: number,
+  guestToken: string | null,
+): Promise<VerifiedOrder | null> {
   const res = await fetch(apiUrl("/api/stripe/verify"), {
     method: "POST",
     headers: await authedJsonHeaders(),
-    body: JSON.stringify({ orderId }),
+    body: JSON.stringify({ orderId, guestToken }),
   });
   if (!res.ok) return null;
   const data = (await res.json()) as { paymentStatus: string; order: VerifiedOrder };
   return data.order ?? null;
+}
+
+/**
+ * Read the guest token saved during checkout for web-return verification.
+ * Clears it from storage after reading (one-time use).
+ */
+export function consumeStoredGuestToken(): string | null {
+  try {
+    const token = window.sessionStorage.getItem(GUEST_TOKEN_STORAGE_KEY);
+    window.sessionStorage.removeItem(GUEST_TOKEN_STORAGE_KEY);
+    return token;
+  } catch {
+    return null;
+  }
 }
