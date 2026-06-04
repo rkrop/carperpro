@@ -5,7 +5,7 @@ import { initStripe } from "./lib/stripe/init";
 import { backfillSearchVectors } from "./lib/search-backfill";
 import { ensureSearchTrigger } from "./lib/ensure-search-trigger";
 import { ensureEmbeddingSetup } from "./lib/ensure-embedding-setup";
-import { ensurePriceStatus } from "./lib/ensure-price-status";
+import { autoImportIfDirty } from "./lib/auto-catalog-import";
 import { backfillEmbeddings } from "./lib/embedding-backfill";
 import { backfillDescriptions } from "./lib/description-backfill";
 
@@ -37,9 +37,10 @@ app.listen(port, (err) => {
   // ensureSearchTrigger() may NULL vectors when its definition changes, and
   // backfillSearchVectors() repopulates those NULLs in batches.
   void (async () => {
-    // Aplica la regla "nunca precio 0" a datos preexistentes (ERP antiguo, etc.)
-    // Idempotente: solo toca productos price=0 que aún no son sin_precio.
-    await ensurePriceStatus();
+    // Si la BD tiene datos sucios del ERP antiguo (más productos de los que el
+    // maestro puede proveer, o >5% con price=0), corre el importador maestro
+    // para restaurar el catálogo a la fuente de verdad (Excel MAESTRO).
+    await autoImportIfDirty();
     await ensureSearchTrigger();
     await backfillSearchVectors();
     // Semantic search (pgvector): ensure the extension/index/reset-trigger, then
