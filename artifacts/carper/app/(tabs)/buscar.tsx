@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React, { useState, useCallback } from "react";
-import { Pressable, ScrollView, Text, View, ActivityIndicator } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { Alert, Pressable, ScrollView, Text, View, ActivityIndicator } from "react-native";
 
 import { Chip, Hairline, SectionLabel } from "@/components/CarperUI";
 import { SearchHeader } from "@/components/SearchHeader";
@@ -10,6 +10,7 @@ import { RECENT_SEARCHES } from "@/data/catalog";
 import { useProducts } from "@/data/catalog";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { useVoiceSearch } from "@/hooks/useVoiceSearch";
 
 // Simple debounce hook
 function useDebounce(value: string, delay: number): string {
@@ -25,8 +26,8 @@ export default function Buscar() {
   const c = useColors();
   const router = useRouter();
   const { sucursal } = useApp();
+  const params = useLocalSearchParams<{ voice?: string }>();
   const [query, setQuery] = useState("");
-  const [listening, setListening] = useState(false);
 
   const debouncedQ = useDebounce(query.trim(), 300);
   const showSuggestions = debouncedQ.length >= 2;
@@ -42,10 +43,32 @@ export default function Buscar() {
     router.push(`/resultados?q=${encodeURIComponent(term)}`);
   }, [router]);
 
-  const startVoice = () => {
-    setListening(true);
-    setTimeout(() => { setListening(false); submit("marcha tsuru"); }, 1500);
-  };
+  const { listening, supported: voiceSupported, start, stop } = useVoiceSearch((text) => {
+    setQuery(text);
+    submit(text);
+  });
+
+  const startVoice = useCallback(() => {
+    if (!voiceSupported) {
+      Alert.alert(
+        "Búsqueda por voz",
+        "La búsqueda por voz no está disponible en este dispositivo. Escribe el nombre o número de la refacción.",
+      );
+      return;
+    }
+    start();
+  }, [voiceSupported, start]);
+
+  // Auto-start voice when arriving from the mic button on another screen.
+  // Routes through startVoice so unsupported devices get the same alert.
+  const autoVoiceDone = useRef(false);
+  useEffect(() => {
+    if (autoVoiceDone.current) return;
+    if (params.voice === "1") {
+      autoVoiceDone.current = true;
+      startVoice();
+    }
+  }, [params.voice, startVoice]);
 
   const entries = [
     { icon: "message-circle" as const, title: "Asistente de piezas", sub: "Describe tu auto y la falla", action: () => router.push("/asistente") },
@@ -176,7 +199,10 @@ export default function Buscar() {
       )}
 
       {listening ? (
-        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: c.background, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, gap: 24 }}>
+        <Pressable
+          onPress={stop}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: c.background, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, gap: 24 }}
+        >
           <View style={{ width: 96, height: 96, backgroundColor: c.primary, alignItems: "center", justifyContent: "center" }}>
             <Feather name="mic" size={38} color={c.primaryForeground} />
           </View>
@@ -184,7 +210,13 @@ export default function Buscar() {
           <Text style={{ fontFamily: Fonts.medium, fontSize: 12, letterSpacing: 0.5, textAlign: "center", color: c.mutedForeground }}>
             Di el nombre o número de la refacción
           </Text>
-        </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8, borderWidth: 1, borderColor: c.border, paddingHorizontal: 18, paddingVertical: 12 }}>
+            <Feather name="x" size={14} color={c.mutedForeground} />
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground }}>
+              Cancelar
+            </Text>
+          </View>
+        </Pressable>
       ) : null}
     </View>
   );

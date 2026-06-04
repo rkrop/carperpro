@@ -69,7 +69,7 @@ export function SearchHeader({
           )}
         </Pressable>
         <Pressable
-          onPress={onVoice ?? (() => router.push("/(tabs)/buscar"))}
+          onPress={onVoice ?? (() => router.push("/(tabs)/buscar?voice=1"))}
           style={({ pressed }) => ({
             width: 50,
             alignItems: "center",
