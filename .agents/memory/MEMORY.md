@@ -24,3 +24,4 @@
 - [Carper user accounts](carper-user-accounts.md) — optional Clerk auth (import `@clerk/expo`); order IDOR guard (userId&&!==getOptionalUserId→404, guest null stays open); addOrder optimistic-seeds history cache deduped by folio; checkout prefill uses split refs, no setEntrega.
 - [Phone OTP auth](phone-otp-auth.md) — SECOND login method (Twilio Verify) beside Clerk; opaque `cps_` server sessions, unified client `useAuth` from `@/lib/auth`; sub-router paths are relative to `/api`.
 - [Twilio Verify](twilio-verify.md) — Verify via direct HTTPS (NOT proxy/SDK); creds from connectors REST include_secrets; mislabeled fields (account_sid holds SK key).
+- [Voice search](voice-search.md) — mic = real STT via expo-speech-recognition (web+native, one module); pin 3.1.3 for SDK54; guarded require survives Expo Go (supported:false, no crash); native needs real build.

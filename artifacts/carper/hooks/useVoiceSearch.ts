@@ -1,70 +1,83 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform } from "react-native";
 
 /**
- * Real voice-to-text for the search bar using the browser Web Speech API.
- * Works where Carper actually runs in the browser (web preview / PWA). On native
- * Expo there is no built-in speech engine, so `supported` is false and callers
- * should fall back to typing.
+ * Real voice-to-text for the search bar, powered by `expo-speech-recognition`.
+ *
+ * - Native (iOS/Android): on-device / system speech recognition via the native module.
+ * - Web (preview / PWA): the package's web implementation wraps the browser
+ *   Web Speech API.
+ *
+ * The module is loaded defensively: in Expo Go the native module is not bundled,
+ * so the require throws — we catch it and report `supported: false` instead of
+ * crashing the whole app. Callers should fall back to typing in that case.
  */
-function getSpeechRecognitionCtor(): (new () => any) | null {
-  if (Platform.OS !== "web" || typeof window === "undefined") return null;
-  const w = window as unknown as {
-    SpeechRecognition?: new () => any;
-    webkitSpeechRecognition?: new () => any;
-  };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+let SpeechModule: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  SpeechModule = require("expo-speech-recognition").ExpoSpeechRecognitionModule;
+} catch {
+  SpeechModule = null;
+}
+
+function recognitionAvailable(): boolean {
+  if (!SpeechModule) return false;
+  try {
+    return SpeechModule.isRecognitionAvailable();
+  } catch {
+    return false;
+  }
 }
 
 export function useVoiceSearch(onResult: (text: string) => void) {
   const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const [supported] = useState(() => recognitionAvailable());
   const onResultRef = useRef(onResult);
   onResultRef.current = onResult;
 
-  const supported = getSpeechRecognitionCtor() !== null;
-
-  const stop = useCallback(() => {
-    const rec = recognitionRef.current;
-    if (rec) {
-      try {
-        rec.stop();
-      } catch {
-        // ignore — recognition may already be stopped
-      }
+  // Subscribe to recognition lifecycle + result events.
+  useEffect(() => {
+    if (!SpeechModule) return;
+    const subs: { remove: () => void }[] = [];
+    try {
+      subs.push(SpeechModule.addListener("start", () => setListening(true)));
+      subs.push(SpeechModule.addListener("end", () => setListening(false)));
+      subs.push(SpeechModule.addListener("error", () => setListening(false)));
+      subs.push(
+        SpeechModule.addListener("result", (e: any) => {
+          const transcript: string = e?.results?.[0]?.transcript ?? "";
+          const term = transcript.trim();
+          if (e?.isFinal && term) onResultRef.current(term);
+        }),
+      );
+    } catch {
+      // events unavailable — leave listening untouched
     }
-    setListening(false);
+    return () => {
+      for (const s of subs) {
+        try {
+          s.remove();
+        } catch {
+          // ignore
+        }
+      }
+    };
   }, []);
 
-  const start = useCallback(() => {
-    const Ctor = getSpeechRecognitionCtor();
-    if (!Ctor) return false;
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {
-        // ignore
-      }
-    }
-
-    const rec = new Ctor();
-    rec.lang = "es-MX";
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    rec.continuous = false;
-    rec.onresult = (e: any) => {
-      const transcript: string = e?.results?.[0]?.[0]?.transcript ?? "";
-      const term = transcript.trim();
-      if (term) onResultRef.current(term);
-    };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
-    recognitionRef.current = rec;
-
+  /** Returns false if voice could not be started (unsupported or permission denied). */
+  const start = useCallback(async (): Promise<boolean> => {
+    if (!SpeechModule) return false;
     try {
-      rec.start();
-      setListening(true);
+      const perm = await SpeechModule.requestPermissionsAsync();
+      if (!perm?.granted) {
+        setListening(false);
+        return false;
+      }
+      SpeechModule.start({
+        lang: "es-MX",
+        interimResults: false,
+        continuous: false,
+        maxAlternatives: 1,
+      });
       return true;
     } catch {
       setListening(false);
@@ -72,17 +85,14 @@ export function useVoiceSearch(onResult: (text: string) => void) {
     }
   }, []);
 
-  useEffect(() => {
-    return () => {
-      const rec = recognitionRef.current;
-      if (rec) {
-        try {
-          rec.abort();
-        } catch {
-          // ignore
-        }
-      }
-    };
+  const stop = useCallback(() => {
+    if (!SpeechModule) return;
+    try {
+      SpeechModule.stop();
+    } catch {
+      // ignore
+    }
+    setListening(false);
   }, []);
 
   return { listening, supported, start, stop };

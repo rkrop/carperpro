@@ -48,7 +48,7 @@ export default function Buscar() {
     submit(text);
   });
 
-  const startVoice = useCallback(() => {
+  const startVoice = useCallback(async () => {
     if (!voiceSupported) {
       Alert.alert(
         "Búsqueda por voz",
@@ -56,7 +56,13 @@ export default function Buscar() {
       );
       return;
     }
-    start();
+    const ok = await start();
+    if (!ok) {
+      Alert.alert(
+        "Permiso de micrófono",
+        "Activa el permiso de micrófono para buscar por voz.",
+      );
+    }
   }, [voiceSupported, start]);
 
   // Auto-start voice when arriving from the mic button on another screen.
