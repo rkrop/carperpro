@@ -13,6 +13,7 @@ import { resolveSucursalId } from "../sucursal";
 import { pushOrder } from "../admintotal/outbound";
 import { getLiveSellableStock } from "../admintotal/liveStock";
 import { effectivePrice } from "../pricing";
+import { notifyOrderPaid } from "../twilio/notify";
 import { logger } from "../logger";
 
 export interface CheckoutLineInput {
@@ -327,9 +328,12 @@ export async function reconcileStripeOrder(
   if (session.payment_status !== "paid") return order;
 
   // Payment captured. Flag it paid once, but keep the order OUT of the ERP queue
-  // (status stays awaiting_payment) until the live stock re-check passes.
+  // (status stays awaiting_payment) until the live stock re-check passes. The
+  // conditional UPDATE is the single-winner point: only the caller that actually
+  // flips unpaid -> paid gets a returned row, so the WhatsApp notification to
+  // Carper fires exactly once per order (fire-and-forget, never blocks).
   if (order.paymentStatus === "unpaid") {
-    await db
+    const flipped = await db
       .update(outboundOrdersTable)
       .set({ paymentStatus: "paid", paidAt: new Date() })
       .where(
@@ -337,7 +341,11 @@ export async function reconcileStripeOrder(
           eq(outboundOrdersTable.id, order.id),
           eq(outboundOrdersTable.paymentStatus, "unpaid"),
         ),
-      );
+      )
+      .returning();
+    if (flipped.length > 0) {
+      notifyOrderPaid(flipped[0]);
+    }
   }
 
   // Claim fulfillment so exactly one worker proceeds. The common path claims
