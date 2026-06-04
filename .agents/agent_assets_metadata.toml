@@ -101,3 +101,9 @@ id = "hG-qDlAXGY5g_S3Ui0J5K"
 uri = "file://exports/inventario_carper.xlsx"
 type = "table"
 title = "Inventario Carper — 13,905 productos"
+
+[[outputs]]
+id = "i31j4lxN6U7hCEN-g-a0B"
+uri = "file://exports/habilitar_webhook_faltantes.xlsx"
+type = "table"
+title = "10 códigos para habilitar webhook en AdminTotal"
