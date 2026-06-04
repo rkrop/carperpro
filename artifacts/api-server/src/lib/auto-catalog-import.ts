@@ -84,9 +84,12 @@ function runImportMaestro(): Promise<void> {
     const distDir = dirname(fileURLToPath(import.meta.url));
     const scriptPath = join(distDir, "..", "import-maestro.mjs");
 
-    logger.info({ scriptPath }, "catalog: iniciando import-maestro.mjs");
+    logger.info({ scriptPath }, "catalog: iniciando import-maestro.mjs --force");
 
-    const child = spawn("node", [scriptPath], {
+    // --force es necesario: solo llegamos aquí cuando YA detectamos datos sucios
+    // del ERP antiguo, y reemplazar el catálogo completo por el maestro implica
+    // borrar > 70% (el guardia de seguridad por defecto), lo cual es intencional.
+    const child = spawn("node", [scriptPath, "--force"], {
       env: process.env,
       stdio: "pipe",
     });

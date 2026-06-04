@@ -32,6 +32,13 @@ stays disabled. Run from `artifacts/api-server`:
   non-`matriz` sucursales and product-less subcategories. Recomputes category +
   subcategory counts (excluding sin_precio). Recreates the search_vector trigger
   (KEEP body in sync with `ensure-search-trigger.ts`).
+- **Auto-import on boot (prod cleanup):** `src/lib/auto-catalog-import.ts`
+  `autoImportIfDirty()` runs at server start; if catalog is dirty (total > 15,000
+  OR > 5% price=0) it spawns `import-maestro.mjs --force` as a child process.
+  `--force` is MANDATORY here: replacing a full ERP catalog (e.g. prod had 32,162
+  old rows) with the ~13,905-row master deletes > 90%, which trips MAX_DELETE_PCT
+  (70%) and aborts without it. Idempotent: once clean it no-ops. Needs
+  `import-maestro.mjs` + the Excel present in the deployment bundle.
 - **Preserves enrichment** the master lacks: `descripcion` (AI), `oem`, `vehicles`,
   `original_price`, `specs`, and `image`/proveedor fields via COALESCE; real `brand`
   is only overwritten when the master brand ≠ 'SIN MARCA'.
