@@ -27,10 +27,11 @@ import {
 // canonical fields + the structured product_oem_codes / product_applications
 // tables. NEVER touches price or stock.
 //
-// SAFETY: writes are gated behind ENRICHMENT_WRITES_ENABLED because the grounding
-// hook (validateGrounding) is still a passthrough — the model can hallucinate, so
-// nothing reaches `products` until the team injects real grounding and flips the
-// flag. Until then write=true is refused at the route.
+// SAFETY: validateGrounding now enforces real anchoring (only values literally in
+// the source survive; vehicle makes / generic words are dropped from marca), but
+// writes stay gated behind ENRICHMENT_WRITES_ENABLED so a human reviews
+// enrichment_staging before anything reaches `products`. Until the flag is flipped,
+// write=true is refused at the route.
 
 const SOURCE = "descripcion-erp";
 const CONCURRENCY = 4;
@@ -40,8 +41,8 @@ const CONFIDENCE_THRESHOLD = 0.8;
 export class EnrichmentWritesDisabledError extends Error {
   constructor() {
     super(
-      "Escrituras de enriquecimiento deshabilitadas: validateGrounding sigue en passthrough. " +
-        "Revisa enrichment_staging e implementa el grounding antes de habilitar ENRICHMENT_WRITES_ENABLED.",
+      "Escrituras de enriquecimiento deshabilitadas. " +
+        "Revisa enrichment_staging y habilita ENRICHMENT_WRITES_ENABLED=1 cuando quieras aplicar.",
     );
     this.name = "EnrichmentWritesDisabledError";
   }

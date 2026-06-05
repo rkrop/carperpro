@@ -18,4 +18,6 @@ Routes mount at `/api/*` directly:
 
 **Why:** routes/index.ts does `router.use(catalogRouter)` (no sub-path), so all catalog routes are top-level under /api.
 
-**Port:** reads PORT env var; in dev the workflow sets it, defaults to 8080 for manual curl tests.
+**Port:** reads PORT env var; in dev the workflow sets it, defaults to 8080 for manual curl tests. (The user may say 5000; the running server is 8080.)
+
+**Dev has NO hot-reload:** the dev script is `build && start` (esbuild → `node dist/index.mjs`). After editing ANY api-server source you MUST restart the workflow or curl/tests will silently exercise the OLD build — this once made a real grounding fix look like it "wasn't applied".
