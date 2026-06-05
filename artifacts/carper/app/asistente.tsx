@@ -30,7 +30,7 @@ interface ChatMessage {
 }
 
 const GREETING =
-  "¡Hola! Soy tu asistente de Carper. Dime qué auto tienes (marca, modelo y año) y qué refacción necesitas o qué falla notas, y te recomiendo la pieza correcta.";
+  "Bienvenido al asistente de Carper. Indíqueme qué vehículo tiene (marca, modelo y año) y qué refacción necesita o qué falla presenta, y le recomendaré la pieza correcta. También puede compartir el VIN para identificar su vehículo.";
 
 // One-tap conversation starters for the empty state.
 const STARTERS = [
@@ -112,7 +112,7 @@ export default function Asistente() {
             id: makeId(),
             role: "assistant",
             content:
-              "Tuvimos un problema al procesar tu mensaje. Inténtalo de nuevo en un momento.",
+              "Tuvimos un problema al procesar su mensaje. Por favor, inténtelo de nuevo en un momento.",
           },
         ]);
       }
@@ -217,7 +217,7 @@ export default function Asistente() {
           {showStarters ? (
             <View style={{ gap: 10, marginTop: 4 }}>
               <Text style={{ fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400 }}>
-                Prueba con
+                Sugerencias
               </Text>
               {STARTERS.map((s) => (
                 <Pressable
@@ -264,7 +264,7 @@ export default function Asistente() {
               value={input}
               onChangeText={setInput}
               onSubmitEditing={() => sendMessage(input)}
-              placeholder="Escribe tu auto y la pieza…"
+              placeholder="Escriba su vehículo y la pieza…"
               placeholderTextColor={c.neutral400}
               returnKeyType="send"
               multiline

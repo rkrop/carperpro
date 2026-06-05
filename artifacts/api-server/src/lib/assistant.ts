@@ -1,18 +1,34 @@
 import { getOpenAI, isOpenAIConfigured } from "@workspace/integrations-openai-ai-server";
 import { searchCatalog, type CatalogProduct } from "./catalogSearch";
+import { decodeVin, extractVin, type DecodedVin } from "./vinDecode";
 
-// Conversational "Asistente para encontrar la pieza" (Task #48). A shopper
-// describes their car (marca/modelo/año/motor) and a symptom or the part they
-// need; the assistant asks for whatever is missing, then recommends REAL catalog
-// products. This is a thin conversational layer on top of the SAME catalog
-// search used everywhere else (`searchCatalog`, with phase-1 AI assist + phase-2
-// semantic widening enabled): the model only ever decides WHAT to search for —
-// every recommended product comes from the real catalog with the usual
+// Conversational "Asistente para encontrar la pieza" (Task #48, smarter in #62).
+// A shopper describes their car (marca/modelo/año/motor) and a symptom or the
+// part they need; the assistant asks for whatever is missing, then recommends
+// REAL catalog products. This is a thin conversational layer on top of the SAME
+// catalog search used everywhere else (`searchCatalog`, with phase-1 AI assist +
+// phase-2 semantic widening enabled): the model only ever decides WHAT to search
+// for — every recommended product comes from the real catalog with the usual
 // stock/price rules. The model never invents parts, prices, SKUs or brands; those
 // live on the product cards the client renders.
+//
+// "Smarter" (Task #62) means: a more capable model at higher reasoning effort
+// (this is low-volume chat, not latency-critical type-ahead, so it can afford
+// it), real VIN decoding via vPIC, richer autoparts domain guidance in the
+// prompt, a formal/serious es-MX register, and fallbacks that PRESERVE the
+// conversation instead of resetting to a generic greeting.
 
-const MODEL = "gpt-5-nano"; // same cheap/fast model as the search assist
-const AI_TIMEOUT_MS = 12000; // chat tolerates more latency than type-ahead search
+// More capable than the type-ahead search assist (which stays on gpt-5-nano):
+// the chat needs real technical reasoning about parts/vehicles.
+const MODEL = "gpt-5-mini";
+// Higher reasoning effort than search — chat tolerates the latency and benefits
+// from multi-step reasoning about symptoms → parts and vehicle compatibility.
+const REASONING_EFFORT = "medium" as const;
+const AI_TIMEOUT_MS = 30000; // a reasoning turn can take longer; no server cap exists
+// Reasoning models spend completion tokens on hidden reasoning. A tight budget
+// can be fully consumed by reasoning, returning EMPTY content → the old code then
+// fell back to a context-free greeting (the reported "reset"). Keep it generous.
+const MAX_COMPLETION_TOKENS = 2000;
 // How many recommendations to surface per turn. Small so the reply stays focused
 // and the client can render them as a tidy set of cards.
 const MAX_RESULTS = 6;
@@ -34,30 +50,48 @@ export interface AssistantResult {
   products: CatalogProduct[];
 }
 
-const SYSTEM_PROMPT = `Eres el asistente de Carper Autopartes, una refaccionaria mexicana. Ayudas al cliente a encontrar la refacción correcta para su auto.
+const SYSTEM_PROMPT = `Eres el asistente técnico de Carper Autopartes, una refaccionaria mexicana. Tu función es ayudar al cliente a encontrar la refacción correcta para su vehículo.
 
-Hablas en español de México, con un tono breve, amable y claro. Tuteas al cliente.
+REGISTRO Y TONO (IMPORTANTE):
+- Hablas en español de México con un trato formal, serio y profesional. Diríjete al cliente de "usted".
+- No uses jerga, modismos ni lenguaje coloquial, ni imites el habla de un mecánico. Sé claro, cortés y directo.
+- Respuestas breves y bien redactadas.
 
-Para recomendar una pieza necesitas saber:
-1. El vehículo: marca, modelo y año (el motor solo si es relevante, p. ej. 1.6 vs 2.0).
-2. El síntoma o la pieza que busca (p. ej. "rechina al frenar" -> balatas; "no arranca" -> marcha o batería).
+PARA RECOMENDAR UNA PIEZA NECESITAS:
+1. El vehículo: marca, modelo y año. El motor SOLO cuando es determinante para la pieza (p. ej. distribución, empaques, banda, bomba de agua, clutch). Para muchas refacciones (balatas, filtros, focos, limpiabrisas, amortiguadores) el motor no es necesario; no lo pidas si no aporta.
+2. La pieza que busca, o el síntoma que presenta.
 
-Cómo te comportas:
-- Si te falta el vehículo o la pieza/síntoma, haz UNA sola pregunta corta para conseguir lo que más falte. No pidas todo de golpe.
-- Si ya tienes vehículo + pieza/síntoma, deduce la refacción más probable y prepara una búsqueda en el catálogo.
-- Cuando un síntoma puede deberse a varias piezas, elige la más común primero y menciónalo brevemente.
+CONOCIMIENTO TÉCNICO (guía de síntoma → pieza más probable):
+- Rechinido o vibración al frenar → balatas (y posiblemente discos/rotores).
+- No enciende y solo se escucha un "clic" → marcha (motor de arranque) o batería.
+- Marca temperatura alta o se sobrecalienta → termostato, bomba de agua o radiador.
+- Humo azul por el escape → posible consumo de aceite (anillos o sellos de válvula); humo blanco → posible empaque de cabeza.
+- Chillido agudo al acelerar → banda de accesorios (poly-V) o tensor.
+- Fuga de aceite en la parte baja → empaque de cárter o retén.
+- Vibración del volante a cierta velocidad → balanceo, rótulas o terminales.
+Cuando un síntoma puede deberse a varias piezas, menciona primero la causa más común, de forma breve.
 
-Reglas estrictas (MUY IMPORTANTE):
-- NUNCA inventes piezas, precios, números de parte (SKU) ni marcas. Los productos reales y sus precios aparecen como tarjetas que el cliente verá; tú solo das la guía.
-- En tu mensaje NO escribas precios ni SKUs. No prometas existencias ("hay 5 en stock").
-- No inventes datos de compatibilidad. Si no estás seguro, sugiere confirmar el modelo/año.
-- Mantente en el tema de autopartes y este catálogo.
+CÓMO TE COMPORTAS:
+- Si falta el vehículo o la pieza/síntoma, haz UNA sola pregunta corta para obtener lo que más falte. No pidas todo de golpe.
+- Si el sistema ya identificó el vehículo a partir de un VIN (verás una nota con los datos), úsalos y NO vuelvas a preguntar marca, modelo o año.
+- NO prometas capacidades que no tienes. NUNCA digas que vas a "extraer el motor del VIN": el sistema decodifica el VIN automáticamente y te entrega los datos disponibles; trabaja solo con lo que recibes.
+- Cuando tengas vehículo + pieza/síntoma, deduce la refacción más probable y prepara la búsqueda en el catálogo.
 
+LÍMITES DE COMPATIBILIDAD (IMPORTANTE):
+- El catálogo no siempre tiene la compatibilidad exacta por motor o año. Por eso busca primero por pieza + marca/modelo y presenta opciones.
+- Sé honesto: invita al cliente a confirmar la compatibilidad con el número de parte original (OEM) o con el modelo y año exactos. No afirmes compatibilidad que no puedas verificar.
+
+REGLAS ESTRICTAS:
+- NUNCA inventes piezas, precios, números de parte (SKU) ni marcas. Los productos reales y sus precios aparecen como tarjetas que el cliente verá; tú solo orientas.
+- En tu mensaje NO escribas precios, SKUs ni prometas existencias ("hay 5 en stock").
+- Mantente en el tema de autopartes y de este catálogo.
+
+FORMATO DE RESPUESTA (obligatorio):
 Responde SIEMPRE en JSON con este formato exacto:
 {"message": "tu mensaje para el cliente", "search_query": "palabras clave para el catálogo o cadena vacía"}
 
-- "message": lo que le dices al cliente (la pregunta, o una intro corta a los resultados).
-- "search_query": cuando ya tienes suficiente info, pon aquí las palabras clave para buscar en el catálogo, combinando pieza + vehículo en términos comunes de México (ej. "balatas tsuru", "marcha jetta", "filtro aceite sentra"). Si todavía estás preguntando y aún no debes buscar, déjalo como cadena vacía "".`;
+- "message": lo que le dice al cliente (la pregunta, o una introducción breve a los resultados), siempre con trato de "usted".
+- "search_query": cuando ya tiene suficiente información, las palabras clave para buscar en el catálogo, combinando pieza + marca/modelo en términos usados en México (ej. "balatas tsuru", "marcha jetta", "filtro aceite sentra"). NO incluya el año ni el VIN. Si todavía está preguntando y aún no debe buscar, déjelo como cadena vacía "".`;
 
 // Server-side grounding guard. Prompt rules alone don't *guarantee* the model
 // won't slip an invented price, SKU or stock promise into its prose, so we
@@ -92,13 +126,12 @@ function hasForbiddenSpecifics(text: string): boolean {
 export async function runAssistant(
   messages: AssistantMessage[],
 ): Promise<AssistantResult> {
-  const fallback: AssistantResult = {
-    reply:
-      "Con gusto te ayudo a encontrar la pieza. ¿Qué auto tienes (marca, modelo y año) y qué refacción necesitas o qué falla notas?",
-    products: [],
-  };
+  // Generic opener for the very first turn (no prior context to preserve).
+  const GENERIC_FALLBACK =
+    "Con gusto le ayudo a encontrar la refacción. ¿Qué vehículo tiene (marca, modelo y año) y qué pieza necesita o qué falla presenta?";
 
-  if (!isOpenAIConfigured()) return fallback;
+  if (!isOpenAIConfigured())
+    return { reply: GENERIC_FALLBACK, products: [] };
 
   // Only the user/assistant turns, most recent window, trimmed of empties.
   const history = messages
@@ -108,7 +141,50 @@ export async function runAssistant(
 
   if (history.length === 0 || history[history.length - 1].role !== "user") {
     // Nothing to respond to (no user turn yet) — prompt for the basics.
-    return fallback;
+    return { reply: GENERIC_FALLBACK, products: [] };
+  }
+
+  // Decode a VIN if the shopper pasted one (scan from the most recent turn back,
+  // so a VIN given earlier still applies). Fully optional and time-bounded — a
+  // failed/uncovered decode just leaves `decoded` null and we ask for the car.
+  let decoded: DecodedVin | null = null;
+  let vinSeen = false;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const vin = extractVin(history[i].content);
+    if (vin) {
+      vinSeen = true;
+      decoded = await decodeVin(vin);
+      break;
+    }
+  }
+
+  // Context-aware fallback: never reset the conversation to a blank greeting when
+  // something goes wrong (timeout, empty model output, bad JSON). Acknowledge
+  // what the shopper already told us (decoded vehicle, or that they're mid-chat).
+  const contextualFallback = (): string => {
+    if (decoded)
+      return `Identifiqué su vehículo: ${decoded.summary}. ¿Qué refacción necesita o qué falla presenta?`;
+    if (vinSeen)
+      return "No fue posible decodificar el VIN automáticamente. ¿Me indica la marca, el modelo y el año de su vehículo, y qué refacción necesita?";
+    if (history.length > 1)
+      return "Continuemos. ¿Me confirma la marca, el modelo y el año de su vehículo, y qué refacción necesita o qué falla presenta?";
+    return GENERIC_FALLBACK;
+  };
+
+  // When a VIN was provided, give the model a grounding note so it uses the
+  // decoded vehicle (or apologizes honestly) instead of looping on the engine.
+  const contextNotes: AssistantMessage[] = [];
+  if (decoded) {
+    contextNotes.push({
+      role: "user",
+      content: `[Nota del sistema: el cliente proporcionó un VIN que ya fue decodificado. Vehículo identificado: ${decoded.summary}. Usa estos datos directamente y NO vuelvas a preguntar marca, modelo ni año. Para buscar en el catálogo combina la pieza con la marca y el modelo (no incluyas el año ni el VIN).]`,
+    });
+  } else if (vinSeen) {
+    contextNotes.push({
+      role: "user",
+      content:
+        "[Nota del sistema: el cliente proporcionó un VIN pero no fue posible decodificarlo. Discúlpate brevemente y pídele la marca, el modelo y el año. No afirmes que puedes extraer datos del VIN.]",
+    });
   }
 
   let message = "";
@@ -117,10 +193,14 @@ export async function runAssistant(
     const completion = await getOpenAI().chat.completions.create(
       {
         model: MODEL,
-        max_completion_tokens: 500,
-        reasoning_effort: "minimal",
+        max_completion_tokens: MAX_COMPLETION_TOKENS,
+        reasoning_effort: REASONING_EFFORT,
         response_format: { type: "json_object" },
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          ...history,
+          ...contextNotes,
+        ],
       },
       { signal: AbortSignal.timeout(AI_TIMEOUT_MS) },
     );
@@ -135,17 +215,19 @@ export async function runAssistant(
         searchQuery = parsed.search_query.trim();
     }
   } catch {
-    // Timeout / network / API / parse error → graceful fallback.
-    return fallback;
+    // Timeout / network / API / parse error → context-preserving fallback.
+    return { reply: contextualFallback(), products: [] };
   }
 
-  if (!message && !searchQuery) return fallback;
+  if (!message && !searchQuery)
+    return { reply: contextualFallback(), products: [] };
 
   // No search this turn (still gathering info) — just return the question. If the
   // model slipped a price/SKU/stock specific into the prose, drop it for the safe
-  // clarifying prompt rather than forward an unverifiable claim.
+  // contextual prompt rather than forward an unverifiable claim.
   if (!searchQuery) {
-    const safe = message && !hasForbiddenSpecifics(message) ? message : fallback.reply;
+    const safe =
+      message && !hasForbiddenSpecifics(message) ? message : contextualFallback();
     return { reply: safe, products: [] };
   }
 
@@ -161,7 +243,7 @@ export async function runAssistant(
     // Honest no-match: never imply products exist when they don't.
     return {
       reply:
-        "No encontré esa pieza en nuestro catálogo en este momento. ¿Me confirmas el modelo y año exactos, o quieres que busque otra refacción?",
+        "No encontré esa refacción en nuestro catálogo en este momento. ¿Me confirma el modelo y el año exactos, o desea que busque otra pieza?",
       products: [],
     };
   }
@@ -172,7 +254,7 @@ export async function runAssistant(
   const intro =
     message && !hasForbiddenSpecifics(message)
       ? message
-      : "Esto es lo que encontré en el catálogo que podría servirte. Revisa las tarjetas para ver precio y disponibilidad:";
+      : "Estas son las opciones que encontré en el catálogo. Revise las tarjetas para ver precio y disponibilidad:";
 
   return {
     reply: intro,
