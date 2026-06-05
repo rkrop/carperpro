@@ -1,53 +1,122 @@
 import type { Request, RequestHandler } from "express";
+import { pool } from "@workspace/db";
 import { logger } from "../lib/logger";
 
-// Lightweight, dependency-free, in-memory rate limiter (fixed window per key).
-// This server runs as a single instance, so an in-process counter is enough to
-// blunt bursts of abusive traffic without the overhead of an external store.
-// Legitimate webhooks (verified by signature/token) are exempted via `skip` so
-// the ERP/Stripe integrations are never throttled.
-
-interface Bucket {
-  count: number;
-  resetAt: number;
-}
+// Cross-process rate limiter backed by PostgreSQL.
+//
+// In autoscale production each server process is a separate instance with its
+// own heap. An in-process Map would give every instance a fresh empty counter,
+// meaning an attacker can spread N requests across N instances and drain SMS,
+// AI, Stripe and ERP quotas N× beyond the intended per-IP limit.
+//
+// Every call to the limiter performs a single atomic
+//   INSERT ... ON CONFLICT DO UPDATE ... RETURNING
+// against the shared `rate_limit_buckets` table. All autoscale instances share
+// the same Postgres database, so the counters are truly global. The operation is
+// one round-trip and does no locking beyond a row-level upsert.
+//
+// DB unavailable (fallback): if the database is transiently unreachable the
+// limiter falls back to a LOCAL in-process counter for that request. This still
+// enforces a per-instance limit for the current window — it is not unlimited
+// pass-through. The local fallback uses the same window and max settings, so a
+// single instance cannot be abused even during a DB outage. When the DB
+// recovers, the next successful upsert takes over.
 
 export interface RateLimitOptions {
-  /** Window length in milliseconds. */
   windowMs: number;
-  /** Max requests allowed per key within the window. */
   max: number;
-  /** Client-facing message returned on 429. */
   message?: string;
-  /** Namespaces the counter so multiple limiters don't share buckets. */
   keyPrefix?: string;
-  /** Return true to bypass the limiter for this request. */
   skip?: (req: Request) => boolean;
 }
 
-// Resolve a stable client key. With `trust proxy` set, req.ip reflects the real
-// client IP forwarded by Replit's edge proxy.
 function clientKey(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";
 }
 
+// ── DB-backed counter ────────────────────────────────────────────────────────
+
+async function dbIncrement(
+  key: string,
+  windowMs: number,
+): Promise<{ count: number; msRemaining: number }> {
+  const result = await pool.query<{ count: number; ms_remaining: string }>(
+    `
+    INSERT INTO rate_limit_buckets (key, count, reset_at)
+    VALUES ($1, 1, NOW() + ($2::bigint * interval '1 millisecond'))
+    ON CONFLICT (key) DO UPDATE SET
+      count    = CASE
+                   WHEN rate_limit_buckets.reset_at <= NOW() THEN 1
+                   ELSE rate_limit_buckets.count + 1
+                 END,
+      reset_at = CASE
+                   WHEN rate_limit_buckets.reset_at <= NOW() THEN excluded.reset_at
+                   ELSE rate_limit_buckets.reset_at
+                 END
+    RETURNING count,
+              GREATEST(0, EXTRACT(EPOCH FROM (reset_at - NOW())) * 1000)::bigint AS ms_remaining
+    `,
+    [key, windowMs],
+  );
+  const row = result.rows[0];
+  return {
+    count: row?.count ?? 1,
+    msRemaining: Number(row?.ms_remaining ?? windowMs),
+  };
+}
+
+// ── Local in-process fallback ────────────────────────────────────────────────
+// Used ONLY when the DB is transiently unavailable. Provides per-instance
+// protection so a DB hiccup can't open the floodgates entirely.
+
+interface LocalBucket {
+  count: number;
+  resetAt: number;
+}
+const localBuckets = new Map<string, LocalBucket>();
+
+function localIncrement(
+  key: string,
+  windowMs: number,
+): { count: number; msRemaining: number } {
+  const now = Date.now();
+  let bucket = localBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + windowMs };
+    localBuckets.set(key, bucket);
+  }
+  bucket.count += 1;
+  return {
+    count: bucket.count,
+    msRemaining: Math.max(0, bucket.resetAt - now),
+  };
+}
+
+// Sweep expired local fallback buckets periodically.
+const localSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of localBuckets) {
+    if (b.resetAt <= now) localBuckets.delete(k);
+  }
+}, 60_000);
+localSweep.unref?.();
+
+// ── Shared DB sweep ──────────────────────────────────────────────────────────
+// Delete expired rows from the shared table so it can't grow unbounded.
+// Runs every 5 minutes; unref() so this never blocks clean process shutdown.
+const dbSweep = setInterval(async () => {
+  try {
+    await pool.query("DELETE FROM rate_limit_buckets WHERE reset_at <= NOW()");
+  } catch {
+    // Non-fatal — expired rows are reset atomically on next upsert anyway.
+  }
+}, 5 * 60_000);
+dbSweep.unref?.();
+
+// ── Middleware factory ───────────────────────────────────────────────────────
+
 export function rateLimit(opts: RateLimitOptions): RequestHandler {
-  const buckets = new Map<string, Bucket>();
-
-  // Periodically drop expired buckets so memory can't grow unbounded under a
-  // wide spread of client IPs. unref() keeps this timer from holding the process
-  // open during shutdown.
-  const sweep = setInterval(() => {
-    const now = Date.now();
-    for (const [key, bucket] of buckets) {
-      if (bucket.resetAt <= now) buckets.delete(key);
-    }
-  }, opts.windowMs);
-  sweep.unref?.();
-
-  return (req, res, next) => {
-    // Never count CORS preflight — it must always pass for the browser to send
-    // the real request.
+  return async (req, res, next) => {
     if (req.method === "OPTIONS") {
       next();
       return;
@@ -57,29 +126,34 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
       return;
     }
 
-    const key = `${opts.keyPrefix ?? ""}:${clientKey(req)}`;
-    const now = Date.now();
-    let bucket = buckets.get(key);
-    if (!bucket || bucket.resetAt <= now) {
-      bucket = { count: 0, resetAt: now + opts.windowMs };
-      buckets.set(key, bucket);
-    }
-    bucket.count += 1;
+    const key = `${opts.keyPrefix ?? "rl"}:${clientKey(req)}`;
 
-    const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
-    const remaining = Math.max(0, opts.max - bucket.count);
+    let count: number;
+    let msRemaining: number;
+    try {
+      ({ count, msRemaining } = await dbIncrement(key, opts.windowMs));
+    } catch (err) {
+      // DB unavailable — fall back to local per-instance counter rather than
+      // allowing the request through unconditionally. This preserves per-IP
+      // burst protection while the shared store is recovering.
+      logger.warn({ err, key }, "Rate limit: DB no disponible, usando contador local de emergencia");
+      ({ count, msRemaining } = localIncrement(key, opts.windowMs));
+    }
+
+    const retryAfterSec = Math.max(1, Math.ceil(msRemaining / 1000));
+    const remaining = Math.max(0, opts.max - count);
     res.setHeader("RateLimit-Limit", String(opts.max));
     res.setHeader("RateLimit-Remaining", String(remaining));
     res.setHeader("RateLimit-Reset", String(retryAfterSec));
 
-    if (bucket.count > opts.max) {
+    if (count > opts.max) {
       res.setHeader("Retry-After", String(retryAfterSec));
       logger.warn(
         {
           ip: clientKey(req),
           method: req.method,
           path: req.path,
-          count: bucket.count,
+          count,
           limit: opts.max,
         },
         "Rate limit excedido",
@@ -96,12 +170,8 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
   };
 }
 
-// General limiter for all /api traffic. Generous enough that normal browsing /
-// catalog usage never trips it, while still capping abusive bursts per IP.
-// NOTE: The Stripe webhook is registered before this limiter in the middleware
-// chain (app.ts) so it never reaches this handler. Admintotal webhook paths
-// are intentionally NOT exempted here — authentication must happen first, and
-// exempting by path alone would allow unauthenticated traffic to bypass limits.
+// General limiter: applied globally to all /api traffic in app.ts.
+// 300 req/min is generous enough for normal browsing while still capping bursts.
 export const generalLimiter: RequestHandler = rateLimit({
   windowMs: 60_000,
   max: 300,
@@ -109,9 +179,8 @@ export const generalLimiter: RequestHandler = rateLimit({
   message: "Demasiadas peticiones. Espera un momento e inténtalo de nuevo.",
 });
 
-// Stricter limiter for sensitive write endpoints (order creation, card checkout,
-// payment verification). These mutate state / touch Stripe & the ERP, so they
-// get a much tighter per-IP budget.
+// Stricter limiter for write/sensitive endpoints (order creation, card checkout,
+// SMS OTP, AI chat, scan, push registration).
 export const writeLimiter: RequestHandler = rateLimit({
   windowMs: 60_000,
   max: 20,
@@ -120,11 +189,8 @@ export const writeLimiter: RequestHandler = rateLimit({
     "Demasiados intentos. Espera un momento antes de volver a intentarlo.",
 });
 
-// AI-assist limiter for the public catalog search endpoint.
-// When `assist=1` is present, each request can trigger an OpenAI completion
-// AND a Gemini embedding call, so unauthenticated callers must be held to the
-// same 20 req/min budget as the dedicated assistant and scan endpoints.
-// Requests without `assist` are skipped so normal browsing is unaffected.
+// AI-assist limiter for the catalog endpoint when ?assist=1 is present.
+// Each assisted request can trigger OpenAI + Gemini embedding calls.
 export const aiAssistLimiter: RequestHandler = rateLimit({
   windowMs: 60_000,
   max: 20,

@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, like } from "drizzle-orm";
-import { db, phoneSessionsTable, usersTable } from "@workspace/db";
+import { db, pool, phoneSessionsTable, usersTable } from "@workspace/db";
 import {
   checkPhoneVerification,
   normalizeMxPhone,
@@ -16,10 +16,62 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-// Per-phone cooldown so a single number can't be spammed with SMS even from
-// rotating IPs (the IP-based writeLimiter handles the per-IP burst case).
+// Per-phone OTP send cooldown — stored in the shared rate_limit_buckets table
+// so the limit is enforced across ALL autoscale instances, not just the one
+// that handled the previous request. Max=1 within a 30-second window means
+// exactly one SMS can be sent per phone per 30 seconds regardless of how many
+// server instances are running or which instance the attacker hits.
 const SEND_COOLDOWN_MS = 30_000;
-const lastSendByPhone = new Map<string, number>();
+
+async function checkPhoneCooldown(
+  phone: string,
+): Promise<{ allowed: boolean; retryAfterSec: number }> {
+  const key = `sms_cooldown:${phone}`;
+  try {
+    const result = await pool.query<{ count: number; ms_remaining: string }>(
+      `
+      INSERT INTO rate_limit_buckets (key, count, reset_at)
+      VALUES ($1, 1, NOW() + ($2::bigint * interval '1 millisecond'))
+      ON CONFLICT (key) DO UPDATE SET
+        count    = CASE
+                     WHEN rate_limit_buckets.reset_at <= NOW() THEN 1
+                     ELSE rate_limit_buckets.count + 1
+                   END,
+        reset_at = CASE
+                     WHEN rate_limit_buckets.reset_at <= NOW() THEN excluded.reset_at
+                     ELSE rate_limit_buckets.reset_at
+                   END
+      RETURNING count,
+                GREATEST(0, EXTRACT(EPOCH FROM (reset_at - NOW())) * 1000)::bigint AS ms_remaining
+      `,
+      [key, SEND_COOLDOWN_MS],
+    );
+    const row = result.rows[0];
+    const count = row?.count ?? 1;
+    const msRemaining = Number(row?.ms_remaining ?? 0);
+    if (count > 1) {
+      return { allowed: false, retryAfterSec: Math.max(1, Math.ceil(msRemaining / 1000)) };
+    }
+    return { allowed: true, retryAfterSec: 0 };
+  } catch (err) {
+    // Fail-closed: when the shared cooldown store is unreachable we deny the
+    // send rather than allow it. Permitting sends during a DB outage would let
+    // an attacker bypass the per-phone Twilio billing gate entirely by timing
+    // requests to DB-error windows. A transient 429 is far safer than an
+    // uncontrolled SMS flood.
+    logger.warn({ err, phone }, "Phone auth: cooldown store no disponible, envío denegado para proteger cuota SMS");
+    return { allowed: false, retryAfterSec: Math.ceil(SEND_COOLDOWN_MS / 1000) };
+  }
+}
+
+async function clearPhoneCooldown(phone: string): Promise<void> {
+  const key = `sms_cooldown:${phone}`;
+  try {
+    await pool.query("DELETE FROM rate_limit_buckets WHERE key = $1", [key]);
+  } catch (err) {
+    logger.warn({ err }, "Phone auth: fallo al limpiar cooldown de teléfono");
+  }
+}
 
 function bearerToken(req: Request): string | null {
   const h = req.headers.authorization;
@@ -44,23 +96,25 @@ router.post(
       return;
     }
 
-    const now = Date.now();
-    const last = lastSendByPhone.get(phone);
-    if (last && now - last < SEND_COOLDOWN_MS) {
-      const retry = Math.ceil((SEND_COOLDOWN_MS - (now - last)) / 1000);
-      res.setHeader("Retry-After", String(retry));
+    // Per-phone cooldown enforced in the shared DB so rotating across autoscale
+    // instances doesn't bypass it (writeLimiter covers the per-IP burst case).
+    const { allowed, retryAfterSec } = await checkPhoneCooldown(phone);
+    if (!allowed) {
+      res.setHeader("Retry-After", String(retryAfterSec));
       res.status(429).json({
-        error: `Espera ${retry} segundos antes de pedir otro código.`,
+        error: `Espera ${retryAfterSec} segundos antes de pedir otro código.`,
       });
       return;
     }
 
     try {
       await startPhoneVerification(phone);
-      lastSendByPhone.set(phone, now);
       res.json({ ok: true });
     } catch (err) {
       logger.error({ err }, "Phone auth: fallo al iniciar verificación");
+      // Roll back the cooldown slot so the user can retry immediately after a
+      // transient Twilio error without waiting out the full window.
+      await clearPhoneCooldown(phone);
       res.status(502).json({
         error: "No se pudo enviar el código. Inténtalo de nuevo.",
       });
@@ -178,7 +232,8 @@ router.post(
       }
     }
 
-    lastSendByPhone.delete(phone);
+    // Clear the send cooldown so a fresh verification flow can begin later.
+    await clearPhoneCooldown(phone);
 
     const { token, expiresAt } = await createPhoneSession(userId);
     res.json({ token, expiresAt: expiresAt.toISOString(), userId });
