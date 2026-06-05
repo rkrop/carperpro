@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 
@@ -28,6 +29,7 @@ function InfoRow({ icon, label, value, onPress }: { icon: keyof typeof Feather.g
 
 export default function Acerca() {
   const c = useColors();
+  const router = useRouter();
   const open = (url: string) => Linking.openURL(url).catch(() => {});
 
   return (
@@ -55,7 +57,7 @@ export default function Acerca() {
         <SectionLabel style={{ paddingHorizontal: 24, marginTop: 28, marginBottom: 12 }}>Aplicación</SectionLabel>
         <View style={{ borderTopWidth: 1, borderColor: c.border }}>
           <InfoRow icon="smartphone" label="Versión" value={`v${APP_VERSION}`} />
-          <InfoRow icon="shield" label="Privacidad" value="Ver" onPress={() => open(STORE.mapsUrl)} />
+          <InfoRow icon="shield" label="Políticas y privacidad" value="Ver" onPress={() => router.push("/politicas")} />
         </View>
 
         <View style={{ paddingHorizontal: 24, paddingTop: 24 }}>

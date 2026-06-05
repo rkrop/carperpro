@@ -8,6 +8,7 @@ import Home from "@/pages/home";
 import Catalogo from "@/pages/catalogo";
 import Producto from "@/pages/producto";
 import Contacto from "@/pages/contacto";
+import Politicas from "@/pages/politicas";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -19,6 +20,7 @@ function Router() {
       <Route path="/catalogo" component={Catalogo} />
       <Route path="/producto/:id" component={Producto} />
       <Route path="/contacto" component={Contacto} />
+      <Route path="/politicas" component={Politicas} />
       <Route component={NotFound} />
     </Switch>
   );

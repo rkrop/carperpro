@@ -67,6 +67,7 @@ router.get("/sitemap.xml", async (req: Request, res: Response): Promise<void> =>
     { loc: `${base}/`, changefreq: "daily", priority: "1.0" },
     { loc: `${base}/catalogo`, changefreq: "daily", priority: "0.9" },
     { loc: `${base}/contacto`, changefreq: "monthly", priority: "0.5" },
+    { loc: `${base}/politicas`, changefreq: "yearly", priority: "0.4" },
   ];
 
   for (const c of categories) {

@@ -116,6 +116,7 @@ function RootLayoutNav() {
       <Stack.Screen name="notificaciones" />
       <Stack.Screen name="ayuda" />
       <Stack.Screen name="acerca" />
+      <Stack.Screen name="politicas" />
       <Stack.Screen name="escanear" options={{ presentation: "modal" }} />
       <Stack.Screen name="sucursal" options={{ presentation: "modal" }} />
     </Stack>
