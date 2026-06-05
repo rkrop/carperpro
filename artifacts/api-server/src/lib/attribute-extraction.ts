@@ -4,10 +4,13 @@ import {
   productsTable,
   categoriesTable,
   subcategoriesTable,
+  type ProductSpec,
 } from "@workspace/db";
 import {
   getOpenAI,
   isOpenAIConfigured,
+  getOpenAIDirect,
+  isOpenAIDirectConfigured,
 } from "@workspace/integrations-openai-ai-server";
 import { logger } from "./logger";
 import { notTestProduct, sellableProduct } from "./catalogSearch";
@@ -298,7 +301,7 @@ async function callModel(row: ExtractRow): Promise<RawResult> {
 // Extrae y VALIDA (grounding) los atributos de una fila. Cualquier valor que no
 // aparezca literalmente en el nombre se descarta. Lanza {retryable} para que el
 // lote distinga una falla de API (abortar y reintentar) de una salida vacía.
-export async function extractAttributes(
+export async function extractFromName(
   row: ExtractRow,
 ): Promise<
   | { ok: true; attrs: ExtractedAttributes }
@@ -480,7 +483,7 @@ export async function runAttributeExtractionPilot(opts: {
       const i = next++;
       if (i >= rows.length) return;
       const row = rows[i]!;
-      const ext = await extractAttributes(row);
+      const ext = await extractFromName(row);
       result.scanned++;
       if (!ext.ok) {
         if (ext.retryable) {
@@ -543,4 +546,271 @@ export async function runAttributeExtractionPilot(opts: {
   );
   result.sample = [...withHits, ...withoutHits].slice(0, sampleSize);
   return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase A — structured attribute extraction for the enrichment pipeline.
+//
+// Richer than the name-only pilot above: from a product's codigo/nombre/
+// descripcion it extracts marca + ficha técnica + OEM codes (each with its
+// manufacturer) + vehicle applications (make/model/year range/motor), using the
+// CREDITED direct OpenAI key (getOpenAIDirect, gpt-5-nano, json_object,
+// AbortSignal). The output feeds runEnrichmentBatch (A3): in dry-run it stages
+// every proposed field for human review; on write it fills ONLY empty fields and
+// the structured product_oem_codes / product_applications tables. brand/specs
+// stay the canonical marca/ficha técnica. NEVER touches price or stock.
+//
+// Grounding note: per the plan, validateGrounding and normalizeCodes are
+// REPLACEABLE hooks the user implements later (word-boundary anchoring + real
+// code normalization). For now validateGrounding is a passthrough and
+// normalizeCodes a simple uppercase/strip stub — so until the real grounding
+// lands, run dry-run and review enrichment_staging before enabling writes.
+
+export interface ExtractInput {
+  codigo: string;
+  nombre: string;
+  descripcion?: string | null;
+}
+
+export interface ExtractedOemCode {
+  brand?: string;
+  code: string; // raw, exactly as written in the source text
+  code_norm: string; // search-normalized (see normalizeCodes)
+}
+
+export interface ExtractedApplication {
+  make: string;
+  model: string;
+  year_from?: number;
+  year_to?: number;
+  motor?: string;
+}
+
+export interface EnrichmentAttributes {
+  marca: string | null;
+  // Canonical storage is products.specs (ProductSpec[] = {label,value}); the
+  // model's {etiqueta:valor} object is converted to this shape here.
+  ficha_tecnica: ProductSpec[];
+  oem: ExtractedOemCode[];
+  aplicaciones: ExtractedApplication[];
+  confidence: number; // 0..1
+}
+
+// ── Replaceable hooks (the user implements the real versions) ────────────────
+
+// TODO(user): real grounding — anchor each extracted value (word-boundary)
+// against `sourceText` and drop anything not literally present. For now a
+// PASSTHROUGH that returns the values unchanged.
+export function validateGrounding<T>(values: T, _sourceText: string): T {
+  return values;
+}
+
+// TODO(user): richer code normalization (brand-specific rules, O/0 confusions,
+// separators, …). For now a STUB: code_norm = uppercase with every non-[A-Z0-9]
+// character stripped. De-duplicates and drops entries whose normalized form is
+// empty.
+export function normalizeCodes(
+  oem: Array<{ brand?: string | null; code: string }>,
+): ExtractedOemCode[] {
+  const out: ExtractedOemCode[] = [];
+  const seen = new Set<string>();
+  for (const o of oem) {
+    const code = (o.code ?? "").trim();
+    if (!code) continue;
+    const code_norm = code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (!code_norm || seen.has(code_norm)) continue;
+    seen.add(code_norm);
+    const brand = o.brand?.trim();
+    out.push(brand ? { brand, code, code_norm } : { code, code_norm });
+  }
+  return out;
+}
+
+// ── Model call ───────────────────────────────────────────────────────────────
+
+const ENRICH_MODEL = "gpt-5-nano";
+const ENRICH_TIMEOUT_MS = 25000;
+const ENRICH_MAX_TOKENS = 1200;
+// "low" beats "minimal" here: smoke tests showed "minimal" both UNDER-extracted
+// (missed obvious vehicle applications and ficha técnica) and OVER-reached
+// (invented a part brand not present in the text). "low" extracts the real data
+// without hallucinating, at a still-cheap cost.
+const ENRICH_REASONING_EFFORT = "low" as const;
+
+const ENRICH_SYSTEM_PROMPT = `Eres un analista de catálogo de autopartes en México. Recibes el CÓDIGO, el NOMBRE y (si existe) la DESCRIPCIÓN de una refacción. Extrae SOLO lo que esté escrito literalmente en ese texto. NUNCA inventes ni agregues conocimiento externo.
+
+Devuelve estos campos:
+- "marca": el FABRICANTE de la pieza (Bosch, Valeo, Gonher, Moresa, TF Victor, LTH, Mitsubishi...). Distíngelo de la marca del VEHÍCULO: las marcas y modelos de vehículos (Nissan, Cadillac, Toyota, Geo, Chevrolet, Ford, VW, Dodge, Honda...) NO van aquí, van en "aplicaciones". Si no hay fabricante de la pieza escrito, null.
+- "ficha_tecnica": objeto con pares dato:valor presentes en el texto (medidas, material, color, voltaje, watts, dientes, pulgadas, LEDs, posición...), ej. {"Voltaje":"12V","Dientes":"10"}. Si no hay, {}.
+- "oem": NÚMEROS DE PARTE o CÓDIGOS DE EQUIVALENCIA/CRUCE escritos (ej. UF103, 90919-02135, 23100-4JA0B), cada uno con su fabricante si se indica: [{"brand": string|null, "code": string}]. NO incluyas tipos de foco/bulbo (3157, 9004, H4, 194), medidas, voltajes/watts ni años. Si no hay, [].
+- "aplicaciones": TODOS los vehículos compatibles mencionados, uno por modelo: [{"make": string, "model": string, "year_from": number|null, "year_to": number|null, "motor": string|null}]. Expande rangos de 2 dígitos a 4 (82-89 -> 1982 y 1989). Si solo hay un año, year_from=year_to. Solo incluye un vehículo si tiene make Y model; si solo hay marca de vehículo sin modelo, omítelo. Si no hay, [].
+- "confidence": número de 0 a 1 según qué tan claro está todo en el texto.
+
+Reglas: usa SOLO texto presente en los datos. Si dudas, omítelo. No expliques nada.
+
+EJEMPLO
+Entrada: "SENSOR TPS CADILLAC DEVILLE, ELDORADO 82-89"
+Salida: {"marca": null, "ficha_tecnica": {}, "oem": [], "aplicaciones": [{"make":"CADILLAC","model":"DEVILLE","year_from":1982,"year_to":1989,"motor":null},{"make":"CADILLAC","model":"ELDORADO","year_from":1982,"year_to":1989,"motor":null}], "confidence": 0.9}
+
+Responde SIEMPRE en JSON con este formato exacto:
+{"marca": string|null, "ficha_tecnica": {}, "oem": [{"brand": string|null, "code": string}], "aplicaciones": [{"make": string, "model": string, "year_from": number|null, "year_to": number|null, "motor": string|null}], "confidence": number}`;
+
+function buildEnrichUserBlock(input: ExtractInput): string {
+  const lines = [`Código: ${input.codigo}`, `Nombre: ${input.nombre}`];
+  const desc = (input.descripcion ?? "").trim();
+  if (desc) lines.push(`Descripción: ${desc}`);
+  return lines.join("\n");
+}
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
+function toInt(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  if (typeof v === "string") {
+    const n = Number.parseInt(v, 10);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function parseFicha(v: unknown): ProductSpec[] {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return [];
+  const out: ProductSpec[] = [];
+  for (const [label, value] of Object.entries(v as Record<string, unknown>)) {
+    const l = label.trim();
+    const val = value == null ? "" : String(value).trim();
+    if (l && val) out.push({ label: l, value: val });
+  }
+  return out.slice(0, 30);
+}
+
+function parseApps(v: unknown): ExtractedApplication[] {
+  if (!Array.isArray(v)) return [];
+  const out: ExtractedApplication[] = [];
+  for (const a of v) {
+    if (!a || typeof a !== "object") continue;
+    const o = a as Record<string, unknown>;
+    const make =
+      typeof o["make"] === "string" ? o["make"].trim().toUpperCase() : "";
+    const model =
+      typeof o["model"] === "string" ? o["model"].trim().toUpperCase() : "";
+    if (!make || !model) continue;
+    const app: ExtractedApplication = { make, model };
+    const yf = toInt(o["year_from"]);
+    const yt = toInt(o["year_to"]);
+    if (yf !== undefined) app.year_from = yf;
+    if (yt !== undefined) app.year_to = yt;
+    const motor = typeof o["motor"] === "string" ? o["motor"].trim() : "";
+    if (motor) app.motor = motor;
+    out.push(app);
+  }
+  return out.slice(0, 20);
+}
+
+// Extract structured attributes from one product's codigo/nombre/descripcion.
+// Distinguishes a transient API failure (retryable → caller aborts the run) from
+// an empty/invalid output (skip the row). The result is passed through the
+// replaceable validateGrounding hook before returning.
+export async function extractAttributes(
+  input: ExtractInput,
+): Promise<
+  | { ok: true; attrs: EnrichmentAttributes }
+  | { ok: false; retryable: boolean }
+> {
+  if (!isOpenAIDirectConfigured()) return { ok: false, retryable: false };
+
+  const sourceText = buildEnrichUserBlock(input);
+  let content: string | null | undefined;
+  try {
+    const completion = await getOpenAIDirect().chat.completions.create(
+      {
+        model: ENRICH_MODEL,
+        max_completion_tokens: ENRICH_MAX_TOKENS,
+        reasoning_effort: ENRICH_REASONING_EFFORT,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: ENRICH_SYSTEM_PROMPT },
+          { role: "user", content: sourceText },
+        ],
+      },
+      { signal: AbortSignal.timeout(ENRICH_TIMEOUT_MS) },
+    );
+    content = completion.choices[0]?.message?.content;
+  } catch {
+    return { ok: false, retryable: true };
+  }
+  if (!content) return { ok: false, retryable: false };
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return { ok: false, retryable: false };
+  }
+
+  const marca =
+    typeof parsed["marca"] === "string" && parsed["marca"].trim()
+      ? (parsed["marca"] as string).trim()
+      : null;
+  const ficha_tecnica = parseFicha(parsed["ficha_tecnica"]);
+  const rawOem = Array.isArray(parsed["oem"])
+    ? (parsed["oem"] as unknown[])
+        .map((x) => {
+          if (!x || typeof x !== "object") return null;
+          const o = x as Record<string, unknown>;
+          const code = typeof o["code"] === "string" ? o["code"] : "";
+          if (!code) return null;
+          const brand = typeof o["brand"] === "string" ? o["brand"] : null;
+          return { brand, code };
+        })
+        .filter((x): x is { brand: string | null; code: string } => x !== null)
+    : [];
+  const oem = normalizeCodes(rawOem);
+  const aplicaciones = parseApps(parsed["aplicaciones"]);
+  const confidence =
+    typeof parsed["confidence"] === "number"
+      ? clamp01(parsed["confidence"] as number)
+      : 0;
+
+  const attrs = validateGrounding(
+    { marca, ficha_tecnica, oem, aplicaciones, confidence },
+    sourceText,
+  );
+  return { ok: true, attrs };
+}
+
+// What enrichment WOULD write, comparing against the product's currently-empty
+// target fields (ADDITIVE — only empties are fillable). brand/specs are the
+// canonical marca/ficha técnica; oem/aplicaciones map to the structured tables.
+export interface EnrichmentBefore {
+  brand: string;
+  specsCount: number;
+  oemCount: number; // existing product_oem_codes rows (or products.oem length)
+  appsCount: number; // existing product_applications rows
+}
+
+export interface EnrichmentWouldWrite {
+  marca?: string;
+  ficha_tecnica?: ProductSpec[];
+  oem?: ExtractedOemCode[];
+  aplicaciones?: ExtractedApplication[];
+}
+
+export function computeEnrichmentWouldWrite(
+  before: EnrichmentBefore,
+  attrs: EnrichmentAttributes,
+): EnrichmentWouldWrite {
+  const w: EnrichmentWouldWrite = {};
+  if (before.brand === "SIN MARCA" && attrs.marca) w.marca = attrs.marca;
+  if (before.specsCount === 0 && attrs.ficha_tecnica.length)
+    w.ficha_tecnica = attrs.ficha_tecnica;
+  if (before.oemCount === 0 && attrs.oem.length) w.oem = attrs.oem;
+  if (before.appsCount === 0 && attrs.aplicaciones.length)
+    w.aplicaciones = attrs.aplicaciones;
+  return w;
 }

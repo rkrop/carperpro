@@ -34,6 +34,39 @@ export function getOpenAI(): OpenAI {
   return cached;
 }
 
+// ── Direct OpenAI client (real API key, not the integration proxy) ───────────
+// Keyed by OPENAI_REPLIT (a real OpenAI account key with credits), hitting
+// api.openai.com directly. Used by the enrichment pipeline (Fase A), which needs
+// reliable, credited throughput that the shared integration proxy quota doesn't
+// guarantee. Falls back to OPENAI_API_KEY if that's what's configured. Lazy +
+// cached like getOpenAI; guard optional callers with isOpenAIDirectConfigured().
+function directKey(): string | undefined {
+  return process.env.OPENAI_REPLIT || process.env.OPENAI_API_KEY || undefined;
+}
+
+export function isOpenAIDirectConfigured(): boolean {
+  return Boolean(directKey());
+}
+
+let cachedDirect: OpenAI | null = null;
+
+/**
+ * Returns an OpenAI client built from a real API key (OPENAI_REPLIT, or
+ * OPENAI_API_KEY as fallback), talking to api.openai.com directly. Throws if no
+ * key is set — guard with isOpenAIDirectConfigured() when AI is optional.
+ */
+export function getOpenAIDirect(): OpenAI {
+  if (cachedDirect) return cachedDirect;
+  const apiKey = directKey();
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_REPLIT (or OPENAI_API_KEY) must be set to use the direct OpenAI client.",
+    );
+  }
+  cachedDirect = new OpenAI({ apiKey });
+  return cachedDirect;
+}
+
 /**
  * Lazy proxy kept for backwards compatibility: behaves like an `OpenAI`
  * instance but defers configuration/validation until first property access, so
