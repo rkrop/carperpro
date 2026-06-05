@@ -4,6 +4,7 @@ import { logger } from "../logger";
 import { getAdmintotalClient } from "./client";
 import { isAdmintotalConfigured } from "./config";
 import { buildAddressObservaciones } from "../shippingAddress";
+import { withAdvisoryLock, JOB_LOCK } from "../advisory-lock";
 
 const MAX_ATTEMPTS = 6;
 
@@ -40,7 +41,10 @@ function buildPedidoPayload(order: OutboundOrder): Record<string, unknown> {
 
 export async function pushOrder(order: OutboundOrder): Promise<void> {
   if (pushingIds.has(order.id)) {
-    logger.warn({ orderId: order.id }, "Admintotal: pedido ya en proceso de envío, se omite duplicado");
+    logger.warn(
+      { orderId: order.id },
+      "Admintotal: pedido ya en proceso de envío, se omite duplicado",
+    );
     return;
   }
   pushingIds.add(order.id);
@@ -90,23 +94,31 @@ export async function processOutboundQueue(): Promise<void> {
   if (!isAdmintotalConfigured()) return;
   processing = true;
   try {
-    const pending = await db
-      .select()
-      .from(outboundOrdersTable)
-      .where(
-        and(
-          eq(outboundOrdersTable.status, "pending"),
-          lt(outboundOrdersTable.attempts, MAX_ATTEMPTS),
-        ),
+    const ran = await withAdvisoryLock(JOB_LOCK.outboundQueue, async () => {
+      const pending = await db
+        .select()
+        .from(outboundOrdersTable)
+        .where(
+          and(
+            eq(outboundOrdersTable.status, "pending"),
+            lt(outboundOrdersTable.attempts, MAX_ATTEMPTS),
+          ),
+        );
+      if (pending.length === 0) return;
+      logger.info(
+        { count: pending.length },
+        "Admintotal: procesando cola de pedidos",
       );
-    if (pending.length === 0) return;
-    logger.info({ count: pending.length }, "Admintotal: procesando cola de pedidos");
-    for (const order of pending) {
-      try {
-        await pushOrder(order);
-      } catch {
-        // Already recorded on the row; keep processing the rest.
+      for (const order of pending) {
+        try {
+          await pushOrder(order);
+        } catch {
+          // Already recorded on the row; keep processing the rest.
+        }
       }
+    });
+    if (!ran) {
+      logger.debug("Admintotal: otra instancia procesa la cola, se omite");
     }
   } finally {
     processing = false;

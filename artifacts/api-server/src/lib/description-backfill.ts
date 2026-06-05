@@ -12,6 +12,7 @@ import {
 } from "@workspace/integrations-openai-ai-server";
 import { logger } from "./logger";
 import { notTestProduct, sellableProduct } from "./catalogSearch";
+import { withAdvisoryLock, JOB_LOCK } from "./advisory-lock";
 
 // Offline batch generator for AI sales descriptions (Task #49). The Admintotal
 // ERP leaves almost the entire catalog without a `descripcion`, so a shopper
@@ -111,7 +112,8 @@ function buildDataBlock(row: GenRow): string {
     .join("; ");
   if (specs) lines.push(`Especificaciones: ${specs}`);
   const vehicles = (row.vehicles ?? []).filter(Boolean);
-  if (vehicles.length) lines.push(`Vehículos compatibles: ${vehicles.join(", ")}`);
+  if (vehicles.length)
+    lines.push(`Vehículos compatibles: ${vehicles.join(", ")}`);
   const oem = (row.oem ?? []).filter(Boolean);
   if (oem.length) lines.push(`Códigos OEM: ${oem.join(", ")}`);
   return lines.join("\n");
@@ -189,14 +191,16 @@ async function generateDescription(row: GenRow): Promise<GenResult> {
   let text = "";
   try {
     const parsed = JSON.parse(content) as { descripcion?: unknown };
-    if (typeof parsed.descripcion === "string") text = parsed.descripcion.trim();
+    if (typeof parsed.descripcion === "string")
+      text = parsed.descripcion.trim();
   } catch {
     return { ok: false, retryable: false };
   }
 
   if (!text || text.length < 10) return { ok: false, retryable: false };
   if (hasForbiddenSpecifics(text)) return { ok: false, retryable: false };
-  if (hasUngroundedYear(text, dataBlock)) return { ok: false, retryable: false };
+  if (hasUngroundedYear(text, dataBlock))
+    return { ok: false, retryable: false };
 
   return { ok: true, text };
 }
@@ -218,119 +222,137 @@ export async function backfillDescriptions(): Promise<void> {
     return;
   }
   if (running) {
-    logger.debug("descripciones: generación ya en curso, se omite esta ejecución");
+    logger.debug(
+      "descripciones: generación ya en curso, se omite esta ejecución",
+    );
     return;
   }
   running = true;
   try {
-    logger.info("descripciones: iniciando generación (se reanuda tras reinicios)");
-    let total = 0;
-    let iterations = 0;
-    let cursor = "";
-    for (;;) {
-      if (++iterations > MAX_ITER) {
-        logger.error(
-          { total, iterations },
-          "descripciones: generación abortada por límite de iteraciones",
-        );
-        break;
-      }
-
-      const page: GenRow[] = await db
-        .select({
-          id: productsTable.id,
-          name: productsTable.name,
-          brand: productsTable.brand,
-          specs: productsTable.specs,
-          vehicles: productsTable.vehicles,
-          oem: productsTable.oem,
-          categoryName: categoriesTable.name,
-          subcategoryName: subcategoriesTable.name,
-          fp: sql<string>`${sql.raw(fingerprintExpr("products."))}`,
-        })
-        .from(productsTable)
-        .leftJoin(
-          categoriesTable,
-          eq(productsTable.categoryId, categoriesTable.id),
-        )
-        .leftJoin(
-          subcategoriesTable,
-          eq(productsTable.subcategoryId, subcategoriesTable.id),
-        )
-        .where(
-          and(
-            sql`${productsTable.descripcionGenerada} is null`,
-            sql`(${productsTable.descripcion} is null or btrim(${productsTable.descripcion}) = '')`,
-            gt(productsTable.id, cursor),
-            notTestProduct(),
-            sellableProduct(),
-          ),
-        )
-        .orderBy(asc(productsTable.id))
-        .limit(PAGE);
-
-      if (page.length === 0) break;
-      cursor = page[page.length - 1]!.id;
-
-      // Generate the page through a small concurrency pool. A retryable (API)
-      // failure aborts the whole run so we don't burn calls during an outage.
-      let updated = 0;
-      let aborted = false;
-      let next = 0;
-      const worker = async (): Promise<void> => {
-        for (;;) {
-          if (aborted) return;
-          const i = next++;
-          if (i >= page.length) return;
-          const row = page[i]!;
-          const result = await generateDescription(row);
-          if (result.ok) {
-            // Land the write ONLY if the row is still NULL, still lacks an ERP
-            // descripcion, and its source fingerprint is unchanged since we read
-            // it. If an ERP sync touched the watched columns mid-generation (the
-            // reset trigger NULLed it again), the fingerprint differs and this
-            // is a no-op — the row gets a fresh description on the next pass
-            // instead of a stale one being written back.
-            const res = await db.execute(
-              sql`update products set descripcion_generada = ${result.text}
-                  where id = ${row.id}
-                    and descripcion_generada is null
-                    and (descripcion is null or btrim(descripcion) = '')
-                    and ${sql.raw(fingerprintExpr(""))} = ${row.fp}`,
-            );
-            if (res.rowCount && res.rowCount > 0) updated++;
-          } else if (result.retryable) {
-            aborted = true;
-            return;
-          }
-          // content skip → leave NULL, move on
-        }
-      };
-      await Promise.all(
-        Array.from({ length: Math.min(CONCURRENCY, page.length) }, () =>
-          worker(),
-        ),
+    const ran = await withAdvisoryLock(
+      JOB_LOCK.descriptionBackfill,
+      runDescriptionBackfill,
+    );
+    if (!ran) {
+      logger.debug(
+        "descripciones: otra instancia tiene el lock de generación, se omite esta ejecución",
       );
-
-      total += updated;
-      if (aborted) {
-        logger.error(
-          { total },
-          "descripciones: fallo de API, generación detenida (se reintenta en el próximo arranque/tick)",
-        );
-        break;
-      }
-      logger.info({ generated: total }, "descripciones: progreso de generación");
-    }
-
-    if (total > 0) {
-      logger.info({ generated: total }, "descripciones: generación completada");
-    } else {
-      logger.info("descripciones: sin filas pendientes (catálogo al día)");
     }
   } catch (err) {
     logger.error({ err }, "descripciones: generación falló (no fatal)");
   } finally {
     running = false;
+  }
+}
+
+// The real pass, run under a Postgres advisory lock so only one instance
+// generates descriptions at a time across an Autoscale fleet.
+async function runDescriptionBackfill(): Promise<void> {
+  logger.info(
+    "descripciones: iniciando generación (se reanuda tras reinicios)",
+  );
+  let total = 0;
+  let iterations = 0;
+  let cursor = "";
+  for (;;) {
+    if (++iterations > MAX_ITER) {
+      logger.error(
+        { total, iterations },
+        "descripciones: generación abortada por límite de iteraciones",
+      );
+      break;
+    }
+
+    const page: GenRow[] = await db
+      .select({
+        id: productsTable.id,
+        name: productsTable.name,
+        brand: productsTable.brand,
+        specs: productsTable.specs,
+        vehicles: productsTable.vehicles,
+        oem: productsTable.oem,
+        categoryName: categoriesTable.name,
+        subcategoryName: subcategoriesTable.name,
+        fp: sql<string>`${sql.raw(fingerprintExpr("products."))}`,
+      })
+      .from(productsTable)
+      .leftJoin(
+        categoriesTable,
+        eq(productsTable.categoryId, categoriesTable.id),
+      )
+      .leftJoin(
+        subcategoriesTable,
+        eq(productsTable.subcategoryId, subcategoriesTable.id),
+      )
+      .where(
+        and(
+          sql`${productsTable.descripcionGenerada} is null`,
+          sql`(${productsTable.descripcion} is null or btrim(${productsTable.descripcion}) = '')`,
+          gt(productsTable.id, cursor),
+          notTestProduct(),
+          sellableProduct(),
+        ),
+      )
+      .orderBy(asc(productsTable.id))
+      .limit(PAGE);
+
+    if (page.length === 0) break;
+    cursor = page[page.length - 1]!.id;
+
+    // Generate the page through a small concurrency pool. A retryable (API)
+    // failure aborts the whole run so we don't burn calls during an outage.
+    let updated = 0;
+    let aborted = false;
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        if (aborted) return;
+        const i = next++;
+        if (i >= page.length) return;
+        const row = page[i]!;
+        const result = await generateDescription(row);
+        if (result.ok) {
+          // Land the write ONLY if the row is still NULL, still lacks an ERP
+          // descripcion, and its source fingerprint is unchanged since we read
+          // it. If an ERP sync touched the watched columns mid-generation (the
+          // reset trigger NULLed it again), the fingerprint differs and this
+          // is a no-op — the row gets a fresh description on the next pass
+          // instead of a stale one being written back.
+          const res = await db.execute(
+            sql`update products set descripcion_generada = ${result.text}
+                  where id = ${row.id}
+                    and descripcion_generada is null
+                    and (descripcion is null or btrim(descripcion) = '')
+                    and ${sql.raw(fingerprintExpr(""))} = ${row.fp}`,
+          );
+          if (res.rowCount && res.rowCount > 0) updated++;
+        } else if (result.retryable) {
+          aborted = true;
+          return;
+        }
+        // content skip → leave NULL, move on
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, page.length) }, () =>
+        worker(),
+      ),
+    );
+
+    total += updated;
+    if (aborted) {
+      logger.error(
+        { total },
+        "descripciones: fallo de API, generación detenida (se reintenta en el próximo arranque/tick)",
+      );
+      break;
+    }
+    logger.info({ generated: total }, "descripciones: progreso de generación");
+  }
+
+  if (total > 0) {
+    logger.info({ generated: total }, "descripciones: generación completada");
+  } else {
+    logger.info("descripciones: sin filas pendientes (catálogo al día)");
   }
 }

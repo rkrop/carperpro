@@ -17,6 +17,7 @@ import { effectivePrice } from "../pricing";
 import { notifyOrderPaid, notifyOrderPaidCustomer } from "../twilio/notify";
 import { notifyOrderPaidPush, notifyOrderProblemPush } from "../push/notify";
 import { logger } from "../logger";
+import { withAdvisoryLock, JOB_LOCK } from "../advisory-lock";
 
 export interface CheckoutLineInput {
   productId: string;
@@ -46,7 +47,13 @@ export interface ClientOrder {
   pago: string;
   status: string;
   paymentStatus: string;
-  lines: { id: string; name: string; sku: string; qty: number; price: number }[];
+  lines: {
+    id: string;
+    name: string;
+    sku: string;
+    qty: number;
+    price: number;
+  }[];
 }
 
 export class CheckoutError extends Error {
@@ -61,7 +68,10 @@ export class CheckoutError extends Error {
 
 function makeFolio(): string {
   const now = new Date();
-  const stamp = now.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+  const stamp = now
+    .toISOString()
+    .replace(/[-:T.Z]/g, "")
+    .slice(0, 14);
   const rand = Math.floor(Math.random() * 9000 + 1000);
   return `APP-${stamp}-${rand}`;
 }
@@ -106,7 +116,12 @@ export function orderToClient(order: OutboundOrder): ClientOrder {
  */
 export async function createCardCheckoutSession(
   input: CreateCheckoutInput,
-): Promise<{ url: string; orderId: number; folio: string; guestToken: string | null }> {
+): Promise<{
+  url: string;
+  orderId: number;
+  folio: string;
+  guestToken: string | null;
+}> {
   if (!input.lines || input.lines.length === 0) {
     throw new CheckoutError(400, "El pedido no tiene productos");
   }
@@ -144,7 +159,13 @@ export async function createCardCheckoutSession(
   const lines: OutboundOrderLine[] = input.lines.map((l) => {
     const dbP = priceMap.get(l.productId)!;
     const qty = Math.max(1, Math.floor(l.qty));
-    return { productId: dbP.id, sku: dbP.sku, name: dbP.name, qty, price: effectivePrice(dbP) };
+    return {
+      productId: dbP.id,
+      sku: dbP.sku,
+      name: dbP.name,
+      qty,
+      price: effectivePrice(dbP),
+    };
   });
 
   const payable = lines.filter((l) => l.price > 0);
@@ -173,11 +194,15 @@ export async function createCardCheckoutSession(
   }
   const requestedByProduct = aggregateRequested(lines);
   const shortfalls = lines.filter(
-    (l) => (availability.get(l.productId) ?? 0) < (requestedByProduct.get(l.productId) ?? 0),
+    (l) =>
+      (availability.get(l.productId) ?? 0) <
+      (requestedByProduct.get(l.productId) ?? 0),
   );
   if (shortfalls.length > 0) {
     const detail = shortfalls
-      .map((l) => `${l.name} (disponible: ${availability.get(l.productId) ?? 0})`)
+      .map(
+        (l) => `${l.name} (disponible: ${availability.get(l.productId) ?? 0})`,
+      )
       .join(", ");
     throw new CheckoutError(
       409,
@@ -260,10 +285,17 @@ export async function createCardCheckoutSession(
     // Roll the order back to failed so it never lingers as a phantom order.
     await db
       .update(outboundOrdersTable)
-      .set({ status: "failed", paymentStatus: "failed", lastError: String(err) })
+      .set({
+        status: "failed",
+        paymentStatus: "failed",
+        lastError: String(err),
+      })
       .where(eq(outboundOrdersTable.id, order.id));
     if (err instanceof CheckoutError) throw err;
-    logger.error({ err, orderId: order.id }, "Stripe: error al crear sesión de pago");
+    logger.error(
+      { err, orderId: order.id },
+      "Stripe: error al crear sesión de pago",
+    );
     throw new CheckoutError(502, "No se pudo iniciar el pago con tarjeta");
   }
 }
@@ -319,7 +351,9 @@ export async function reconcileStripeOrder(
   if (!order.stripeSessionId) return order;
 
   const stripe = await getUncachableStripeClient();
-  const session = await stripe.checkout.sessions.retrieve(order.stripeSessionId);
+  const session = await stripe.checkout.sessions.retrieve(
+    order.stripeSessionId,
+  );
 
   if (session.status === "expired") {
     const failed = await db
@@ -459,7 +493,9 @@ async function fulfillPaidOrder(
   // against its TOTAL demand, not each line in isolation.
   const requestedByProduct = aggregateRequested(order.lines);
   const soldOut = order.lines.filter(
-    (l) => (available.get(l.productId) ?? 0) < (requestedByProduct.get(l.productId) ?? 0),
+    (l) =>
+      (available.get(l.productId) ?? 0) <
+      (requestedByProduct.get(l.productId) ?? 0),
   );
 
   if (soldOut.length > 0) {
@@ -552,31 +588,42 @@ async function refundSoldOutOrder(
  * unpaid card orders. Called from the scheduler and after webhooks.
  */
 export async function reconcilePendingStripeOrders(): Promise<void> {
-  const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-  const pending = await db
-    .select({ id: outboundOrdersTable.id })
-    .from(outboundOrdersTable)
-    .where(
-      and(
-        isNotNull(outboundOrdersTable.stripeSessionId),
-        gt(outboundOrdersTable.createdAt, cutoff),
-        or(
-          // Buyers who paid but never returned to the app.
-          eq(outboundOrdersTable.paymentStatus, "unpaid"),
-          // Paid orders stranded mid-fulfillment (e.g. a crashed worker).
-          and(
-            eq(outboundOrdersTable.paymentStatus, "paid"),
-            inArray(outboundOrdersTable.status, ["awaiting_payment", "fulfilling"]),
+  const ran = await withAdvisoryLock(JOB_LOCK.stripeReconcile, async () => {
+    const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const pending = await db
+      .select({ id: outboundOrdersTable.id })
+      .from(outboundOrdersTable)
+      .where(
+        and(
+          isNotNull(outboundOrdersTable.stripeSessionId),
+          gt(outboundOrdersTable.createdAt, cutoff),
+          or(
+            // Buyers who paid but never returned to the app.
+            eq(outboundOrdersTable.paymentStatus, "unpaid"),
+            // Paid orders stranded mid-fulfillment (e.g. a crashed worker).
+            and(
+              eq(outboundOrdersTable.paymentStatus, "paid"),
+              inArray(outboundOrdersTable.status, [
+                "awaiting_payment",
+                "fulfilling",
+              ]),
+            ),
           ),
         ),
-      ),
-    );
-  if (pending.length === 0) return;
-  for (const { id } of pending) {
-    try {
-      await reconcileStripeOrder(id);
-    } catch (err) {
-      logger.warn({ orderId: id, err }, "Stripe: reconciliación de pedido falló");
+      );
+    if (pending.length === 0) return;
+    for (const { id } of pending) {
+      try {
+        await reconcileStripeOrder(id);
+      } catch (err) {
+        logger.warn(
+          { orderId: id, err },
+          "Stripe: reconciliación de pedido falló",
+        );
+      }
     }
+  });
+  if (!ran) {
+    logger.debug("Stripe: otra instancia reconcilia pedidos, se omite");
   }
 }

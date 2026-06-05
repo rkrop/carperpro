@@ -13,6 +13,7 @@ import {
   toVectorLiteral,
 } from "./embeddings";
 import { notTestProduct, sellableProduct } from "./catalogSearch";
+import { withAdvisoryLock, JOB_LOCK } from "./advisory-lock";
 
 // Compose the text we embed for a product. Same signal as the full-text vector
 // (name/brand/category/description/specs/vehicles/OEM) but as natural language
@@ -87,82 +88,96 @@ export async function backfillEmbeddings(): Promise<void> {
   }
   running = true;
   try {
-    logger.info(
-      "embeddings: iniciando backfill (free tier ~100/min, se reanuda tras reinicios)",
+    const ran = await withAdvisoryLock(
+      JOB_LOCK.embeddingBackfill,
+      runEmbeddingBackfill,
     );
-    let total = 0;
-    let iterations = 0;
-    for (;;) {
-      if (++iterations > MAX_ITER) {
-        logger.error(
-          { total, iterations },
-          "embeddings: backfill abortado por límite de iteraciones",
-        );
-        break;
-      }
-      const batch: EmbedRow[] = await db
-        .select({
-          id: productsTable.id,
-          name: productsTable.name,
-          brand: productsTable.brand,
-          descripcion: productsTable.descripcion,
-          specs: productsTable.specs,
-          vehicles: productsTable.vehicles,
-          oem: productsTable.oem,
-          categoryName: categoriesTable.name,
-          subcategoryName: subcategoriesTable.name,
-        })
-        .from(productsTable)
-        .leftJoin(
-          categoriesTable,
-          eq(productsTable.categoryId, categoriesTable.id),
-        )
-        .leftJoin(
-          subcategoriesTable,
-          eq(productsTable.subcategoryId, subcategoriesTable.id),
-        )
-        .where(
-          and(
-            sql`${productsTable.embedding} is null`,
-            notTestProduct(),
-            sellableProduct(),
-          ),
-        )
-        .limit(BATCH);
-
-      if (batch.length === 0) break;
-
-      const vectors = await embedDocuments(batch.map(buildEmbeddingText));
-      let updated = 0;
-      for (let i = 0; i < batch.length; i++) {
-        const vector = vectors[i];
-        const row = batch[i];
-        if (!vector || !row) continue;
-        await db.execute(
-          sql`update products set embedding = ${toVectorLiteral(vector)}::vector where id = ${row.id}`,
-        );
-        updated++;
-      }
-      total += updated;
-      if (updated === 0) {
-        // Whole batch failed to embed (API down / invalid key / daily quota
-        // exhausted) — stop instead of re-selecting the same NULL rows forever.
-        // Next boot retries.
-        logger.error(
-          "embeddings: ningún vector generado en el lote, backfill detenido (se reintenta en el próximo arranque)",
-        );
-        break;
-      }
-      logger.info({ embedded: total }, "embeddings: progreso de backfill");
-    }
-    if (total > 0) {
-      logger.info({ embedded: total }, "embeddings: backfill completado");
-    } else {
-      logger.info("embeddings: sin filas pendientes (índice semántico al día)");
+    if (!ran) {
+      logger.debug(
+        "embeddings: otra instancia tiene el lock del backfill, se omite esta ejecución",
+      );
     }
   } catch (err) {
     logger.error({ err }, "embeddings: backfill falló (no fatal)");
   } finally {
     running = false;
+  }
+}
+
+// The real pass, run under a Postgres advisory lock so only one instance embeds
+// at a time across an Autoscale fleet.
+async function runEmbeddingBackfill(): Promise<void> {
+  logger.info(
+    "embeddings: iniciando backfill (free tier ~100/min, se reanuda tras reinicios)",
+  );
+  let total = 0;
+  let iterations = 0;
+  for (;;) {
+    if (++iterations > MAX_ITER) {
+      logger.error(
+        { total, iterations },
+        "embeddings: backfill abortado por límite de iteraciones",
+      );
+      break;
+    }
+    const batch: EmbedRow[] = await db
+      .select({
+        id: productsTable.id,
+        name: productsTable.name,
+        brand: productsTable.brand,
+        descripcion: productsTable.descripcion,
+        specs: productsTable.specs,
+        vehicles: productsTable.vehicles,
+        oem: productsTable.oem,
+        categoryName: categoriesTable.name,
+        subcategoryName: subcategoriesTable.name,
+      })
+      .from(productsTable)
+      .leftJoin(
+        categoriesTable,
+        eq(productsTable.categoryId, categoriesTable.id),
+      )
+      .leftJoin(
+        subcategoriesTable,
+        eq(productsTable.subcategoryId, subcategoriesTable.id),
+      )
+      .where(
+        and(
+          sql`${productsTable.embedding} is null`,
+          notTestProduct(),
+          sellableProduct(),
+        ),
+      )
+      .limit(BATCH);
+
+    if (batch.length === 0) break;
+
+    const vectors = await embedDocuments(batch.map(buildEmbeddingText));
+    let updated = 0;
+    for (let i = 0; i < batch.length; i++) {
+      const vector = vectors[i];
+      const row = batch[i];
+      if (!vector || !row) continue;
+      await db.execute(
+        sql`update products set embedding = ${toVectorLiteral(vector)}::vector where id = ${row.id}`,
+      );
+      updated++;
+    }
+    total += updated;
+    if (updated === 0) {
+      // Whole batch failed to embed (API down / invalid key / daily quota
+      // exhausted) — stop instead of re-selecting the same NULL rows forever.
+      // Next boot retries.
+      logger.error(
+        "embeddings: ningún vector generado en el lote, backfill detenido (se reintenta en el próximo arranque)",
+      );
+      break;
+    }
+    logger.info({ embedded: total }, "embeddings: progreso de backfill");
+  }
+  if (total > 0) {
+    logger.info({ embedded: total }, "embeddings: backfill completado");
+  } else {
+    logger.info("embeddings: sin filas pendientes (índice semántico al día)");
   }
 }

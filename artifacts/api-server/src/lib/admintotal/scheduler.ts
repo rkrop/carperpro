@@ -12,6 +12,7 @@ import { processOutboundQueue } from "./outbound";
 import { reconcilePendingStripeOrders } from "../stripe/service";
 import { backfillEmbeddings } from "../embedding-backfill";
 import { backfillDescriptions } from "../description-backfill";
+import { withAdvisoryLock, JOB_LOCK } from "../advisory-lock";
 
 let started = false;
 let timer: NodeJS.Timeout | null = null;
@@ -24,7 +25,14 @@ async function tick(): Promise<void> {
   // runs. Re-enable with ADMINTOTAL_AUTO_SYNC=1.
   if (isAutoSyncEnabled()) {
     try {
-      await runInboundSync();
+      const ran = await withAdvisoryLock(JOB_LOCK.inboundSync, async () => {
+        await runInboundSync();
+      });
+      if (!ran) {
+        logger.info(
+          "Admintotal: otra instancia ejecuta el sync programado, se omite en esta",
+        );
+      }
     } catch (err) {
       logger.error({ err }, "Admintotal: error inesperado en sync programado");
     }
@@ -36,7 +44,10 @@ async function tick(): Promise<void> {
   try {
     await backfillEmbeddings();
   } catch (err) {
-    logger.error({ err }, "embeddings: error inesperado en catch-up programado");
+    logger.error(
+      { err },
+      "embeddings: error inesperado en catch-up programado",
+    );
   }
   // Generate AI descriptions for anything new/content-changed since the last pass
   // (the reset trigger NULLs descripcion_generada on content change; new rows
@@ -44,7 +55,10 @@ async function tick(): Promise<void> {
   try {
     await backfillDescriptions();
   } catch (err) {
-    logger.error({ err }, "descripciones: error inesperado en generación programada");
+    logger.error(
+      { err },
+      "descripciones: error inesperado en generación programada",
+    );
   }
   try {
     await processOutboundQueue();
