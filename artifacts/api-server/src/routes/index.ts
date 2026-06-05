@@ -12,6 +12,7 @@ import scanRouter from "./scan";
 import authRouter from "./auth";
 import pushRouter from "./push";
 import restockRouter from "./restock";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(scanRouter);
 router.use(authRouter);
 router.use(pushRouter);
 router.use(restockRouter);
+router.use(adminRouter);
 
 export default router;

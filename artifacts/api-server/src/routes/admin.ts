@@ -1,0 +1,77 @@
+import {
+  Router,
+  type IRouter,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
+import { timingSafeEqual } from "node:crypto";
+import { logger } from "../lib/logger";
+import { getWebhookToken } from "../lib/admintotal/config";
+import { runAttributeExtractionPilot } from "../lib/attribute-extraction";
+
+// Operaciones administrativas internas (no expuestas a la app/tienda). Hoy aloja
+// el PILOTO de extracción de atributos desde nuestros propios nombres. Reusa el
+// token de webhooks de Admintotal como secreto de acceso; en desarrollo se
+// permite sin token para poder probarlo con curl en localhost.
+
+const router: IRouter = Router();
+
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
+function authAdmin(req: Request, res: Response, next: NextFunction): void {
+  // En desarrollo el endpoint es interno y se prueba en localhost: se permite
+  // sin token para poder correr el piloto con curl.
+  if (process.env.NODE_ENV !== "production") {
+    next();
+    return;
+  }
+  const expected = getWebhookToken();
+  if (!expected) {
+    logger.error("admin: ADMINTOTAL_WEBHOOK_TOKEN ausente; acceso rechazado");
+    res.status(503).json({ error: "admin no configurado" });
+    return;
+  }
+  // Solo header (NUNCA query string): un token en la URL se filtra en logs de
+  // proxy, historial y enlaces copiados.
+  const provided = req.header("Api-key")?.trim() ?? "";
+  if (provided && safeEqual(provided, expected)) {
+    next();
+    return;
+  }
+  res.status(401).json({ error: "no autorizado" });
+}
+
+// POST /api/admin/attributes/pilot
+//   ?limit=N      cuántas filas analizar (default 40, máx 1000)
+//   ?write=1      aplicar escrituras ADITIVAS (default 0 = dry-run, no escribe)
+//   ?sample=N     cuántas filas incluir en el reporte de muestra
+router.post(
+  "/admin/attributes/pilot",
+  authAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const limit = Number.parseInt(String(req.query["limit"] ?? "40"), 10) || 40;
+    const write = req.query["write"] === "1" || req.query["write"] === "true";
+    const sampleRaw = Number.parseInt(String(req.query["sample"] ?? ""), 10);
+    const sampleSize = Number.isFinite(sampleRaw) ? sampleRaw : undefined;
+
+    try {
+      const result = await runAttributeExtractionPilot({
+        limit,
+        write,
+        sampleSize,
+      });
+      res.json({ mode: write ? "write" : "dry-run", ...result });
+    } catch (err) {
+      logger.error({ err }, "admin: piloto de atributos falló");
+      res.status(500).json({ error: "piloto falló" });
+    }
+  },
+);
+
+export default router;
