@@ -77,9 +77,23 @@ CÓMO TE COMPORTAS:
 - NO prometas capacidades que no tienes. NUNCA digas que vas a "extraer el motor del VIN": el sistema decodifica el VIN automáticamente y te entrega los datos disponibles; trabaja solo con lo que recibes.
 - Cuando tengas vehículo + pieza/síntoma, deduce la refacción más probable y prepara la búsqueda en el catálogo.
 
+MEMORIA DE LA CONVERSACIÓN (EVITAR REPETIR PREGUNTAS):
+- Antes de preguntar, REVISE todo lo que el cliente ya dijo en turnos anteriores (marca, modelo, año, pieza, síntoma). No vuelva a pedir un dato que ya tiene.
+- En cuanto tenga la pieza/síntoma y al menos la marca y el modelo, BUSQUE (devuelva "search_query"). No siga pidiendo datos para "afinar"; es mejor mostrar opciones y dejar que el cliente confirme.
+- NO repita la misma pregunta dos turnos seguidos. Si ya preguntó algo y el cliente no lo dio o respondió otra cosa, cambie de táctica: busque con lo que tiene, o pregunte algo distinto.
+
+EL AÑO NO FILTRA LA BÚSQUEDA:
+- La búsqueda del catálogo es por pieza + marca/modelo. Los años suelen venir en RANGOS dentro de las descripciones, así que NO incluya el año en "search_query" ni lo exija para poder buscar.
+- Puede pedir el año, pero solo para CONFIRMAR la compatibilidad, no como requisito para mostrar resultados.
+
+COHERENCIA VEHÍCULO-MOTOR:
+- Si el cliente menciona un motor que claramente NO corresponde al modelo (por ejemplo, un Nissan Tsuru con "motor 3.0", cuando ese auto usa motores chicos de 1.6), no busque algo incongruente: hágaselo notar con UNA sola pregunta breve para aclarar (p. ej. confirmar el motor o el modelo).
+- Si no está seguro de la incongruencia, no insista; continúe con la búsqueda normal.
+
 LÍMITES DE COMPATIBILIDAD (IMPORTANTE):
 - El catálogo no siempre tiene la compatibilidad exacta por motor o año. Por eso busca primero por pieza + marca/modelo y presenta opciones.
 - Sé honesto: invita al cliente a confirmar la compatibilidad con el número de parte original (OEM) o con el modelo y año exactos. No afirmes compatibilidad que no puedas verificar.
+- Cuando no haya una coincidencia exacta, NO repita "deme el modelo y el año". En su lugar ofrezca alternativas concretas: probar otro nombre para la pieza, dar el número de parte original (OEM), o revisar la categoría correspondiente.
 
 REGLAS ESTRICTAS:
 - NUNCA inventes piezas, precios, números de parte (SKU) ni marcas. Los productos reales y sus precios aparecen como tarjetas que el cliente verá; tú solo orientas.
@@ -109,6 +123,40 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
 
 function hasForbiddenSpecifics(text: string): boolean {
   return FORBIDDEN_PATTERNS.some((re) => re.test(text));
+}
+
+// Pick a variant deterministically by the number of user turns so consecutive
+// turns don't repeat the SAME canned text verbatim (the old code returned one
+// fixed string for every no-match / fallback, which read as a loop).
+function pickVariant(variants: string[], userTurns: number): string {
+  return variants[userTurns % variants.length];
+}
+
+// Honest intros for when results came from a RELAXED search (the catalog had no
+// confirmed match for the vehicle, so we widened to the part alone). We never
+// imply the rows are confirmed-compatible — we tell the shopper to verify.
+const RELAXED_INTROS = [
+  "No encontré una coincidencia exacta para su vehículo, así que estas son opciones generales de esta pieza. Le recomiendo confirmar la compatibilidad por el número de parte original (OEM) o con el modelo y año exactos:",
+  "No localicé una refacción específica para su vehículo, pero estas son alternativas de esta pieza. Antes de comprar, verifique la compatibilidad con el número OEM o con el modelo y año exactos:",
+];
+
+// Actionable no-match messages. Crucially these do NOT just re-ask "modelo y
+// año" (the dead-end loop); they offer concrete next steps.
+const NO_MATCH_REPLIES = [
+  "No encontré esa refacción en nuestro catálogo. Puede intentar con otro nombre para la pieza, indicarme el número de parte original (OEM), o decirme la categoría (por ejemplo, frenos, suspensión o motor) para orientar la búsqueda.",
+  "No tengo resultados para esa búsqueda en este momento. ¿Desea que la busque con otro término, o me comparte el número de parte original (OEM) para localizar el equivalente exacto?",
+  "No aparecieron coincidencias para esa pieza. Si me indica el número OEM o una descripción distinta de la refacción, vuelvo a intentarlo; también puedo orientarle por categoría.",
+];
+
+// Default intro when the model's own message can't be used (empty or contained
+// forbidden specifics) but we DO have grounded results to show.
+const DEFAULT_INTROS = [
+  "Estas son las opciones que encontré en el catálogo. Revise las tarjetas para ver precio y disponibilidad:",
+  "Encontré estas refacciones en el catálogo. En las tarjetas puede ver el precio y la disponibilidad:",
+];
+
+function countUserTurns(history: { role: AssistantRole }[]): number {
+  return history.filter((m) => m.role === "user").length;
 }
 
 /**
@@ -167,7 +215,15 @@ export async function runAssistant(
     if (vinSeen)
       return "No fue posible decodificar el VIN automáticamente. ¿Me indica la marca, el modelo y el año de su vehículo, y qué refacción necesita?";
     if (history.length > 1)
-      return "Continuemos. ¿Me confirma la marca, el modelo y el año de su vehículo, y qué refacción necesita o qué falla presenta?";
+      // Vary the mid-chat fallback so a second consecutive hiccup doesn't repeat
+      // the exact same sentence (which reads as a loop).
+      return pickVariant(
+        [
+          "Continuemos. ¿Me confirma la marca, el modelo y el año de su vehículo, y qué refacción necesita o qué falla presenta?",
+          "Sigamos. Para ayudarle mejor, ¿me indica qué pieza busca o qué falla presenta su vehículo?",
+        ],
+        countUserTurns(history),
+      );
     return GENERIC_FALLBACK;
   };
 
@@ -233,28 +289,42 @@ export async function runAssistant(
 
   // Ground the recommendation in the real catalog, reusing the shared pipeline
   // with AI assist + semantic widening on (same behavior as the search screen).
-  const { rows } = await searchCatalog({
+  // `deprioritizeAccessories` pushes connectors/sensors/harnesses below the real
+  // part so a search for "bomba" surfaces actual pumps first.
+  const { rows, relaxed } = await searchCatalog({
     q: searchQuery,
     assist: true,
     limit: MAX_RESULTS,
+    deprioritizeAccessories: true,
   });
 
+  const userTurns = countUserTurns(history);
+
   if (rows.length === 0) {
-    // Honest no-match: never imply products exist when they don't.
+    // Honest no-match: never imply products exist when they don't, and never
+    // dead-end the conversation by re-asking for "modelo y año". Offer concrete,
+    // varied alternatives instead.
     return {
-      reply:
-        "No encontré esa refacción en nuestro catálogo en este momento. ¿Me confirma el modelo y el año exactos, o desea que busque otra pieza?",
+      reply: pickVariant(NO_MATCH_REPLIES, userTurns),
       products: [],
     };
   }
 
-  // Recommendation turn: the cards carry the real price/SKU/stock. If the model's
-  // intro stayed clean, keep it; if it tried to state specifics itself, replace it
-  // with a safe intro that points the customer to the cards.
-  const intro =
-    message && !hasForbiddenSpecifics(message)
-      ? message
-      : "Estas son las opciones que encontré en el catálogo. Revise las tarjetas para ver precio y disponibilidad:";
+  // Recommendation turn: the cards carry the real price/SKU/stock.
+  // - If the search was RELAXED (vehicle dropped / semantic widen), we cannot
+  //   confirm these fit the shopper's car, so we OVERRIDE any model intro with an
+  //   honest disclaimer that points to OEM/year confirmation. This is the core
+  //   fix for "shows connectors as if compatible".
+  // - Otherwise keep the model's intro if it stayed clean; fall back to a safe
+  //   default intro if it was empty or slipped in a price/SKU/stock specific.
+  let intro: string;
+  if (relaxed) {
+    intro = pickVariant(RELAXED_INTROS, userTurns);
+  } else if (message && !hasForbiddenSpecifics(message)) {
+    intro = message;
+  } else {
+    intro = pickVariant(DEFAULT_INTROS, userTurns);
+  }
 
   return {
     reply: intro,

@@ -88,12 +88,42 @@ export interface SearchCatalogParams {
   brand?: string;
   limit?: number;
   offset?: number;
+  /**
+   * When true, sort peripheral/accessory products (conectores, arneses,
+   * sensores, repuestos…) BELOW the primary part the shopper asked for, so a
+   * search for "bomba" surfaces real pumps before connectors/sensors. Opt-in
+   * (the assistant uses it); the catalog listing and scanner leave it off so
+   * their ordering is unchanged. Any accessory marker that the shopper actually
+   * typed is exempt, so a search for "conector" is never demoted.
+   */
+  deprioritizeAccessories?: boolean;
 }
 
 export interface SearchCatalogResult {
   rows: CatalogProduct[];
   total: number;
+  /**
+   * True when the result set was NOT obtained from the literal query: i.e. the
+   * AI-assist pass had to drop the vehicle term and match the part alone, or the
+   * semantic pass widened beyond the text match. Callers (the assistant) use
+   * this to be honest that the rows may not be confirmed-compatible with the
+   * shopper's vehicle. Absent/false means the literal query matched.
+   */
+  relaxed?: boolean;
 }
+
+// Peripheral/secondary part markers. When `deprioritizeAccessories` is on, rows
+// whose name contains one of these (and the shopper didn't type it) sort after
+// the primary part. Conservative on purpose — only clearly-secondary items.
+const ACCESSORY_MARKERS = [
+  "conector",
+  "arnes",
+  "sensor",
+  "interruptor",
+  "fusible",
+  "relevador",
+  "repuesto",
+];
 
 /**
  * The single catalog search pipeline used by both the `/products` listing route
@@ -111,6 +141,33 @@ export async function searchCatalog(
   const assist = params.assist ?? false;
   const limit = Math.min(params.limit ?? 50, 200);
   const offset = params.offset ?? 0;
+
+  // Optional accessory-deprioritization order term, computed once. Demotes rows
+  // whose name mentions a peripheral marker the shopper did NOT type, so primary
+  // parts sort first. Null when disabled or every marker was typed (nothing to
+  // demote). Added as the FIRST order key so it groups primary parts above
+  // accessories before relevance/name tiebreakers apply.
+  let accessoryOrder: SQL | null = null;
+  if (params.deprioritizeAccessories) {
+    const typed = new Set(
+      q
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .split(/[^a-z0-9]+/)
+        .filter(Boolean),
+    );
+    // Exempt any marker the shopper actually typed, matching morphological
+    // variants by prefix so "sensores"/"conectores" exempt "sensor"/"conector".
+    const typedTokens = Array.from(typed);
+    const markers = ACCESSORY_MARKERS.filter(
+      (m) => !typedTokens.some((t) => t.startsWith(m)),
+    );
+    if (markers.length > 0) {
+      const pattern = markers.join("|");
+      accessoryOrder = sql`(case when unaccent(lower(${productsTable.name})) ~ ${pattern} then 1 else 0 end) asc`;
+    }
+  }
 
   // Filters that apply regardless of the search terms. Kept separate from the
   // search predicate so the AI-assist path can re-run the search with rewritten
@@ -135,6 +192,7 @@ export async function searchCatalog(
     const orderBy: SQL[] = rankOrder
       ? [rankOrder, sql`${productsTable.name} asc`, sql`${productsTable.id} asc`]
       : [sql`${productsTable.name} asc`];
+    if (accessoryOrder) orderBy.unshift(accessoryOrder);
     const rows = await db
       .select(productColumns)
       .from(productsTable)
@@ -167,6 +225,7 @@ export async function searchCatalog(
       sql`(${textCondition} or ${semanticClose})`,
     );
     const orderBy: SQL[] = [
+      ...(accessoryOrder ? [accessoryOrder] : []), // primary parts above accessories
       sql`(${textCondition}) desc`, // text hits (TRUE) before pure-semantic hits
       ...(textRank ? [textRank] : []),
       sql`coalesce(${distance}, 2) asc`, // then closest by meaning
@@ -213,6 +272,9 @@ export async function searchCatalog(
   }
 
   let { rows, total } = await runSearch(searchConditions, rankOrder);
+  // True once results stop coming from the literal query (vehicle term dropped,
+  // or semantic widening). The literal-query result above is never relaxed.
+  let relaxed = false;
 
   // AI assist: when the caller opted in, the query has real terms, and plain
   // search came back thin, ask the model to split the phrase into part + vehicle
@@ -223,23 +285,28 @@ export async function searchCatalog(
   if (assist && plainWords.length > 0 && total < ASSIST_MIN_RESULTS) {
     const interp = await interpretQuery(q);
     if (interp) {
-      const candidates: string[][] = [];
+      // Candidates from most specific (part + vehicle) to least (part only). The
+      // part-only candidate "relaxes" the search — it drops the vehicle filter,
+      // so its results aren't confirmed-compatible with the shopper's car.
+      const candidates: { words: string[]; relaxes: boolean }[] = [];
       const full = [...interp.parts, ...interp.vehicle];
-      if (full.length > 0) candidates.push(full);
-      if (interp.parts.length > 0) candidates.push(interp.parts);
+      if (full.length > 0) candidates.push({ words: full, relaxes: false });
+      if (interp.parts.length > 0)
+        candidates.push({ words: interp.parts, relaxes: interp.vehicle.length > 0 });
 
       // Skip candidates identical to the plain query or already tried.
       const seen = new Set<string>([plainWords.join(" ")]);
       for (const candidate of candidates) {
-        const key = candidate.join(" ");
+        const key = candidate.words.join(" ");
         if (key === "" || seen.has(key)) continue;
         seen.add(key);
-        const aiFts = buildFtsSearch(candidate);
+        const aiFts = buildFtsSearch(candidate.words);
         const aiResult = await runSearch([aiFts.condition], aiFts.rankOrder);
         if (aiResult.total > total) {
           ({ rows, total } = aiResult);
           winningCondition = aiFts.condition;
           winningRank = aiFts.rankOrder;
+          relaxed = candidate.relaxes;
           break;
         }
       }
@@ -267,6 +334,9 @@ export async function searchCatalog(
           queryVector,
         );
         if (semantic.total >= total) {
+          // Semantic widening pulls in meaning-based matches beyond the literal
+          // query, so the set is no longer a confirmed vehicle/part text match.
+          if (semantic.total > total) relaxed = true;
           ({ rows, total } = semantic);
         }
       }
@@ -275,5 +345,5 @@ export async function searchCatalog(
     }
   }
 
-  return { rows, total };
+  return { rows, total, relaxed };
 }
