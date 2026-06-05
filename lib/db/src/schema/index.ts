@@ -3,6 +3,7 @@ export * from "./subcategories";
 export * from "./brands";
 export * from "./sucursales";
 export * from "./products";
+export * from "./enrichment";
 export * from "./inventory";
 export * from "./outboundOrders";
 export * from "./syncState";

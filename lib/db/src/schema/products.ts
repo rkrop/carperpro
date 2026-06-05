@@ -5,6 +5,7 @@ import {
   doublePrecision,
   boolean,
   jsonb,
+  numeric,
   timestamp,
   customType,
   index,
@@ -138,6 +139,18 @@ export const productsTable = pgTable("products", {
   //   "sin_precio" — no price AND no costo: NOT sellable, hidden from the catalog
   //                  (instead of showing $0). The catalog query filters this out.
   status: text("status").notNull().default("activo"),
+  // --- Enrichment metadata (Fase A) ----------------------------------------
+  // Provenance + review state for structured attribute enrichment. ADDITIVE:
+  // enrichment only fills EMPTY fields (brand/specs/oem/vehicles + the new
+  // product_oem_codes / product_applications tables) and NEVER touches price or
+  // stock. brand and specs remain the canonical "marca" and "ficha técnica"
+  // (single source of truth); these columns only record provenance/confidence
+  // and the human review state. All nullable, and ERP upserts never set them,
+  // so a sync preserves whatever enrichment wrote.
+  enrichmentSource: text("enrichment_source"),
+  enrichmentConfidence: numeric("enrichment_confidence"),
+  enrichmentReviewStatus: text("enrichment_review_status").default("pending"),
+  enrichedAt: timestamp("enriched_at", { withTimezone: true }),
   // Full-text search vector, populated by the `products_search_trigger` DB
   // trigger on every insert/update. The app never writes this directly (hence
   // omitted from the insert schema below); it exists here only so the schema
