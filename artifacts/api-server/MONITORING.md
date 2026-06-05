@@ -6,9 +6,15 @@ Guía breve para detectar y diagnosticar fallas en producción.
 
 `GET /api/healthz`
 
-- Responde `200` con `{ status: "ok", uptime, timestamp, database: { ok, latencyMs } }`
-  cuando el servidor y la base de datos responden.
-- Responde `503` con `status: "degraded"` si la base de datos no contesta.
+- Es un chequeo de **liveness**: responde `200` siempre que el proceso esté
+  sirviendo, con `{ status, uptime, timestamp, database: { ok, latencyMs } }`.
+- `status: "ok"` cuando la base de datos responde; `status: "degraded"` (sigue
+  siendo `200`) si la base de datos no contesta dentro del tiempo límite. El
+  ping a la base está acotado (2.5 s) y nunca cuelga ni lanza error.
+- **No** devuelve `503` ante un fallo transitorio de la base: así un arranque en
+  frío (autoscale despertando el Postgres suspendido) no marca una caída falsa.
+  Las fallas reales de base de datos sí aparecen como `5xx` en los endpoints de
+  datos. Cuando `database.ok` es `false` se registra una advertencia.
 - Útil para un monitor de uptime externo o para una verificación rápida tras un
   despliegue. No expone datos sensibles.
 
@@ -22,7 +28,8 @@ Los errores quedan registrados de forma estructurada (pino) con contexto útil
 3. Filtra por nivel/patrón para encontrar problemas rápido:
    - `ERROR` — fallas no controladas (las captura el manejador central de
      errores con el mensaje `"Error no controlado en la API"`).
-   - `Healthcheck: la base de datos no responde` — la base de datos está caída.
+   - `Healthcheck: la base de datos no respondió a tiempo` — la base de datos
+     no contestó dentro del límite (servicio degradado pero vivo).
    - `Stripe:` — problemas de pago (creación de sesión, verificación, webhook,
      reembolsos pendientes de revisión manual).
    - `Admintotal:` — fallas de sincronización/envío de pedidos al ERP.
