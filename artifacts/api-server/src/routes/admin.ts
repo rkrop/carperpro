@@ -9,6 +9,10 @@ import { timingSafeEqual } from "node:crypto";
 import { logger } from "../lib/logger";
 import { getWebhookToken } from "../lib/admintotal/config";
 import { runAttributeExtractionPilot } from "../lib/attribute-extraction";
+import {
+  runEnrichmentBatch,
+  EnrichmentWritesDisabledError,
+} from "../lib/enrichment-runner";
 
 // Operaciones administrativas internas (no expuestas a la app/tienda). Hoy aloja
 // el PILOTO de extracción de atributos desde nuestros propios nombres. Reusa el
@@ -70,6 +74,34 @@ router.post(
     } catch (err) {
       logger.error({ err }, "admin: piloto de atributos falló");
       res.status(500).json({ error: "piloto falló" });
+    }
+  },
+);
+
+// POST /api/admin/enrichment/run
+//   ?limit=N      cuántos productos analizar (default 40, máx 1000)
+//   ?write=1      aplicar escrituras (default 0 = dry-run → solo enrichment_staging).
+//                 BLOQUEADO hasta implementar validateGrounding + ENRICHMENT_WRITES_ENABLED=1.
+//   ?sample=N     cuántas filas incluir en el reporte de muestra
+router.post(
+  "/admin/enrichment/run",
+  authAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const limit = Number.parseInt(String(req.query["limit"] ?? "40"), 10) || 40;
+    const write = req.query["write"] === "1" || req.query["write"] === "true";
+    const sampleRaw = Number.parseInt(String(req.query["sample"] ?? ""), 10);
+    const sampleSize = Number.isFinite(sampleRaw) ? sampleRaw : undefined;
+
+    try {
+      const result = await runEnrichmentBatch({ limit, write, sampleSize });
+      res.json(result);
+    } catch (err) {
+      if (err instanceof EnrichmentWritesDisabledError) {
+        res.status(403).json({ error: err.message });
+        return;
+      }
+      logger.error({ err }, "admin: enriquecimiento falló");
+      res.status(500).json({ error: "enriquecimiento falló" });
     }
   },
 );

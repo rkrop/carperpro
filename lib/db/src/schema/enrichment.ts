@@ -7,7 +7,9 @@ import {
   jsonb,
   timestamp,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -48,6 +50,9 @@ export const productOemCodesTable = pgTable(
   (t) => [
     index("product_oem_codes_code_norm_idx").on(t.codeNorm),
     index("product_oem_codes_product_id_idx").on(t.productId),
+    // One code per product: makes enrichment writes idempotent and safe against
+    // concurrent re-runs (paired with ON CONFLICT DO NOTHING on insert).
+    uniqueIndex("product_oem_codes_dedupe_idx").on(t.productId, t.codeNorm),
   ],
 );
 
@@ -80,6 +85,17 @@ export const productApplicationsTable = pgTable(
   (t) => [
     index("product_applications_make_model_idx").on(t.make, t.model),
     index("product_applications_product_id_idx").on(t.productId),
+    // One application per product, treating NULL year/motor as a value (coalesce)
+    // so the dedupe key is stable. Drizzle 0.45 has no nullsNotDistinct(), hence
+    // the expression index. Paired with ON CONFLICT DO NOTHING on insert.
+    uniqueIndex("product_applications_dedupe_idx").on(
+      t.productId,
+      t.make,
+      t.model,
+      sql`coalesce(${t.yearFrom}, -1)`,
+      sql`coalesce(${t.yearTo}, -1)`,
+      sql`coalesce(${t.motor}, '')`,
+    ),
   ],
 );
 

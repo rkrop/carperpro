@@ -340,6 +340,7 @@ async function main() {
             setweight(to_tsvector('simple', unaccent(coalesce(NEW.descripcion_adicional, ''))), 'C') ||
             setweight(to_tsvector('simple', unaccent(coalesce(NEW.descripcion, ''))), 'C') ||
             setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.oem, ' '), ''))), 'B') ||
+            setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.equivalents, ' '), ''))), 'B') ||
             setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.vehicles, ' '), ''))), 'D') ||
             setweight(to_tsvector('simple', unaccent(coalesce((
               SELECT string_agg(coalesce(spec.value->>'value', '') || ' ' || coalesce(spec.value->>'label', ''), ' ')

@@ -51,3 +51,26 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
 - The old name-only pilot (`extractFromName` + `runAttributeExtractionPilot`,
   route POST /api/admin/attributes/pilot) is UNCHANGED and still uses the proxy;
   the new extractAttributes was renamed-around it, not on top of it.
+
+## A3 runner + route (runEnrichmentBatch, POST /api/admin/enrichment/run)
+- Source text per row = name + descripcion_ecommerce+adicional+descripcion (priority,
+  ~4000 char cap); same text grounding will validate against. Concurrency 4.
+- dry-run (default, write=false): writes ONLY enrichment_staging, one row per field
+  (marca/ficha_tecnica/oem/aplicaciones), deletes prior PENDING rows for the product
+  first (idempotent re-runs). before/after report. Never touches products/final tables.
+- write=true is HARD-GATED behind env ENRICHMENT_WRITES_ENABLED=1; route returns 403
+  (EnrichmentWritesDisabledError) until grounding is real. Write path coded but inert:
+  additive empty-only + confidence>=0.8, fills products.brand/oem/vehicles/specs +
+  inserts product_oem_codes/product_applications, sets enrichment_source/confidence/at.
+- Idempotency: final tables have UNIQUE dedupe indexes (oem: product_id+code_norm;
+  apps: product_id+make+model+coalesce(year_from,-1)+coalesce(year_to,-1)+coalesce(motor,''))
+  — no nullsNotDistinct() in drizzle 0.45 so apps uses an EXPRESSION index; inserts use
+  onConflictDoNothing(). These indexes MUST stay in enrichment.ts schema or push drops them.
+
+## equivalents: indexing-only (OPEN product decision)
+- Added `equivalents` to the search_vector trigger (weight B, like oem) in BOTH
+  ensure-search-trigger.ts AND import-maestro.mjs — so EXISTING ERP equivalents become
+  searchable (real Fase D win). On boot the changed-trigger detector NULLs+rebuilds.
+- BUT the runner does NOT populate products.equivalents: extraction returns a flat `oem`
+  list with no grounded signal to split OEM vs cross-reference/equivalent. Left as a
+  decision for the user (classify in extraction, or keep equivalents indexing-only).

@@ -17,9 +17,9 @@ import { logger } from "./logger";
 //   proveedor_sufijo = the part after the first "-" (NULL when there is none).
 // They're computed FIRST so the freshly-set NEW.sku_base feeds the search vector.
 //
-// Weights: sku_base/sku/name = A, brand/oem = B, the three descriptions = C,
-// vehicles/specs = D (lowest) so a vehicle/spec match surfaces the product without
-// outranking name/SKU. Config is 'simple' + unaccent to match the tsquery the
+// Weights: sku_base/sku/name = A, brand/oem/equivalents = B, the three
+// descriptions = C, vehicles/specs = D (lowest) so a vehicle/spec match surfaces
+// the product without outranking name/SKU. Config is 'simple' + unaccent to match the tsquery the
 // search route builds — using a different config/accents makes matches silently
 // return 0.
 //
@@ -38,6 +38,7 @@ const FUNCTION_BODY = `
           setweight(to_tsvector('simple', unaccent(coalesce(NEW.descripcion_adicional, ''))), 'C') ||
           setweight(to_tsvector('simple', unaccent(coalesce(NEW.descripcion, ''))), 'C') ||
           setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.oem, ' '), ''))), 'B') ||
+          setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.equivalents, ' '), ''))), 'B') ||
           setweight(to_tsvector('simple', unaccent(coalesce(array_to_string(NEW.vehicles, ' '), ''))), 'D') ||
           setweight(to_tsvector('simple', unaccent(coalesce((
             SELECT string_agg(coalesce(spec.value->>'value', '') || ' ' || coalesce(spec.value->>'label', ''), ' ')
