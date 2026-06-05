@@ -21,8 +21,22 @@ function apiKey(): string | undefined {
   return process.env["GEMINI_API_KEY"] || process.env["GOOGLE_API_KEY"] || undefined;
 }
 
+// Semantic search is OFF by default. It depends on Google's embeddings API
+// (free tier = 1,000 requests/day → 429 RESOURCE_EXHAUSTED once the catalog
+// backfill exceeds it) and adds little over the text + synonym search, so it is
+// opt-in. Set SEMANTIC_SEARCH_ENABLED=1 (and provide GEMINI_API_KEY /
+// GOOGLE_API_KEY) to turn it back on. NOTE: this gate is embeddings-only — the
+// Gemini Vision photo scanner uses the same key independently and is unaffected.
+function semanticSearchEnabled(): boolean {
+  const flag = (process.env["SEMANTIC_SEARCH_ENABLED"] ?? "").trim().toLowerCase();
+  return flag === "1" || flag === "true" || flag === "yes" || flag === "on";
+}
+
+// True only when semantic search is explicitly enabled AND a key is present.
+// The single gate for every embeddings code path (query-time widening, boot +
+// scheduled backfill, pgvector setup), so flipping the flag turns it all off.
 export function isEmbeddingsConfigured(): boolean {
-  return Boolean(apiKey());
+  return semanticSearchEnabled() && Boolean(apiKey());
 }
 
 let client: GoogleGenAI | null = null;

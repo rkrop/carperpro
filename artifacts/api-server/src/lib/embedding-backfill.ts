@@ -78,7 +78,7 @@ let running = false;
 export async function backfillEmbeddings(): Promise<void> {
   if (!isEmbeddingsConfigured()) {
     logger.info(
-      "embeddings: GEMINI_API_KEY ausente; backfill omitido (búsqueda semántica desactivada, texto intacto)",
+      "embeddings: búsqueda semántica desactivada (SEMANTIC_SEARCH_ENABLED apagado o sin API key); backfill omitido, texto intacto",
     );
     return;
   }

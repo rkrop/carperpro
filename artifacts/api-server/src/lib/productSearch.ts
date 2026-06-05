@@ -1,5 +1,6 @@
 import { and, sql, type SQL } from "drizzle-orm";
 import { productsTable } from "@workspace/db";
+import { expandSynonyms } from "./synonyms";
 
 // Connector stopwords that carry no search signal. Dropped so a phrase like
 // "bomba de gasolina tsuru" doesn't force "de" to match and wrongly exclude a
@@ -37,7 +38,21 @@ export function tokenizeQuery(q: string): { allWords: string[]; words: string[] 
  * fragments that full-text prefix matching can't.
  */
 export function buildFtsSearch(words: string[]): { condition: SQL; rankOrder: SQL } {
-  const tsqueryStr = words.map((w) => `${w}:*`).join(" & ");
+  // Each query word becomes a prefix term. Words with curated synonyms (or a
+  // plural form) expand to a parenthesized OR group — "balatas" also matches
+  // "pastillas" — while the distinct words the shopper typed stay AND-ed, so
+  // recall improves without losing precision.
+  const groups = words
+    .map((w) => {
+      const terms = expandSynonyms(w);
+      if (terms.length === 0) return null;
+      return `(${terms.map((t) => `${t}:*`).join(" | ")})`;
+    })
+    .filter((g): g is string => g !== null);
+  // Fall back to the plain per-word prefix form if expansion yielded nothing
+  // (only possible for degenerate input) so the query is never empty.
+  const tsqueryStr =
+    groups.length > 0 ? groups.join(" & ") : words.map((w) => `${w}:*`).join(" & ");
   const tsquery = sql`to_tsquery('simple', unaccent(${tsqueryStr}))`;
 
   const skuHaystack = sql`unaccent(lower(

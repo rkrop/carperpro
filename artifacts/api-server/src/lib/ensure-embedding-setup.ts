@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { logger } from "./logger";
+import { isEmbeddingsConfigured } from "./embeddings";
 
 // Semantic-search (pgvector) self-healing setup, mirroring ensure-search-trigger.
 // Runs on every boot so dev AND prod (a publish boots the server) converge:
@@ -39,6 +40,8 @@ const RESET_FUNCTION = `
 `;
 
 export async function ensureEmbeddingSetup(): Promise<void> {
+  // Skip all pgvector/extension/index work when semantic search is disabled.
+  if (!isEmbeddingsConfigured()) return;
   try {
     await db.execute(sql.raw(`CREATE EXTENSION IF NOT EXISTS vector`));
     await db.execute(

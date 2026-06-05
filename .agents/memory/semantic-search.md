@@ -5,6 +5,17 @@ description: How Carper catalog semantic search is wired, the Gemini embedding m
 
 # Semantic search (embeddings)
 
+> **STATUS: OFF by default.** Gemini embeddings were disabled because the free
+> tier (1,000 req/day) kept throwing 429 RESOURCE_EXHAUSTED during backfill and
+> they added little over text + synonyms. `isEmbeddingsConfigured()` now requires
+> BOTH a key AND `SEMANTIC_SEARCH_ENABLED` (truthy: 1/true/yes/on); default off
+> ⇒ query widen, boot+scheduled backfill, AND `ensureEmbeddingSetup` all no-op.
+> The `embedding` column/index/trigger are left in place for easy re-enable. This
+> gate is embeddings-ONLY — the Gemini Vision scanner uses the same key via its
+> own `isVisionConfigured()` and is unaffected. Synonym expansion (see
+> `catalog-synonyms.md`) now covers the recall gap semantic used to fill. The rest
+> of this file documents the (still-intact) wiring for whenever it's turned back on.
+
 Hybrid search on `GET /api/products`: text (FTS + the NL AI-assist path) runs
 first; semantic only kicks in for opted-in, thin, non-empty queries when a key is
 present, and re-runs a combined `(textCondition OR semantically-close)` query.
