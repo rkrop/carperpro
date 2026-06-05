@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { randomUUID } from "node:crypto";
-import { and, eq, like } from "drizzle-orm";
-import { db, usersTable } from "@workspace/db";
+import { and, desc, eq, like } from "drizzle-orm";
+import { db, phoneSessionsTable, usersTable } from "@workspace/db";
 import {
   checkPhoneVerification,
   normalizeMxPhone,
@@ -118,6 +118,64 @@ router.post(
     if (!userId) {
       userId = `phone_${randomUUID()}`;
       await db.insert(usersTable).values({ id: userId, phone }).onConflictDoNothing();
+    } else {
+      // Guard against recycled phone numbers. Carriers typically reassign
+      // abandoned numbers after 30-90 days. Anyone who later receives that
+      // number can request an OTP and, without this check, would inherit the
+      // prior owner's full account. We use 30 days — the shortest observed
+      // carrier recycling window — as the inactivity threshold, so the old
+      // account is never reused within the carrier's reassignment window.
+      //
+      // Two independent signals are evaluated. The account is treated as
+      // dormant if EITHER is absent or stale:
+      //   1. phone_sessions.lastUsedAt — last authenticated API call; updated
+      //      on every request passing through phoneAuth middleware.
+      //   2. users.updatedAt — last profile write; guards against the edge
+      //      case where a session's lastUsedAt is still recent because the
+      //      prior owner had an active session at the moment of reassignment.
+      //
+      // When dormant, we sever the phone link from the old account (clearing
+      // users.phone so it will never be matched again) and provision a fresh
+      // account for this caller. Existing unexpired sessions on the old
+      // account remain valid until their natural TTL — no forced revocation
+      // is needed, and the old user is not actively harmed.
+      const INACTIVITY_DAYS = 30;
+      const inactivityCutoff = new Date(Date.now() - INACTIVITY_DAYS * 24 * 60 * 60 * 1000);
+
+      const [recentSession, existingUser] = await Promise.all([
+        db
+          .select({ lastUsedAt: phoneSessionsTable.lastUsedAt })
+          .from(phoneSessionsTable)
+          .where(eq(phoneSessionsTable.userId, userId))
+          .orderBy(desc(phoneSessionsTable.lastUsedAt))
+          .limit(1),
+        db
+          .select({ updatedAt: usersTable.updatedAt })
+          .from(usersTable)
+          .where(eq(usersTable.id, userId))
+          .limit(1),
+      ]);
+
+      const lastSessionActivity = recentSession[0]?.lastUsedAt ?? null;
+      const lastProfileUpdate = existingUser[0]?.updatedAt ?? null;
+
+      const sessionStale = !lastSessionActivity || lastSessionActivity < inactivityCutoff;
+      const profileStale = !lastProfileUpdate || lastProfileUpdate < inactivityCutoff;
+
+      if (sessionStale && profileStale) {
+        // Both signals are stale — account is dormant. Sever the phone link
+        // and provision a fresh account for this caller.
+        logger.warn(
+          { userId, lastSessionActivity, lastProfileUpdate, inactivityDays: INACTIVITY_DAYS },
+          "Phone auth: cuenta inactiva, posible número reciclado — aprovisionando cuenta nueva",
+        );
+        await db
+          .update(usersTable)
+          .set({ phone: null })
+          .where(eq(usersTable.id, userId));
+        userId = `phone_${randomUUID()}`;
+        await db.insert(usersTable).values({ id: userId, phone }).onConflictDoNothing();
+      }
     }
 
     lastSendByPhone.delete(phone);
