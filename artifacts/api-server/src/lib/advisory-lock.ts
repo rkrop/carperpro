@@ -40,6 +40,34 @@ export async function withAdvisoryLock(
 ): Promise<boolean> {
   const client = await pool.connect();
 
+  // While a client is checked out, the pool stops listening for its 'error'
+  // events. Background jobs (embedding/description backfill) hold this client
+  // for minutes, so if Postgres terminates the connection mid-run the client
+  // would emit an unhandled 'error' and crash the whole process. We attach our
+  // own listener so the emitter has a handler (no crash) and we record that the
+  // lock session died, so we never keep running singleton work after Postgres
+  // has already freed the lock on disconnect.
+  //
+  // The handler is NAMED and removed before every release(): pooled clients are
+  // reused, so leaving it attached would accumulate handlers across calls
+  // (MaxListenersExceededWarning + leak) on this hot scheduled path.
+  let connectionDied = false;
+  const onClientError = (err: unknown) => {
+    connectionDied = true;
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), jobId },
+      "advisory-lock: la conexión del lock murió durante el job; se aborta para no correr sin lock",
+    );
+  };
+  client.on("error", onClientError);
+
+  // Always strip our listener before handing the client back (or destroying it)
+  // so it never leaks onto a recycled connection.
+  const releaseClient = (err?: Error) => {
+    client.removeListener("error", onClientError);
+    client.release(err);
+  };
+
   let acquired = false;
   try {
     const { rows } = await client.query<{ locked: boolean }>(
@@ -50,12 +78,12 @@ export async function withAdvisoryLock(
   } catch (err) {
     // Couldn't even attempt the lock: drop the connection instead of returning
     // a possibly half-initialized session to the pool.
-    client.release(err instanceof Error ? err : new Error(String(err)));
+    releaseClient(err instanceof Error ? err : new Error(String(err)));
     throw err;
   }
 
   if (!acquired) {
-    client.release();
+    releaseClient();
     return false;
   }
 
@@ -63,20 +91,26 @@ export async function withAdvisoryLock(
     await fn();
     return true;
   } finally {
-    try {
-      await client.query("select pg_advisory_unlock($1, $2)", [
-        LOCK_NAMESPACE,
-        jobId,
-      ]);
-      client.release();
-    } catch (err) {
-      // Destroy the connection so its session ends and Postgres frees the lock;
-      // never recycle a connection that may still hold it.
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err), jobId },
-        "advisory-lock: no se pudo liberar el lock; se descarta la conexión para forzar su liberación",
-      );
-      client.release(err instanceof Error ? err : new Error(String(err)));
+    if (connectionDied) {
+      // The lock session is already gone (Postgres freed the lock on disconnect),
+      // so there is nothing to unlock and the connection must not be recycled.
+      releaseClient(new Error("advisory-lock connection died mid-job"));
+    } else {
+      try {
+        await client.query("select pg_advisory_unlock($1, $2)", [
+          LOCK_NAMESPACE,
+          jobId,
+        ]);
+        releaseClient();
+      } catch (err) {
+        // Destroy the connection so its session ends and Postgres frees the
+        // lock; never recycle a connection that may still hold it.
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err), jobId },
+          "advisory-lock: no se pudo liberar el lock; se descarta la conexión para forzar su liberación",
+        );
+        releaseClient(err instanceof Error ? err : new Error(String(err)));
+      }
     }
   }
 }

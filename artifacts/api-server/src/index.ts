@@ -9,6 +9,26 @@ import { autoImportIfDirty } from "./lib/auto-catalog-import";
 import { backfillEmbeddings } from "./lib/embedding-backfill";
 import { backfillDescriptions } from "./lib/description-backfill";
 
+// Last-resort safety net. The known production crash-loop (Postgres dropping
+// idle connections → unhandled pg 'error' event → process death) is fixed at
+// the source in the db pool and advisory-lock client listeners, but these
+// handlers ensure any *future* stray emitter error or unawaited rejection is
+// logged with full context instead of silently killing the server. A rejected
+// promise rarely corrupts process state, so we keep serving; a truly uncaught
+// exception may leave the process in an undefined state, so we log and exit so
+// the platform restarts a clean instance rather than running a wedged one.
+process.on("unhandledRejection", (reason) => {
+  logger.error(
+    { err: reason instanceof Error ? reason.message : String(reason) },
+    "unhandledRejection (no fatal); el servidor sigue activo",
+  );
+});
+
+process.on("uncaughtException", (err) => {
+  logger.error({ err: err.message, stack: err.stack }, "uncaughtException; cerrando para reinicio limpio");
+  process.exit(1);
+});
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
