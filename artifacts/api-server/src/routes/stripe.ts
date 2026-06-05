@@ -108,8 +108,16 @@ router.get("/stripe/return", (req: Request, res: Response): void => {
 });
 
 // Custom URI schemes the native app is allowed to be returned to. "carper" is
-// the app scheme; "exp" is Expo Go during development.
-const ALLOWED_APP_SCHEMES = new Set(["carper", "exp"]);
+// the production app scheme. "exp" (Expo Go) is only permitted outside
+// production — it must never be reachable on the public deployment because
+// there is no host allowlist for exp:// URLs and an attacker can point one at
+// any Expo Go experience they control.
+const ALLOWED_APP_SCHEMES = new Set(["carper"]);
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+// Allow exp:// only in non-production environments.
+if (!IS_PRODUCTION) {
+  ALLOWED_APP_SCHEMES.add("exp");
+}
 
 /**
  * Collect the set of bare hostnames (no port) that belong to this deployment.
@@ -165,25 +173,43 @@ router.post("/stripe/verify", writeLimiter, async (req: Request, res: Response):
       res.status(400).json({ error: "orderId inválido" });
       return;
     }
-    const order = await reconcileStripeOrder(orderId);
-    if (!order) {
+
+    // ── Authorization BEFORE reconciliation ──────────────────────────────────
+    // Fetch the order with a cheap local DB read first. We must verify the
+    // caller owns this order before triggering any Stripe API calls or
+    // fulfillment side-effects — an unauthenticated attacker could otherwise
+    // iterate sequential IDs and cause state transitions on other customers'
+    // orders (notifications, ERP queuing, auto-refunds).
+    const rows = await db
+      .select()
+      .from(outboundOrdersTable)
+      .where(eq(outboundOrdersTable.id, orderId))
+      .limit(1);
+    if (rows.length === 0) {
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
     }
-    // Account-linked orders: only the owner may read them.
-    if (order.userId && order.userId !== getOptionalUserId(req)) {
+    const snapshot = rows[0];
+    // Account-linked orders: only the owner may trigger reconciliation.
+    if (snapshot.userId && snapshot.userId !== getOptionalUserId(req)) {
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
     }
     // Guest orders: require the per-order token issued at checkout to prevent
     // enumeration via sequential ids. Orders that pre-date this column (no
     // guestToken) are treated as unreadable to guests — use the signed-in path.
-    if (!order.userId) {
+    if (!snapshot.userId) {
       const callerToken = typeof body.guestToken === "string" ? body.guestToken : null;
-      if (!order.guestToken || callerToken !== order.guestToken) {
+      if (!snapshot.guestToken || callerToken !== snapshot.guestToken) {
         res.status(404).json({ error: "Pedido no encontrado" });
         return;
       }
+    }
+    // ── Caller is authorized — now run the full reconciliation ────────────────
+    const order = await reconcileStripeOrder(orderId);
+    if (!order) {
+      res.status(404).json({ error: "Pedido no encontrado" });
+      return;
     }
     res.json({ paymentStatus: order.paymentStatus, order: orderToClient(order) });
     // Opportunistically reconcile any other stragglers.
