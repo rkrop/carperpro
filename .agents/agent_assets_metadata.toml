@@ -185,3 +185,9 @@ id = "i31j4lxN6U7hCEN-g-a0B"
 uri = "file://exports/habilitar_webhook_faltantes.xlsx"
 type = "table"
 title = "10 códigos para habilitar webhook en AdminTotal"
+
+[[outputs]]
+id = "m_SZp6VgevJQyyc_H9Gag"
+uri = "file://.local/enrichment-dry-run.json"
+type = "unspecified"
+title = "Enrichment dry-run (limit 50, write=false)"
