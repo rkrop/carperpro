@@ -147,11 +147,13 @@ function isAllowedDest(dest: string): boolean {
     return match !== null && ALLOWED_APP_SCHEMES.has(match[1]);
   }
 
-  // Web: only our own domains or localhost (dev). We do not accept arbitrary
-  // *.replit.* domains — those may belong to attacker-controlled deployments.
+  // Web: only our own domains or localhost (dev-only). We do not accept
+  // arbitrary *.replit.* domains — those may belong to attacker-controlled
+  // deployments. The localhost exception is intentionally disabled in
+  // production to prevent open-redirect-to-loopback attacks.
   try {
     const bare = new URL(dest).host.split(":")[0];
-    if (bare === "localhost") return true;
+    if (bare === "localhost" && process.env.NODE_ENV !== "production") return true;
     const firstParty = getFirstPartyHosts();
     return firstParty.has(bare);
   } catch {
