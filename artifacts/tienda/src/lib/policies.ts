@@ -12,9 +12,9 @@
  * never diverge.
  *
  * Contact/identity values come from the shared STORE config so they never drift
- * from the rest of the app. The single bracketed placeholder [RAZÓN SOCIAL] must
- * be completed with the company's registered legal name, and the whole text
- * should be reviewed by a lawyer before the public launch.
+ * from the rest of the app. The registered legal name (razón social) is set in
+ * the privacy notice; the whole text should still be reviewed by a lawyer before
+ * the public launch.
  */
 import { STORE } from "@/lib/store";
 
@@ -47,7 +47,7 @@ export const POLICIES: PolicyDoc[] = [
         heading: "1. Identidad y domicilio del responsable",
         paragraphs: [
           `${STORE.name} (en lo sucesivo "Carper"), con domicilio en ${STORE.address} y RFC ${STORE.rfc}, es el responsable del tratamiento de sus datos personales, en términos de la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP), su Reglamento y demás normativa aplicable.`,
-          "Para efectos legales, la razón social registrada del responsable es [RAZÓN SOCIAL]. Cualquier duda sobre el presente aviso puede dirigirse al correo de contacto indicado más adelante.",
+          "Para efectos legales, la razón social registrada del responsable es CARPER DISTRIBUIDORA, S.A. DE C.V. Cualquier duda sobre el presente aviso puede dirigirse al correo de contacto indicado más adelante.",
         ],
       },
       {

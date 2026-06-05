@@ -17,4 +17,4 @@ Rendered at: app `app/politicas.tsx` (reached from Cuenta › Acerca de Carper �
 - Any edit to one policy file MUST be mirrored in the other or app/web legal text diverges (`cmp` the two files; they must be identical).
 - Icons are NOT in the data (Feather names ≠ lucide names); each UI maps `doc.id` → its icon.
 - Contact/identity values come from `STORE`, never hard-coded, so they don't drift.
-- The text contains a `[RAZÓN SOCIAL]` placeholder (RFC `CDI960919J54` is a persona-moral RFC but the registered legal name is unknown) — must be filled and the whole text lawyer-reviewed before public launch.
+- Registered legal name (razón social) is "CARPER DISTRIBUIDORA, S.A. DE C.V." (RFC `CDI960919J54`), set in the Aviso de Privacidad §1. The whole text should still be lawyer-reviewed before public launch.
