@@ -31,13 +31,17 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
 - **How to apply:** if you touch the enrichment prompt/model, re-run the smoke
   test on real rows before trusting it; don't drop back to "minimal".
 
-## Grounding hooks are USER-OWNED stubs → dry-run gate is mandatory
-- `validateGrounding(values, sourceText)` is currently a PASSTHROUGH and
-  `normalizeCodes(oem)` a simple `toUpperCase().replace(/[^A-Z0-9]/g,"")` stub.
-  The user implements the real word-boundary grounding + code normalization later.
-- Because grounding is not yet enforced, the model CAN hallucinate (see GONHER).
-  So: default to dry-run (writes only to `enrichment_staging`), review, and only
-  enable writes (additive, empty-only, confidence>=0.8) once grounding is real.
+## Grounding is now REAL (anti-hallucination lock) — keep dry-run gate as default
+- `validateGrounding(values, sourceText)` is the user-supplied real version: keeps
+  ONLY values literally anchored in the source (nombre + descripción). marca =
+  word-present AND not a VEHICLE_MAKES / NON_BRAND_WORDS term; oem = alnum core ≥3
+  present in source alnum stream; ficha = value alnum core present; aplicaciones =
+  model present as word + any year present (2- or 4-digit). It RECOMPUTES confidence
+  by the kept/proposed ratio. Reuses existing helpers (norm, alnum, clamp01,
+  VEHICLE_MAKES, NON_BRAND_WORDS) + new tokenInSource/yearInSource.
+- `normalizeCodes(oem)` still the shared `normalizeCode` (codes.ts) — DON'T touch.
+- Even with grounding real, default to dry-run (writes only to `enrichment_staging`),
+  review, then enable writes (additive, empty-only, confidence>=0.8).
 
 ## Shapes
 - `extractAttributes({codigo,nombre,descripcion})` →

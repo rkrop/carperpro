@@ -140,6 +140,30 @@ function alnum(s: string): string {
   return norm(s).replace(/[^A-Z0-9]/g, "");
 }
 
+// ¿`value` aparece como PALABRA (límite de token) en el texto ya plegado
+// (norm = sin acentos, MAYÚSCULAS)? Los separadores internos del valor
+// (espacios, -, /, .) se vuelven flexibles para tolerar variaciones de escritura.
+function tokenInSource(value: string, sourceFolded: string): boolean {
+  const v = norm(value).trim();
+  if (!v) return false;
+  const flexible = v
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/[\s\-/.]+/g, "[\\s\\-/.]*");
+  return new RegExp(`(^|[^A-Z0-9])${flexible}($|[^A-Z0-9])`).test(sourceFolded);
+}
+
+// ¿El año aparece en la fuente, en forma de 4 dígitos (2008) o de 2 (08)?
+// Sin año (undefined) = no hay nada que anclar → válido.
+function yearInSource(year: number | undefined, sourceFolded: string): boolean {
+  if (year === undefined) return true;
+  const y4 = String(year);
+  const y2 = y4.slice(2);
+  return (
+    sourceFolded.includes(y4) ||
+    new RegExp(`(^|[^0-9])${y2}([^0-9]|$)`).test(sourceFolded)
+  );
+}
+
 // Palabras DESCRIPTIVAS que el modelo a veces confunde con marca (no son
 // fabricantes). Aparecen en los nombres como adjetivos/categoría, así que el
 // grounding por subcadena no basta: se rechazan explícitamente.
@@ -599,11 +623,64 @@ export interface EnrichmentAttributes {
 
 // ── Replaceable hooks (the user implements the real versions) ────────────────
 
-// TODO(user): real grounding — anchor each extracted value (word-boundary)
-// against `sourceText` and drop anything not literally present. For now a
-// PASSTHROUGH that returns the values unchanged.
-export function validateGrounding<T>(values: T, _sourceText: string): T {
-  return values;
+// Grounding real: deja SOLO lo que aparece LITERALMENTE en el texto de origen
+// (nombre + descripción). Lo que la IA invente no sobrevive. Recalcula la
+// confianza penalizando según cuánto se descartó. Es el candado anti-alucinación
+// que faltaba — por eso podemos habilitar write=true.
+export function validateGrounding(
+  values: EnrichmentAttributes,
+  sourceText: string,
+): EnrichmentAttributes {
+  const folded = norm(sourceText);
+  const sourceAlnum = alnum(sourceText);
+
+  // marca: palabra presente, y no marca de vehículo ni palabra genérica.
+  let marca: string | null = null;
+  if (values.marca) {
+    const m = norm(values.marca).trim();
+    if (
+      m.length >= 2 &&
+      !VEHICLE_MAKES.has(m) &&
+      !NON_BRAND_WORDS.has(m) &&
+      tokenInSource(values.marca, folded)
+    ) {
+      marca = values.marca;
+    }
+  }
+
+  // ficha técnica: conserva el spec si su VALOR (núcleo alfanumérico) está en
+  // la fuente. Tolerante: "12V" -> "12V" ⊂ "12VOLTIOS".
+  const ficha_tecnica = values.ficha_tecnica.filter((s) => {
+    const core = alnum(String(s.value));
+    return core.length >= 1 && sourceAlnum.includes(core);
+  });
+
+  // oem: conserva si el código normalizado (≥3) está en el flujo alfanumérico.
+  const oem = values.oem.filter((o) => {
+    const core = alnum(o.code);
+    return core.length >= 3 && sourceAlnum.includes(core);
+  });
+
+  // aplicaciones: el MODELO debe aparecer como palabra (≥2) y los años (si los
+  // hay) deben estar en la fuente.
+  const aplicaciones = values.aplicaciones.filter((a) => {
+    const model = norm(a.model).trim();
+    if (model.length < 2 || !tokenInSource(a.model, folded)) return false;
+    return yearInSource(a.year_from, folded) && yearInSource(a.year_to, folded);
+  });
+
+  // confianza recalculada: la base por la fracción que sobrevivió al anclaje.
+  const proposed =
+    (values.marca ? 1 : 0) +
+    values.ficha_tecnica.length +
+    values.oem.length +
+    values.aplicaciones.length;
+  const kept =
+    (marca ? 1 : 0) + ficha_tecnica.length + oem.length + aplicaciones.length;
+  const ratio = proposed > 0 ? kept / proposed : 1;
+  const confidence = Math.round(clamp01(values.confidence * ratio) * 100) / 100;
+
+  return { marca, ficha_tecnica, oem, aplicaciones, confidence };
 }
 
 // TODO(user): richer code normalization (brand-specific rules, O/0 confusions,
