@@ -39,9 +39,13 @@ This project accepts both Clerk sessions and custom `cps_` bearer tokens for aut
 
 The phone OTP path delegates code issuance and code-check attempt ceilings to Twilio Verify. Future scans should treat Twilio's built-in verification attempt caps as an existing control unless the application adds a bypass around that service or exposes an alternate local verification path.
 
+Phone-based identity is only safe while control of the number remains a trustworthy proxy for account ownership. Any long-lived phone-only account that stores addresses, favorites, or order history must include a re-binding strategy for number reassignment; otherwise a recycled carrier number can become a valid login for the prior owner's account.
+
 ### Tampering
 
 Customers can submit carts, delivery details, checkout parameters, push tokens, and OTP inputs; external systems can submit price and stock changes. The API must recompute prices and totals from authoritative data, bound and validate all user-controlled inputs, and ensure that public endpoints cannot mutate catalog, order, or notification state beyond what the business explicitly allows.
+
+Public order-status endpoints must not perform payment reconciliation, fulfillment, refund, or other state-changing side effects until the caller has already been authorized for the target order. Authorization-after-mutation is still a trust-boundary failure even if the final response is hidden.
 
 ### Information Disclosure
 
@@ -50,6 +54,8 @@ The platform handles order details, addresses, phone numbers, saved account data
 ### Denial of Service
 
 Several public endpoints trigger expensive work: OTP sends/checks, Stripe checkout creation, image-based scan requests, LLM-backed assistant requests, postal-code lookups, and webhook-driven catalog updates. The production service must apply effective abuse controls so unauthenticated users cannot exhaust SMS quotas, model quotas, database capacity, or external API budgets through repeated requests or oversized payloads.
+
+Because this deployment is public and runs as an autoscale service, in-memory per-process limiters are not global controls. Future scans should not treat them as sufficient protection for quota-bearing endpoints unless a central/shared limiter or another cross-instance abuse control is present.
 
 ### Elevation of Privilege
 
