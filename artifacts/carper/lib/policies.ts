@@ -61,6 +61,7 @@ export const POLICIES: PolicyDoc[] = [
           "Datos de pago: los pagos con tarjeta se procesan a través de nuestro proveedor de pagos certificado; Carper NO almacena los datos completos de su tarjeta.",
           "Datos del vehículo: marca, modelo, año y, en su caso, el número de serie (VIN) que usted proporcione para identificar refacciones compatibles.",
           "Datos técnicos y de uso: identificadores de dispositivo y el token de notificaciones, utilizados para el funcionamiento y la seguridad de la aplicación.",
+          "Imágenes que usted capture o cargue al usar el buscador visual, utilizadas únicamente para identificar la refacción correspondiente.",
         ],
       },
       {
@@ -93,10 +94,10 @@ export const POLICIES: PolicyDoc[] = [
         ],
       },
       {
-        heading: "6. Transferencias de datos",
+        heading: "6. Transferencias y proveedores de servicios",
         paragraphs: [
-          "Para cumplir con las finalidades anteriores, podemos compartir sus datos con terceros estrictamente necesarios: proveedores de procesamiento de pagos, empresas de paquetería y mensajería, proveedores de servicios de mensajería SMS/WhatsApp y notificaciones, así como con autoridades competentes cuando exista un requerimiento fundado y motivado.",
-          "Carper NO vende sus datos personales. Estas transferencias se realizan únicamente para prestarle el servicio y conforme a la ley.",
+          "Para cumplir con las finalidades anteriores, podemos compartir sus datos con terceros estrictamente necesarios: proveedores de procesamiento de pagos; empresas de paquetería y mensajería; proveedores de servicios de mensajería SMS/WhatsApp y de notificaciones; proveedores de servicios tecnológicos en la nube y de inteligencia artificial, utilizados para las funciones de búsqueda e identificación de refacciones por texto o por imagen; plataformas de autenticación de cuentas; así como autoridades competentes cuando exista un requerimiento fundado y motivado.",
+          "Algunos de estos proveedores pueden encontrarse fuera de México. En todos los casos compartimos únicamente los datos necesarios para prestarle el servicio y exigimos que los traten conforme a la normativa aplicable. Carper NO vende sus datos personales.",
         ],
       },
       {
@@ -104,6 +105,7 @@ export const POLICIES: PolicyDoc[] = [
         paragraphs: [
           `Usted tiene derecho a Acceder, Rectificar y Cancelar sus datos personales, así como a Oponerse a su tratamiento (derechos ARCO). También puede revocar el consentimiento que nos haya otorgado y limitar el uso o divulgación de sus datos.`,
           `Para ejercer cualquiera de estos derechos, envíe su solicitud al correo ${STORE.email}, indicando su nombre completo, una descripción clara de los datos sobre los que desea ejercer el derecho y la solicitud concreta. Daremos respuesta en los plazos previstos por la ley.`,
+          "Si cuenta con una sesión activa en la aplicación, también puede cancelar su cuenta directamente desde la pestaña Cuenta, en Ajustes › Eliminar cuenta. Al hacerlo se eliminan su perfil, direcciones, favoritos y preferencias. Cierta información de operaciones (como comprobantes de compra y datos de facturación) puede conservarse por el plazo que la ley exija para cumplir obligaciones fiscales y de protección al consumidor, de forma disociada de su cuenta, tras lo cual será eliminada.",
         ],
       },
       {
@@ -318,9 +320,8 @@ export const POLICIES: PolicyDoc[] = [
       {
         heading: "2. Cookies que utilizamos",
         bullets: [
-          "Esenciales: necesarias para el funcionamiento del sitio (por ejemplo, mantener su sesión y el carrito).",
-          "De rendimiento y analítica: nos ayudan a entender cómo se usa el sitio para mejorarlo.",
-          "De preferencia: recuerdan opciones como sus búsquedas o vehículos recientes.",
+          "Esenciales: necesarias para el correcto funcionamiento del sitio y para recordar preferencias básicas de su navegación.",
+          "De preferencia: recuerdan opciones como sus búsquedas o vehículos recientes para agilizar su consulta.",
         ],
       },
       {

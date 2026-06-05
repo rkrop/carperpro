@@ -198,6 +198,8 @@ export interface UnifiedAuth {
   method: AuthMethod;
   getToken: () => Promise<string | null>;
   signOut: () => Promise<void>;
+  /** Permanently deletes the account and personal data, then clears local auth. */
+  deleteAccount: () => Promise<void>;
 }
 
 /**
@@ -234,6 +236,29 @@ export function useAuth(): UnifiedAuth {
     }
   }, [clerk, phone]);
 
+  const deleteAccount = useCallback(async () => {
+    const token = await getToken();
+    const res = await fetch(`${API_BASE}/api/me`, {
+      method: "DELETE",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok && res.status !== 204) {
+      throw new Error("No se pudo eliminar tu cuenta. Inténtalo de nuevo.");
+    }
+    // The server already removed the account and its sessions; just clear the
+    // local auth state so the UI returns to the signed-out (guest) view.
+    if (clerk.isSignedIn) {
+      try {
+        await clerk.signOut();
+      } catch {
+        // Non-fatal: the account is already gone server-side.
+      }
+    }
+    if (phone.phoneToken) {
+      await phone.clearPhoneSession();
+    }
+  }, [getToken, clerk, phone]);
+
   return useMemo<UnifiedAuth>(
     () => ({
       isLoaded: clerk.isLoaded && phone.loaded,
@@ -242,6 +267,7 @@ export function useAuth(): UnifiedAuth {
       method: clerkSignedIn ? "clerk" : phoneSignedIn ? "phone" : null,
       getToken,
       signOut,
+      deleteAccount,
     }),
     [
       clerk.isLoaded,
@@ -252,6 +278,7 @@ export function useAuth(): UnifiedAuth {
       phoneSignedIn,
       getToken,
       signOut,
+      deleteAccount,
     ],
   );
 }

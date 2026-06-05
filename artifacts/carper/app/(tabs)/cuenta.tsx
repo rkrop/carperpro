@@ -41,7 +41,7 @@ export default function Cuenta() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { favorites, orders, sucursal } = useApp();
-  const { isSignedIn, signOut } = useAuth();
+  const { isSignedIn, signOut, deleteAccount } = useAuth();
   const { user } = useUser();
   const cart = useCart();
   const topPad = (isWeb ? WEB_TOP_INSET : insets.top) + 16;
@@ -59,6 +59,31 @@ export default function Cuenta() {
       { text: "Cancelar", style: "cancel" },
       { text: "Cerrar sesión", style: "destructive", onPress: () => signOut() },
     ]);
+  };
+
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      "Eliminar cuenta",
+      "Esta acción es permanente. Se eliminarán tu perfil, tus direcciones, favoritos y preferencias. Los comprobantes de compra que la ley exija conservar se mantendrán de forma disociada de tu cuenta. ¿Deseas continuar?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar cuenta",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAccount();
+              Alert.alert("Cuenta eliminada", "Tu cuenta y tus datos personales fueron eliminados.");
+            } catch (e) {
+              Alert.alert(
+                "No se pudo eliminar",
+                e instanceof Error ? e.message : "Inténtalo de nuevo más tarde.",
+              );
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -150,6 +175,7 @@ export default function Cuenta() {
           <Row icon="help-circle" label="Ayuda y soporte" onPress={() => router.push("/ayuda")} />
           <Row icon="info" label="Acerca de Carper" value="v1.0.0" onPress={() => router.push("/acerca")} />
           {isSignedIn ? <Row icon="log-out" label="Cerrar sesión" tint={c.destructive} onPress={confirmSignOut} /> : null}
+          {isSignedIn ? <Row icon="trash-2" label="Eliminar cuenta" tint={c.destructive} onPress={confirmDeleteAccount} /> : null}
         </View>
       </ScrollView>
     </View>

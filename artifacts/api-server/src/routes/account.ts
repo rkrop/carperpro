@@ -6,13 +6,17 @@ import {
   userFavoritesTable,
   userAddressesTable,
   outboundOrdersTable,
+  pushTokensTable,
+  backInStockSubsTable,
 } from "@workspace/db";
+import { clerkClient } from "@clerk/express";
 import {
   requireAuth,
   provisionUser,
   type AuthedRequest,
 } from "../middlewares/requireAuth";
 import { normalizeShippingAddress } from "../lib/shippingAddress";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -260,6 +264,46 @@ router.get("/me/orders", async (req: Request, res: Response): Promise<void> => {
       })),
     })),
   );
+});
+
+// ---------------------------------------------------------------------------
+// Account deletion (ARCO "Cancelación")
+// ---------------------------------------------------------------------------
+// Removes the signed-in account and all personal data linked to it. Favorites,
+// saved addresses and phone sessions are deleted automatically by FK cascade;
+// device-linked rows without a cascade (push tokens, back-in-stock subs) are
+// cleared explicitly. Transactional records (orders/billing) are RETAINED for
+// legal and fiscal obligations but disassociated from the account by clearing
+// their owner. For Clerk-backed accounts we also delete the identity at the
+// provider so the login itself is gone.
+router.delete("/me", async (req: Request, res: Response): Promise<void> => {
+  const userId = uid(req);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(outboundOrdersTable)
+      .set({ userId: null })
+      .where(eq(outboundOrdersTable.userId, userId));
+    await tx.delete(pushTokensTable).where(eq(pushTokensTable.userId, userId));
+    await tx
+      .delete(backInStockSubsTable)
+      .where(eq(backInStockSubsTable.userId, userId));
+    // Cascades to favorites, addresses and phone sessions.
+    await tx.delete(usersTable).where(eq(usersTable.id, userId));
+  });
+
+  if (!userId.startsWith("phone_")) {
+    try {
+      await clerkClient.users.deleteUser(userId);
+    } catch (err) {
+      logger.warn(
+        { userId, err },
+        "Clerk: no se pudo eliminar al usuario en el proveedor de identidad",
+      );
+    }
+  }
+
+  res.status(204).end();
 });
 
 export default router;

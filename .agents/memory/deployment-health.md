@@ -1,6 +1,6 @@
 ---
 name: Deployment health check & autoscale fit
-description: Why /api/healthz must be liveness-only, and why this app fits Reserved VM better than autoscale.
+description: Why /api/healthz must be liveness-only; autoscale is fine here and switching to Reserved VM is destructive.
 ---
 
 # Production deployment: health check & target
