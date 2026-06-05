@@ -36,7 +36,10 @@ import {
 const SOURCE = "descripcion-erp";
 const CONCURRENCY = 4;
 const MAX_SOURCE_CHARS = 4000;
-const CONFIDENCE_THRESHOLD = 0.8;
+// Applies ONLY to the write path (applyEnrichmentWrites). Staging records every
+// proposal regardless; this gate decides what is ADDITIVELY written to
+// products / product_oem_codes / product_applications.
+const CONFIDENCE_THRESHOLD = 0.6;
 
 export class EnrichmentWritesDisabledError extends Error {
   constructor() {

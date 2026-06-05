@@ -41,7 +41,28 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
   VEHICLE_MAKES, NON_BRAND_WORDS) + new tokenInSource/yearInSource.
 - `normalizeCodes(oem)` still the shared `normalizeCode` (codes.ts) — DON'T touch.
 - Even with grounding real, default to dry-run (writes only to `enrichment_staging`),
-  review, then enable writes (additive, empty-only, confidence>=0.8).
+  review, then enable writes (additive, empty-only).
+
+## Write threshold = 0.6 (gates ONLY the write path)
+- `CONFIDENCE_THRESHOLD` (enrichment-runner.ts) lowered 0.8 → 0.6 at user request.
+  It is checked ONLY in `applyEnrichmentWrites`; `stageProposals` records EVERY
+  proposal regardless. So staging stays a full audit log; 0.6 only decides what is
+  ADDITIVELY written to products / product_oem_codes / product_applications.
+- **Why:** a 0.6 floor still cleared grounding (validateGrounding recomputes
+  confidence by kept/proposed ratio, so anything below ~0.5 is already half-dropped),
+  and the first controlled write produced only real part-maker brands (Bosch, Delco,
+  VALEO, UNIPOINT, MITSUBA…), zero vehicle makes.
+
+## Controlled writes: dev flag, re-gate after
+- Real writes run via dev-only env `ENRICHMENT_WRITES_ENABLED=1` + workflow restart
+  (no hot-reload!), then DELETE the flag + restart so write=1 returns 403 again.
+  Treat EVERY write run this way: enable → restart → run → disable → restart. NEVER
+  set this flag in production.
+- After any write batch, run the safety query (brand ∈ VEHICLE_MAKES scoped by
+  enriched_at >= run start) — it must be 0; written brands should be part makers
+  (Bosch, Delco, VALEO, UNIPOINT, MITSUBA…), never vehicle makes.
+- Note `written.products` in the report is an UPDATE count (one per filled field),
+  NOT distinct products; scope "this batch" by `enriched_at >= start_ts`.
 
 ## Shapes
 - `extractAttributes({codigo,nombre,descripcion})` →
