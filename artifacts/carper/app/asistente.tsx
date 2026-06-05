@@ -3,14 +3,13 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ProductCardMini } from "@/components/ProductRow";
@@ -45,6 +44,18 @@ let nextId = 0;
 function makeId(): string {
   nextId += 1;
   return `m${nextId}`;
+}
+
+// Native gets real keyboard avoidance (works on Android + iOS, unlike RN's
+// KeyboardAvoidingView which no-ops on Android). Web has no soft keyboard and
+// the codebase intentionally avoids keyboard-controller there, so use a plain View.
+function ChatKeyboardWrapper({ children }: { children: React.ReactNode }) {
+  if (isWeb) return <View style={{ flex: 1 }}>{children}</View>;
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
+      {children}
+    </KeyboardAvoidingView>
+  );
 }
 
 export default function Asistente() {
@@ -155,11 +166,7 @@ export default function Asistente() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
-      >
+      <ChatKeyboardWrapper>
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"
@@ -284,7 +291,7 @@ export default function Asistente() {
             <Feather name="arrow-up" size={20} color={c.primaryForeground} />
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </ChatKeyboardWrapper>
 
     </View>
   );
