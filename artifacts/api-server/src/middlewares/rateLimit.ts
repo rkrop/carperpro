@@ -119,3 +119,17 @@ export const writeLimiter: RequestHandler = rateLimit({
   message:
     "Demasiados intentos. Espera un momento antes de volver a intentarlo.",
 });
+
+// AI-assist limiter for the public catalog search endpoint.
+// When `assist=1` is present, each request can trigger an OpenAI completion
+// AND a Gemini embedding call, so unauthenticated callers must be held to the
+// same 20 req/min budget as the dedicated assistant and scan endpoints.
+// Requests without `assist` are skipped so normal browsing is unaffected.
+export const aiAssistLimiter: RequestHandler = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  keyPrefix: "ai-assist",
+  skip: (req) => req.query.assist !== "1" && req.query.assist !== "true",
+  message:
+    "Demasiadas búsquedas con asistencia IA. Espera un momento e inténtalo de nuevo.",
+});

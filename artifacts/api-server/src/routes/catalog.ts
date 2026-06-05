@@ -27,6 +27,7 @@ import {
   notTestProduct,
   sellableProduct,
 } from "../lib/catalogSearch";
+import { aiAssistLimiter } from "../middlewares/rateLimit";
 
 const router: IRouter = Router();
 
@@ -100,7 +101,7 @@ router.get("/sucursales", async (_req: Request, res: Response): Promise<void> =>
   res.json(data);
 });
 
-router.get("/products", async (req: Request, res: Response): Promise<void> => {
+router.get("/products", aiAssistLimiter, async (req: Request, res: Response): Promise<void> => {
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const categoryId =
     typeof req.query.categoryId === "string" ? req.query.categoryId : undefined;
