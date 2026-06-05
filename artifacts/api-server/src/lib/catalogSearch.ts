@@ -1,6 +1,12 @@
 import { and, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { db, productsTable, type Product as DbProduct } from "@workspace/db";
-import { tokenizeQuery, buildFtsSearch, buildFallbackSearch } from "./productSearch";
+import {
+  tokenizeQuery,
+  buildFtsSearch,
+  buildFallbackSearch,
+  buildCodeMatch,
+  buildApplicationMatch,
+} from "./productSearch";
 import { interpretQuery } from "./nlSearch";
 import { embedQuery, isEmbeddingsConfigured, toVectorLiteral } from "./embeddings";
 
@@ -184,13 +190,14 @@ export async function searchCatalog(
   // the total match count.
   async function runSearch(
     searchConditions: SQL[],
-    rankOrder: SQL | null,
+    rankOrders: SQL[],
   ): Promise<SearchCatalogResult> {
     const where = and(...filterConditions, ...searchConditions);
-    // Deterministic order: relevance first when ranking, then name, then id as a
-    // final tiebreaker. Rows are unique by primary key, so no DISTINCT needed.
-    const orderBy: SQL[] = rankOrder
-      ? [rankOrder, sql`${productsTable.name} asc`, sql`${productsTable.id} asc`]
+    // Deterministic order: relevance keys first when ranking (code-exact >
+    // code-prefix > application > text relevance), then name, then id as a final
+    // tiebreaker. Rows are unique by primary key, so no DISTINCT needed.
+    const orderBy: SQL[] = rankOrders.length
+      ? [...rankOrders, sql`${productsTable.name} asc`, sql`${productsTable.id} asc`]
       : [sql`${productsTable.name} asc`];
     if (accessoryOrder) orderBy.unshift(accessoryOrder);
     const rows = await db
@@ -215,7 +222,7 @@ export async function searchCatalog(
   // the text result and ordering puts text hits first, then closest-by-meaning.
   async function runSemanticSearch(
     textCondition: SQL,
-    textRank: SQL | null,
+    textRanks: SQL[],
     queryVector: number[],
   ): Promise<SearchCatalogResult> {
     const distance = sql`(${productsTable.embedding} <=> ${toVectorLiteral(queryVector)}::vector)`;
@@ -227,7 +234,7 @@ export async function searchCatalog(
     const orderBy: SQL[] = [
       ...(accessoryOrder ? [accessoryOrder] : []), // primary parts above accessories
       sql`(${textCondition}) desc`, // text hits (TRUE) before pure-semantic hits
-      ...(textRank ? [textRank] : []),
+      ...textRanks,
       sql`coalesce(${distance}, 2) asc`, // then closest by meaning
       sql`${productsTable.name} asc`,
       sql`${productsTable.id} asc`,
@@ -246,32 +253,78 @@ export async function searchCatalog(
     return { rows, total: countRows[0]?.count ?? 0 };
   }
 
+  // FASE D structured signals, derived once from the raw query:
+  //  - codeMatch: query normalized like product_oem_codes.code_norm → exact/prefix
+  //    OEM-code match (highest priority).
+  //  - appMatch: "model + year" phrase → product_applications filter.
+  // Both are null for queries that aren't a code / vehicle phrase, and match
+  // nothing while their tables are empty — so they only ever ADD on top of the
+  // existing full-text search, never narrow or break it.
+  const codeMatch = q ? buildCodeMatch(q) : null;
+  const appMatch = q ? buildApplicationMatch(q) : null;
+
+  // Combine a full-text predicate (and its relevance order) with the structured
+  // signals: OR the conditions so a pure code / vehicle query still returns even
+  // when full-text misses, and prepend the structured order keys so code-exact >
+  // code-prefix > application rank above text relevance.
+  function withSignals(
+    ftsCondition: SQL,
+    ftsRank: SQL,
+  ): { condition: SQL; rankOrders: SQL[] } {
+    const conds: SQL[] = [ftsCondition];
+    const rankOrders: SQL[] = [];
+    if (codeMatch) {
+      conds.push(codeMatch.condition);
+      rankOrders.push(codeMatch.exactOrder, codeMatch.prefixOrder);
+    }
+    if (appMatch) {
+      conds.push(appMatch.condition);
+      rankOrders.push(appMatch.order);
+    }
+    rankOrders.push(ftsRank);
+    const condition =
+      conds.length > 1 ? sql`(${sql.join(conds, sql` or `)})` : ftsCondition;
+    return { condition, rankOrders };
+  }
+
   // Build the plain (non-AI) search predicate from the raw query.
   const searchConditions: SQL[] = [];
-  let rankOrder: SQL | null = null;
+  let rankOrders: SQL[] = [];
   let plainWords: string[] = [];
-  // The predicate (and its rank order) that produced the current result — fed to
+  // The predicate (and its rank orders) that produced the current result — fed to
   // the semantic widen so text matches are preserved and ranked first. Starts as
   // the plain query and is reassigned if an AI-assist candidate wins below.
   let winningCondition: SQL | null = null;
-  let winningRank: SQL | null = null;
+  let winningRanks: SQL[] = [];
   if (q) {
     const { allWords, words } = tokenizeQuery(q);
     plainWords = words;
     if (words.length > 0) {
       const fts = buildFtsSearch(words);
-      searchConditions.push(fts.condition);
-      rankOrder = fts.rankOrder;
-      winningCondition = fts.condition;
-      winningRank = fts.rankOrder;
+      const sig = withSignals(fts.condition, fts.rankOrder);
+      searchConditions.push(sig.condition);
+      rankOrders = sig.rankOrders;
+      winningCondition = sig.condition;
+      winningRanks = sig.rankOrders;
     } else {
       // Only stopwords/punctuation survived — substring fallback so search never
-      // breaks or returns empty for inputs like "de la".
-      searchConditions.push(...buildFallbackSearch(allWords));
+      // breaks or returns empty for inputs like "de la". Code/vehicle signals are
+      // still OR-ed on so a code with no word tokens (e.g. "23100-4JA0B") matches.
+      const fallback = and(...buildFallbackSearch(allWords)) as SQL;
+      const conds: SQL[] = [fallback];
+      if (codeMatch) conds.push(codeMatch.condition);
+      if (appMatch) conds.push(appMatch.condition);
+      const condition =
+        conds.length > 1 ? sql`(${sql.join(conds, sql` or `)})` : fallback;
+      searchConditions.push(condition);
+      if (codeMatch) rankOrders.push(codeMatch.exactOrder, codeMatch.prefixOrder);
+      if (appMatch) rankOrders.push(appMatch.order);
+      winningCondition = condition;
+      winningRanks = rankOrders;
     }
   }
 
-  let { rows, total } = await runSearch(searchConditions, rankOrder);
+  let { rows, total } = await runSearch(searchConditions, rankOrders);
   // True once results stop coming from the literal query (vehicle term dropped,
   // or semantic widening). The literal-query result above is never relaxed.
   let relaxed = false;
@@ -301,11 +354,12 @@ export async function searchCatalog(
         if (key === "" || seen.has(key)) continue;
         seen.add(key);
         const aiFts = buildFtsSearch(candidate.words);
-        const aiResult = await runSearch([aiFts.condition], aiFts.rankOrder);
+        const sig = withSignals(aiFts.condition, aiFts.rankOrder);
+        const aiResult = await runSearch([sig.condition], sig.rankOrders);
         if (aiResult.total > total) {
           ({ rows, total } = aiResult);
-          winningCondition = aiFts.condition;
-          winningRank = aiFts.rankOrder;
+          winningCondition = sig.condition;
+          winningRanks = sig.rankOrders;
           relaxed = candidate.relaxes;
           break;
         }
@@ -330,7 +384,7 @@ export async function searchCatalog(
       if (queryVector) {
         const semantic = await runSemanticSearch(
           winningCondition,
-          winningRank,
+          winningRanks,
           queryVector,
         );
         if (semantic.total >= total) {

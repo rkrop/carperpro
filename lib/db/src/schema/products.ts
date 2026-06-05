@@ -170,6 +170,9 @@ export const productsTable = pgTable("products", {
 }, (t) => [
   // Webhook + catalog lookups join on the normalized base code, so index it.
   index("products_sku_base_idx").on(t.skuBase),
+  // GIN index over the trigger-maintained tsvector so full-text/name search uses
+  // an index scan instead of a seq scan as the catalog grows (FASE D).
+  index("products_search_vector_idx").using("gin", t.searchVector),
 ]);
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({

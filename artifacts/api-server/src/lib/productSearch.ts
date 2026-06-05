@@ -1,6 +1,7 @@
 import { and, sql, type SQL } from "drizzle-orm";
 import { productsTable } from "@workspace/db";
 import { expandSynonyms } from "./synonyms";
+import { normalizeCode } from "./codes";
 
 // Connector stopwords that carry no search signal. Dropped so a phrase like
 // "bomba de gasolina tsuru" doesn't force "de" to match and wrongly exclude a
@@ -92,4 +93,82 @@ export function buildFallbackSearch(allWords: string[]): SQL[] {
     const term = `%${w.replace(/([%_\\])/g, "\\$1")}%`;
     return sql`${haystack} like unaccent(lower(${term}))`;
   });
+}
+
+export interface CodeMatch {
+  /**
+   * EXISTS predicate: the product has a structured OEM/equivalent code (in
+   * product_oem_codes) whose code_norm matches the query exactly or by prefix.
+   * Used as an OR signal so a pure code query returns even when full-text misses.
+   */
+  condition: SQL;
+  /** Order key: rows with an EXACT code_norm match first. */
+  exactOrder: SQL;
+  /** Order key: rows whose code_norm starts with the query (exact ⊂ prefix). */
+  prefixOrder: SQL;
+}
+
+/**
+ * Build the OEM-code search signal from the raw query. The query is normalized
+ * with the SAME `normalizeCode` used on the write side (product_oem_codes.code_norm)
+ * so "23100-4JA0B", "23100 4JA0B" and "231004JA0B" all match the stored code.
+ * Returns null only when the normalized query is shorter than 3 chars (a 1–2 char
+ * prefix would match nearly every code and carries no signal); any longer query
+ * is tested against code_norm, so letter-only OEM codes are matched too. The
+ * code EXISTS is indexed (product_oem_codes_code_norm_idx) so the cost on plain
+ * word searches is small at this catalog size. While the codes table is empty the
+ * EXISTS simply matches nothing — degrades cleanly, never widens or breaks search.
+ */
+export function buildCodeMatch(rawQuery: string): CodeMatch | null {
+  const code = normalizeCode(rawQuery);
+  if (code.length < 3) return null;
+  const prefixPattern = `${code.replace(/([%_\\])/g, "\\$1")}%`;
+  const existsFor = (pred: SQL): SQL =>
+    sql`exists (select 1 from product_oem_codes oc where oc.product_id = ${productsTable.id} and ${pred})`;
+  const exactExists = existsFor(sql`oc.code_norm = ${code}`);
+  const prefixExists = existsFor(sql`oc.code_norm like ${prefixPattern}`);
+  return {
+    condition: prefixExists, // exact match is a subset of the prefix match
+    exactOrder: sql`(case when ${exactExists} then 1 else 0 end) desc`,
+    prefixOrder: sql`(case when ${prefixExists} then 1 else 0 end) desc`,
+  };
+}
+
+export interface ApplicationMatch {
+  /** EXISTS predicate: product fits a vehicle application matching model+year. */
+  condition: SQL;
+  /** Order key: rows with a matching application first. */
+  order: SQL;
+}
+
+/**
+ * Build the vehicle+year search signal. Only fires when the query contains a
+ * 4-digit year (19xx/20xx) AND at least one other token to use as the model — so
+ * "NP300 2019" matches but bare "2019" or "frenos" does not. Matches
+ * product_applications where the model ILIKEs any non-year token AND the year
+ * falls within [year_from, year_to]; NULL bounds are treated as open so a row
+ * with no declared upper/lower year still matches. While the table is empty the
+ * EXISTS matches nothing — degrades cleanly. Returns null for non-vehicle queries.
+ */
+export function buildApplicationMatch(rawQuery: string): ApplicationMatch | null {
+  const yearMatch = rawQuery.match(/\b(?:19|20)\d{2}\b/);
+  if (!yearMatch) return null;
+  const year = Number(yearMatch[0]);
+  const tokens = rawQuery
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && t !== String(year));
+  if (tokens.length === 0) return null;
+  const modelPreds = tokens.map((t) => {
+    const term = `%${t.replace(/([%_\\])/g, "\\$1")}%`;
+    return sql`pa.model ilike ${term}`;
+  });
+  const modelAny = sql.join(modelPreds, sql` or `);
+  const yearIn = sql`${year} between coalesce(pa.year_from, ${year}) and coalesce(pa.year_to, ${year})`;
+  const condition = sql`exists (select 1 from product_applications pa where pa.product_id = ${productsTable.id} and (${modelAny}) and (${yearIn}))`;
+  return {
+    condition,
+    order: sql`(case when ${condition} then 1 else 0 end) desc`,
+  };
 }

@@ -74,3 +74,21 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
 - BUT the runner does NOT populate products.equivalents: extraction returns a flat `oem`
   list with no grounded signal to split OEM vs cross-reference/equivalent. Left as a
   decision for the user (classify in extraction, or keep equivalents indexing-only).
+
+## Fase D — search by OEM code + vehicle/year (catalogSearch/productSearch)
+- INVARIANT: one shared normalizeCode() (codes.ts = upper + strip [^A-Z0-9]) is
+  used on BOTH the write side (product_oem_codes.code_norm) and the search side
+  (query). They MUST stay identical or "23100-4JA0B" won't find "231004JA0B".
+- Structured signals are ADDITIVE: code/vehicle predicates are OR-ed onto the
+  existing FTS condition and their order keys are PREPENDED (code-exact >
+  code-prefix > application > ts_rank). When the query isn't a code/vehicle phrase
+  the builders return null, and while product_oem_codes/product_applications are
+  EMPTY every EXISTS is false + every CASE order key is 0 — so plain search is
+  provably unchanged (results AND ordering). Verified balatas=113 unchanged.
+- code signal = buildCodeMatch (>=3 normalized chars, NO digit gate — letter-only
+  OEM codes must match; EXISTS is indexed so cost is fine); exact ⊂ prefix.
+- vehicle signal = buildApplicationMatch: fires only with a 4-digit year (19/20xx)
+  + >=1 non-year token; model ILIKE any token, year BETWEEN coalesce(year_from,
+  year) AND coalesce(year_to, year) so NULL bounds are open.
+- D1 index: GIN on products.search_vector (products_search_vector_idx) added to
+  the Drizzle schema + pushed; code_norm + (make,model) indexes already existed.

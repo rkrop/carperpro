@@ -12,6 +12,7 @@ import {
   getOpenAIDirect,
   isOpenAIDirectConfigured,
 } from "@workspace/integrations-openai-ai-server";
+import { normalizeCode } from "./codes";
 import { logger } from "./logger";
 import { notTestProduct, sellableProduct } from "./catalogSearch";
 
@@ -606,9 +607,10 @@ export function validateGrounding<T>(values: T, _sourceText: string): T {
 }
 
 // TODO(user): richer code normalization (brand-specific rules, O/0 confusions,
-// separators, …). For now a STUB: code_norm = uppercase with every non-[A-Z0-9]
-// character stripped. De-duplicates and drops entries whose normalized form is
-// empty.
+// separators, …). For now the SHARED `normalizeCode` (codes.ts): code_norm =
+// uppercase with every non-[A-Z0-9] character stripped. De-duplicates and drops
+// entries whose normalized form is empty. The SAME helper normalizes the search
+// query (productSearch) so what's written here is findable by code.
 export function normalizeCodes(
   oem: Array<{ brand?: string | null; code: string }>,
 ): ExtractedOemCode[] {
@@ -617,7 +619,7 @@ export function normalizeCodes(
   for (const o of oem) {
     const code = (o.code ?? "").trim();
     if (!code) continue;
-    const code_norm = code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const code_norm = normalizeCode(code);
     if (!code_norm || seen.has(code_norm)) continue;
     seen.add(code_norm);
     const brand = o.brand?.trim();
