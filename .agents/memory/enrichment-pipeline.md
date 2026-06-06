@@ -87,17 +87,27 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
   (EnrichmentWritesDisabledError) until grounding is real. Write path coded but inert:
   additive empty-only + confidence>=0.8, fills products.brand/oem/vehicles/specs +
   inserts product_oem_codes/product_applications, sets enrichment_source/confidence/at.
-- Idempotency: final tables have UNIQUE dedupe indexes (oem: product_id+code_norm;
-  apps: product_id+make+model+coalesce(year_from,-1)+coalesce(year_to,-1)+coalesce(motor,''))
-  — no nullsNotDistinct() in drizzle 0.45 so apps uses an EXPRESSION index; inserts use
-  onConflictDoNothing(). These indexes MUST stay in enrichment.ts schema or push drops them.
-- OPCLASS GOTCHA: the apps dedupe index MUST have every part written as a `sql`
-  expression (sql`${t.productId}`, …), NOT a mix of plain column refs + sql
-  expressions. When mixed, drizzle-kit push misaligns per-column operator classes
-  and emits `product_id int4_ops` on a TEXT column → push fails with "operator
-  class int4_ops does not accept data type text". All-sql parts make drizzle omit
-  typed opclasses so Postgres picks the right default. (migrations = drizzle-kit
-  push, introspect/diff; there are no generated migration files.)
+- Idempotency: oem dedupe = uniqueIndex(product_id, code_norm) (all text, fine).
+  apps dedupe = a plain-column UNIQUE CONSTRAINT `unique("product_applications_dedupe_idx")
+  .on(productId, make, model, yearFrom, yearTo, motor)` — NOT an index, NOT coalesce.
+  inserts use onConflictDoNothing() (no target) which works against a constraint.
+  Both dedupe objects MUST stay in enrichment.ts schema or push drops them.
+- OPCLASS GOTCHA (the apps dedupe object): the Replit DEPLOY migration INTROSPECTS
+  the live DB and regenerates DDL from pg_catalog (proof: deploy SQL shows the
+  canonical `coalesce(year_from,'-1'::integer)` cast that `drizzle-kit generate`
+  never emits). drizzle-kit 0.31.x introspection re-derives per-column operator
+  classes for a multi-column unique INDEX from a FIXED positional pattern
+  ([int4,text,text,int4,int4,text]) that ignores the real column types — so it
+  emits `product_id int4_ops` on a TEXT column → deploy CREATE fails "operator
+  class int4_ops does not accept data type text". This is INDEPENDENT of column
+  order and of plain-vs-expression index (Postgres stores the opclasses correctly;
+  the introspection step corrupts them). FIX = use a unique CONSTRAINT, not an
+  index: a constraint's DDL is `UNIQUE (cols)` with NO explicit opclasses, so the
+  bug can't trigger. Do NOT use .nullsNotDistinct() — drizzle-kit 0.31.x doesn't
+  round-trip NULLS NOT DISTINCT on introspect → permanent phantom diff (push wants
+  to re-add + asks to truncate). NULLS DISTINCT is safe because the runner already
+  dedups NULL years in-memory before insert. (migrations = drizzle-kit push for
+  dev; Replit publish does its own introspect/diff; no generated migration files.)
 
 ## Full-catalog sweep (resumable, in-process, additive)
 - The whole catalog (~13.9k) was enriched in ONE write run: applied ~8.7k,

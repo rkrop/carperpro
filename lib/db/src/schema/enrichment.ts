@@ -8,8 +8,8 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -85,23 +85,31 @@ export const productApplicationsTable = pgTable(
   (t) => [
     index("product_applications_make_model_idx").on(t.make, t.model),
     index("product_applications_product_id_idx").on(t.productId),
-    // One application per product, treating NULL year/motor as a value (coalesce)
-    // so the dedupe key is stable. Drizzle 0.45 has no nullsNotDistinct(), hence
-    // the expression index. Paired with ON CONFLICT DO NOTHING on insert.
+    // One application per product. A UNIQUE CONSTRAINT on plain columns — NOT a
+    // unique index, and never a COALESCE expression index.
     //
-    // Every part is written as a `sql` expression on purpose: when an index mixes
-    // plain column refs with sql expressions, drizzle-kit push misaligns the
-    // per-column operator classes and emits `product_id int4_ops` (text column,
-    // int4 opclass) → "operator class int4_ops does not accept data type text".
-    // Making all parts expressions stops drizzle from attaching typed opclasses,
-    // so Postgres picks the correct default for each column.
-    uniqueIndex("product_applications_dedupe_idx").on(
-      sql`${t.productId}`,
-      sql`${t.make}`,
-      sql`${t.model}`,
-      sql`coalesce(${t.yearFrom}, -1)`,
-      sql`coalesce(${t.yearTo}, -1)`,
-      sql`coalesce(${t.motor}, '')`,
+    // Why a constraint and not an index: the deploy migration INTROSPECTS the
+    // live database and regenerates this object's DDL from pg_catalog. drizzle-kit
+    // 0.31.x re-derives per-column operator classes for a multi-column unique
+    // INDEX from a fixed positional pattern that ignores the real column types,
+    // emitting `product_id int4_ops` on a TEXT column → "operator class int4_ops
+    // does not accept data type text", which fails the deploy. A unique CONSTRAINT
+    // carries NO explicit operator classes in its DDL (`UNIQUE (cols)`), so the
+    // bug cannot trigger and introspect→regenerate is always valid.
+    //
+    // NULLS DISTINCT (the default) is fine here: the enrichment runner dedups
+    // candidates in-memory by make|model|year_from|year_to (NULL years coalesced)
+    // before insert, with ON CONFLICT DO NOTHING as the backstop, so the DB never
+    // sees the duplicate NULL-year rows that NULLS NOT DISTINCT would collapse.
+    // (NULLS NOT DISTINCT was avoided on purpose — drizzle-kit 0.31.x does not
+    // round-trip it on introspect, which produced a permanent phantom diff.)
+    unique("product_applications_dedupe_idx").on(
+      t.productId,
+      t.make,
+      t.model,
+      t.yearFrom,
+      t.yearTo,
+      t.motor,
     ),
   ],
 );
