@@ -191,3 +191,9 @@ id = "m_SZp6VgevJQyyc_H9Gag"
 uri = "file://.local/enrichment-dry-run.json"
 type = "unspecified"
 title = "Enrichment dry-run (limit 50, write=false)"
+
+[[outputs]]
+id = "rP3aKg9cEvDP-Uhn5Bdje"
+uri = "file://dist/carper-proyecto.tar.gz"
+type = "unspecified"
+title = "Proyecto Carper Autopartes (código fuente completo)"
