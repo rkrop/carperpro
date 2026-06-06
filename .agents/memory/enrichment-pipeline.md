@@ -91,6 +91,13 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
   apps: product_id+make+model+coalesce(year_from,-1)+coalesce(year_to,-1)+coalesce(motor,''))
   — no nullsNotDistinct() in drizzle 0.45 so apps uses an EXPRESSION index; inserts use
   onConflictDoNothing(). These indexes MUST stay in enrichment.ts schema or push drops them.
+- OPCLASS GOTCHA: the apps dedupe index MUST have every part written as a `sql`
+  expression (sql`${t.productId}`, …), NOT a mix of plain column refs + sql
+  expressions. When mixed, drizzle-kit push misaligns per-column operator classes
+  and emits `product_id int4_ops` on a TEXT column → push fails with "operator
+  class int4_ops does not accept data type text". All-sql parts make drizzle omit
+  typed opclasses so Postgres picks the right default. (migrations = drizzle-kit
+  push, introspect/diff; there are no generated migration files.)
 
 ## Full-catalog sweep (resumable, in-process, additive)
 - The whole catalog (~13.9k) was enriched in ONE write run: applied ~8.7k,

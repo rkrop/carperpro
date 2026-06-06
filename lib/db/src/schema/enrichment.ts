@@ -88,10 +88,17 @@ export const productApplicationsTable = pgTable(
     // One application per product, treating NULL year/motor as a value (coalesce)
     // so the dedupe key is stable. Drizzle 0.45 has no nullsNotDistinct(), hence
     // the expression index. Paired with ON CONFLICT DO NOTHING on insert.
+    //
+    // Every part is written as a `sql` expression on purpose: when an index mixes
+    // plain column refs with sql expressions, drizzle-kit push misaligns the
+    // per-column operator classes and emits `product_id int4_ops` (text column,
+    // int4 opclass) → "operator class int4_ops does not accept data type text".
+    // Making all parts expressions stops drizzle from attaching typed opclasses,
+    // so Postgres picks the correct default for each column.
     uniqueIndex("product_applications_dedupe_idx").on(
-      t.productId,
-      t.make,
-      t.model,
+      sql`${t.productId}`,
+      sql`${t.make}`,
+      sql`${t.model}`,
       sql`coalesce(${t.yearFrom}, -1)`,
       sql`coalesce(${t.yearTo}, -1)`,
       sql`coalesce(${t.motor}, '')`,
