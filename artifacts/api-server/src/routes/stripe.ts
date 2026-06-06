@@ -17,72 +17,97 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
+const MAX_CHECKOUT_LINES = 100;
+const MAX_PRODUCT_ID_LENGTH = 128;
+
 function parseLines(raw: unknown): CheckoutLineInput[] | null {
   if (!Array.isArray(raw)) return null;
+  if (raw.length > MAX_CHECKOUT_LINES) return null;
   const lines: CheckoutLineInput[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") return null;
     const productId = (item as Record<string, unknown>).productId;
     const qty = (item as Record<string, unknown>).qty;
-    if (typeof productId !== "string" || productId.length === 0) return null;
-    if (typeof qty !== "number" || !Number.isFinite(qty) || qty <= 0) return null;
+    if (
+      typeof productId !== "string" ||
+      productId.length === 0 ||
+      productId.length > MAX_PRODUCT_ID_LENGTH
+    ) {
+      return null;
+    }
+    if (typeof qty !== "number" || !Number.isFinite(qty) || qty <= 0)
+      return null;
     lines.push({ productId, qty });
   }
   return lines;
 }
 
 /** Create a Stripe Checkout Session for a card order. */
-router.post("/stripe/checkout", writeLimiter, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const lines = parseLines(body.lines);
-    if (!lines || lines.length === 0) {
-      res.status(400).json({ error: "Pedido inválido: faltan productos" });
-      return;
-    }
-    const dest = typeof body.dest === "string" ? body.dest : "";
-    if (!dest) {
-      res.status(400).json({ error: "Falta la URL de retorno" });
-      return;
-    }
-    const entrega = typeof body.entrega === "string" ? body.entrega : "tienda";
-    const shippingAddress = normalizeShippingAddress(body.shippingAddress);
-    // Home delivery requires a complete structured address (calle, núm.
-    // exterior, colonia, CP de 5 dígitos) — mirrors the cash/SPEI path.
-    if (entrega === "envio" && !shippingAddress) {
-      res.status(400).json({ error: "La dirección de envío está incompleta o es inválida" });
-      return;
-    }
-    // Link to the buyer's account when signed in (guest checkout still works).
-    const userId = getOptionalUserId(req);
-    if (userId) {
-      try {
-        await ensureUser(userId);
-      } catch (err) {
-        logger.warn({ userId, err }, "No se pudo aprovisionar la cuenta al iniciar el pago");
+router.post(
+  "/stripe/checkout",
+  writeLimiter,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const lines = parseLines(body.lines);
+      if (!lines || lines.length === 0) {
+        res.status(400).json({ error: "Pedido inválido: faltan productos" });
+        return;
       }
+      const dest = typeof body.dest === "string" ? body.dest : "";
+      if (!dest) {
+        res.status(400).json({ error: "Falta la URL de retorno" });
+        return;
+      }
+      const entrega =
+        typeof body.entrega === "string" ? body.entrega : "tienda";
+      const shippingAddress = normalizeShippingAddress(body.shippingAddress);
+      // Home delivery requires a complete structured address (calle, núm.
+      // exterior, colonia, CP de 5 dígitos) — mirrors the cash/SPEI path.
+      if (entrega === "envio" && !shippingAddress) {
+        res.status(400).json({
+          error: "La dirección de envío está incompleta o es inválida",
+        });
+        return;
+      }
+      // Link to the buyer's account when signed in (guest checkout still works).
+      const userId = getOptionalUserId(req);
+      if (userId) {
+        try {
+          await ensureUser(userId);
+        } catch (err) {
+          logger.warn(
+            { userId, err },
+            "No se pudo aprovisionar la cuenta al iniciar el pago",
+          );
+        }
+      }
+      const result = await createCardCheckoutSession({
+        sucursalId:
+          typeof body.sucursalId === "string" ? body.sucursalId : undefined,
+        entrega,
+        buyerName: typeof body.buyerName === "string" ? body.buyerName : null,
+        buyerPhone:
+          typeof body.buyerPhone === "string" ? body.buyerPhone : null,
+        shippingAddress,
+        lines,
+        dest,
+        userId,
+        pushToken: typeof body.pushToken === "string" ? body.pushToken : null,
+      });
+      res.status(201).json(result);
+    } catch (err) {
+      if (err instanceof CheckoutError) {
+        res
+          .status(err.status)
+          .json({ error: err.message, details: err.details });
+        return;
+      }
+      logger.error({ err }, "Stripe: error en /stripe/checkout");
+      res.status(500).json({ error: "No se pudo iniciar el pago" });
     }
-    const result = await createCardCheckoutSession({
-      sucursalId: typeof body.sucursalId === "string" ? body.sucursalId : undefined,
-      entrega,
-      buyerName: typeof body.buyerName === "string" ? body.buyerName : null,
-      buyerPhone: typeof body.buyerPhone === "string" ? body.buyerPhone : null,
-      shippingAddress,
-      lines,
-      dest,
-      userId,
-      pushToken: typeof body.pushToken === "string" ? body.pushToken : null,
-    });
-    res.status(201).json(result);
-  } catch (err) {
-    if (err instanceof CheckoutError) {
-      res.status(err.status).json({ error: err.message, details: err.details });
-      return;
-    }
-    logger.error({ err }, "Stripe: error en /stripe/checkout");
-    res.status(500).json({ error: "No se pudo iniciar el pago" });
-  }
-});
+  },
+);
 
 /**
  * Stripe redirects the browser here (success_url/cancel_url). We 302 to the
@@ -90,7 +115,8 @@ router.post("/stripe/checkout", writeLimiter, async (req: Request, res: Response
  * to first-party destinations to avoid open redirects.
  */
 router.get("/stripe/return", (req: Request, res: Response): void => {
-  const status = typeof req.query.status === "string" ? req.query.status : "unknown";
+  const status =
+    typeof req.query.status === "string" ? req.query.status : "unknown";
   const order = typeof req.query.order === "string" ? req.query.order : "";
   const dest = typeof req.query.dest === "string" ? req.query.dest : "";
 
@@ -153,7 +179,8 @@ function isAllowedDest(dest: string): boolean {
   // production to prevent open-redirect-to-loopback attacks.
   try {
     const bare = new URL(dest).host.split(":")[0];
-    if (bare === "localhost" && process.env.NODE_ENV !== "production") return true;
+    if (bare === "localhost" && process.env.NODE_ENV !== "production")
+      return true;
     const firstParty = getFirstPartyHosts();
     return firstParty.has(bare);
   } catch {
@@ -162,98 +189,113 @@ function isAllowedDest(dest: string): boolean {
 }
 
 /** Authoritative verify-on-return: confirm payment and return the order. */
-router.post("/stripe/verify", writeLimiter, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const orderId =
-      typeof body.orderId === "number"
-        ? body.orderId
-        : typeof body.orderId === "string"
-          ? Number(body.orderId)
-          : NaN;
-    if (!Number.isFinite(orderId)) {
-      res.status(400).json({ error: "orderId inválido" });
+router.post(
+  "/stripe/verify",
+  writeLimiter,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const orderId =
+        typeof body.orderId === "number"
+          ? body.orderId
+          : typeof body.orderId === "string"
+            ? Number(body.orderId)
+            : NaN;
+      if (!Number.isFinite(orderId)) {
+        res.status(400).json({ error: "orderId inválido" });
+        return;
+      }
+
+      // ── Authorization BEFORE reconciliation ──────────────────────────────────
+      // Fetch the order with a cheap local DB read first. We must verify the
+      // caller owns this order before triggering any Stripe API calls or
+      // fulfillment side-effects — an unauthenticated attacker could otherwise
+      // iterate sequential IDs and cause state transitions on other customers'
+      // orders (notifications, ERP queuing, auto-refunds).
+      const rows = await db
+        .select()
+        .from(outboundOrdersTable)
+        .where(eq(outboundOrdersTable.id, orderId))
+        .limit(1);
+      if (rows.length === 0) {
+        res.status(404).json({ error: "Pedido no encontrado" });
+        return;
+      }
+      const snapshot = rows[0];
+      // Account-linked orders: only the owner may trigger reconciliation.
+      if (snapshot.userId && snapshot.userId !== getOptionalUserId(req)) {
+        res.status(404).json({ error: "Pedido no encontrado" });
+        return;
+      }
+      // Guest orders: require the per-order token issued at checkout to prevent
+      // enumeration via sequential ids. Orders that pre-date this column (no
+      // guestToken) are treated as unreadable to guests — use the signed-in path.
+      if (!snapshot.userId) {
+        const callerToken =
+          typeof body.guestToken === "string" ? body.guestToken : null;
+        if (!snapshot.guestToken || callerToken !== snapshot.guestToken) {
+          res.status(404).json({ error: "Pedido no encontrado" });
+          return;
+        }
+      }
+      // ── Caller is authorized — now run the full reconciliation ────────────────
+      const order = await reconcileStripeOrder(orderId);
+      if (!order) {
+        res.status(404).json({ error: "Pedido no encontrado" });
+        return;
+      }
+      res.json({
+        paymentStatus: order.paymentStatus,
+        order: orderToClient(order),
+      });
+      // Opportunistically reconcile any other stragglers.
+      reconcilePendingStripeOrders().catch(() => {});
+    } catch (err) {
+      logger.error({ err }, "Stripe: error en /stripe/verify");
+      res.status(500).json({ error: "No se pudo verificar el pago" });
+    }
+  },
+);
+
+/** Lightweight read of an order's payment status (no Stripe call). */
+router.get(
+  "/stripe/order/:id",
+  async (req: Request, res: Response): Promise<void> => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "id inválido" });
       return;
     }
-
-    // ── Authorization BEFORE reconciliation ──────────────────────────────────
-    // Fetch the order with a cheap local DB read first. We must verify the
-    // caller owns this order before triggering any Stripe API calls or
-    // fulfillment side-effects — an unauthenticated attacker could otherwise
-    // iterate sequential IDs and cause state transitions on other customers'
-    // orders (notifications, ERP queuing, auto-refunds).
     const rows = await db
       .select()
       .from(outboundOrdersTable)
-      .where(eq(outboundOrdersTable.id, orderId))
+      .where(eq(outboundOrdersTable.id, id))
       .limit(1);
     if (rows.length === 0) {
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
     }
-    const snapshot = rows[0];
-    // Account-linked orders: only the owner may trigger reconciliation.
-    if (snapshot.userId && snapshot.userId !== getOptionalUserId(req)) {
+    const order = rows[0];
+    // Account-linked orders: only the owner may read them.
+    if (order.userId && order.userId !== getOptionalUserId(req)) {
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
     }
     // Guest orders: require the per-order token issued at checkout to prevent
-    // enumeration via sequential ids. Orders that pre-date this column (no
-    // guestToken) are treated as unreadable to guests — use the signed-in path.
-    if (!snapshot.userId) {
-      const callerToken = typeof body.guestToken === "string" ? body.guestToken : null;
-      if (!snapshot.guestToken || callerToken !== snapshot.guestToken) {
+    // enumeration via sequential ids.
+    if (!order.userId) {
+      const callerToken =
+        typeof req.query.token === "string" ? req.query.token : null;
+      if (!order.guestToken || callerToken !== order.guestToken) {
         res.status(404).json({ error: "Pedido no encontrado" });
         return;
       }
     }
-    // ── Caller is authorized — now run the full reconciliation ────────────────
-    const order = await reconcileStripeOrder(orderId);
-    if (!order) {
-      res.status(404).json({ error: "Pedido no encontrado" });
-      return;
-    }
-    res.json({ paymentStatus: order.paymentStatus, order: orderToClient(order) });
-    // Opportunistically reconcile any other stragglers.
-    reconcilePendingStripeOrders().catch(() => {});
-  } catch (err) {
-    logger.error({ err }, "Stripe: error en /stripe/verify");
-    res.status(500).json({ error: "No se pudo verificar el pago" });
-  }
-});
-
-/** Lightweight read of an order's payment status (no Stripe call). */
-router.get("/stripe/order/:id", async (req: Request, res: Response): Promise<void> => {
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id)) {
-    res.status(400).json({ error: "id inválido" });
-    return;
-  }
-  const rows = await db
-    .select()
-    .from(outboundOrdersTable)
-    .where(eq(outboundOrdersTable.id, id))
-    .limit(1);
-  if (rows.length === 0) {
-    res.status(404).json({ error: "Pedido no encontrado" });
-    return;
-  }
-  const order = rows[0];
-  // Account-linked orders: only the owner may read them.
-  if (order.userId && order.userId !== getOptionalUserId(req)) {
-    res.status(404).json({ error: "Pedido no encontrado" });
-    return;
-  }
-  // Guest orders: require the per-order token issued at checkout to prevent
-  // enumeration via sequential ids.
-  if (!order.userId) {
-    const callerToken = typeof req.query.token === "string" ? req.query.token : null;
-    if (!order.guestToken || callerToken !== order.guestToken) {
-      res.status(404).json({ error: "Pedido no encontrado" });
-      return;
-    }
-  }
-  res.json({ paymentStatus: order.paymentStatus, order: orderToClient(order) });
-});
+    res.json({
+      paymentStatus: order.paymentStatus,
+      order: orderToClient(order),
+    });
+  },
+);
 
 export default router;

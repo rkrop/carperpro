@@ -66,6 +66,18 @@ export class CheckoutError extends Error {
   }
 }
 
+const MAX_CHECKOUT_LINES = 100;
+const MAX_PRODUCT_ID_LENGTH = 128;
+
+function checkoutLineInputIsValid(line: CheckoutLineInput): boolean {
+  return (
+    line.productId.length > 0 &&
+    line.productId.length <= MAX_PRODUCT_ID_LENGTH &&
+    Number.isFinite(line.qty) &&
+    line.qty > 0
+  );
+}
+
 function makeFolio(): string {
   const now = new Date();
   const stamp = now
@@ -125,6 +137,18 @@ export async function createCardCheckoutSession(
   if (!input.lines || input.lines.length === 0) {
     throw new CheckoutError(400, "El pedido no tiene productos");
   }
+  if (input.lines.length > MAX_CHECKOUT_LINES) {
+    throw new CheckoutError(
+      400,
+      `El pedido excede el máximo de ${MAX_CHECKOUT_LINES} líneas`,
+    );
+  }
+  if (!input.lines.every(checkoutLineInputIsValid)) {
+    throw new CheckoutError(
+      400,
+      "El pedido contiene productos o cantidades inválidas",
+    );
+  }
   if (!input.dest || typeof input.dest !== "string") {
     throw new CheckoutError(400, "Falta la URL de retorno (dest)");
   }
@@ -144,6 +168,7 @@ export async function createCardCheckoutSession(
       name: productsTable.name,
       price: productsTable.price,
       costo: productsTable.costo,
+      status: productsTable.status,
     })
     .from(productsTable)
     .where(inArray(productsTable.id, requestedIds));
@@ -154,6 +179,17 @@ export async function createCardCheckoutSession(
     throw new CheckoutError(400, "Productos no encontrados en catálogo", {
       ids: unknownIds,
     });
+  }
+
+  const notSellable = dbProducts.filter(
+    (p) => p.status === "sin_precio" || effectivePrice(p) <= 0,
+  );
+  if (notSellable.length > 0) {
+    throw new CheckoutError(
+      400,
+      "Algunos productos no están disponibles para pago en línea",
+      { ids: notSellable.map((p) => p.id) },
+    );
   }
 
   const lines: OutboundOrderLine[] = input.lines.map((l) => {
@@ -168,8 +204,7 @@ export async function createCardCheckoutSession(
     };
   });
 
-  const payable = lines.filter((l) => l.price > 0);
-  if (payable.length === 0) {
+  if (lines.some((l) => l.price <= 0)) {
     throw new CheckoutError(
       400,
       "Los productos no tienen precio disponible para pago en línea",
@@ -254,7 +289,7 @@ export async function createCardCheckoutSession(
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      line_items: payable.map((l) => ({
+      line_items: lines.map((l) => ({
         quantity: l.qty,
         price_data: {
           currency: "mxn",

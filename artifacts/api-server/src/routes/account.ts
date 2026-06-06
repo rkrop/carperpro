@@ -20,6 +20,11 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
+const MAX_PRODUCT_ID_LENGTH = 128;
+const MAX_SKU_LENGTH = 128;
+const MAX_FAVORITE_SNAPSHOT_BYTES = 64 * 1024;
+const MAX_FAVORITES_SYNC = 200;
+
 // Everything under /me requires a signed-in user and a provisioned account.
 router.use("/me", requireAuth, provisionUser);
 
@@ -29,12 +34,26 @@ function uid(req: Request): string {
 
 /** Minimal product-snapshot validation. We store the snapshot as-is (the shape
  * mirrors the API `Product`); we only require a stable id + sku to key on. */
-function toProductSnapshot(raw: unknown): { id: string; snapshot: Record<string, unknown> } | null {
+function toProductSnapshot(
+  raw: unknown,
+): { id: string; snapshot: Record<string, unknown> } | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const id = typeof r.id === "string" ? r.id : "";
   const sku = typeof r.sku === "string" ? r.sku : "";
-  if (!id || !sku) return null;
+  if (
+    !id ||
+    !sku ||
+    id.length > MAX_PRODUCT_ID_LENGTH ||
+    sku.length > MAX_SKU_LENGTH
+  ) {
+    return null;
+  }
+  if (
+    Buffer.byteLength(JSON.stringify(r), "utf8") > MAX_FAVORITE_SNAPSHOT_BYTES
+  ) {
+    return null;
+  }
   return { id, snapshot: r };
 }
 
@@ -59,14 +78,17 @@ router.get("/me", async (req: Request, res: Response): Promise<void> => {
 // ---------------------------------------------------------------------------
 // Favorites (product snapshots)
 // ---------------------------------------------------------------------------
-router.get("/me/favorites", async (req: Request, res: Response): Promise<void> => {
-  const rows = await db
-    .select({ product: userFavoritesTable.product })
-    .from(userFavoritesTable)
-    .where(eq(userFavoritesTable.userId, uid(req)))
-    .orderBy(desc(userFavoritesTable.createdAt));
-  res.json(rows.map((r) => r.product));
-});
+router.get(
+  "/me/favorites",
+  async (req: Request, res: Response): Promise<void> => {
+    const rows = await db
+      .select({ product: userFavoritesTable.product })
+      .from(userFavoritesTable)
+      .where(eq(userFavoritesTable.userId, uid(req)))
+      .orderBy(desc(userFavoritesTable.createdAt));
+    res.json(rows.map((r) => r.product));
+  },
+);
 
 router.put(
   "/me/favorites/:productId",
@@ -79,7 +101,11 @@ router.put(
     }
     await db
       .insert(userFavoritesTable)
-      .values({ userId: uid(req), productId: parsed.id, product: parsed.snapshot })
+      .values({
+        userId: uid(req),
+        productId: parsed.id,
+        product: parsed.snapshot,
+      })
       .onConflictDoUpdate({
         target: [userFavoritesTable.userId, userFavoritesTable.productId],
         set: { product: parsed.snapshot },
@@ -110,9 +136,18 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const products = Array.isArray(body.products) ? body.products : [];
+    if (products.length > MAX_FAVORITES_SYNC) {
+      res
+        .status(413)
+        .json({ error: `Demasiados favoritos (máximo ${MAX_FAVORITES_SYNC})` });
+      return;
+    }
     const snapshots = products
       .map(toProductSnapshot)
-      .filter((p): p is { id: string; snapshot: Record<string, unknown> } => p !== null);
+      .filter(
+        (p): p is { id: string; snapshot: Record<string, unknown> } =>
+          p !== null,
+      );
     if (snapshots.length > 0) {
       await db
         .insert(userFavoritesTable)
@@ -146,95 +181,130 @@ function addressToClient(row: typeof userAddressesTable.$inferSelect) {
   };
 }
 
-router.get("/me/addresses", async (req: Request, res: Response): Promise<void> => {
-  const rows = await db
-    .select()
-    .from(userAddressesTable)
-    .where(eq(userAddressesTable.userId, uid(req)))
-    .orderBy(desc(userAddressesTable.isDefault), desc(userAddressesTable.createdAt));
-  res.json(rows.map(addressToClient));
-});
-
-router.post("/me/addresses", async (req: Request, res: Response): Promise<void> => {
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const address = normalizeShippingAddress(body.address);
-  if (!address) {
-    res.status(400).json({ error: "La dirección está incompleta o es inválida" });
-    return;
-  }
-  const label = typeof body.label === "string" && body.label.trim() ? body.label.trim() : null;
-  const makeDefault = body.isDefault === true;
-
-  const created = await db.transaction(async (tx) => {
-    if (makeDefault) {
-      await tx
-        .update(userAddressesTable)
-        .set({ isDefault: false })
-        .where(eq(userAddressesTable.userId, uid(req)));
-    }
-    // First saved address is the default automatically.
-    const existing = await tx
-      .select({ id: userAddressesTable.id })
+router.get(
+  "/me/addresses",
+  async (req: Request, res: Response): Promise<void> => {
+    const rows = await db
+      .select()
       .from(userAddressesTable)
       .where(eq(userAddressesTable.userId, uid(req)))
-      .limit(1);
-    const isDefault = makeDefault || existing.length === 0;
-    const inserted = await tx
-      .insert(userAddressesTable)
-      .values({ userId: uid(req), label, address, isDefault })
-      .returning();
-    return inserted[0];
-  });
-  res.status(201).json(addressToClient(created));
-});
+      .orderBy(
+        desc(userAddressesTable.isDefault),
+        desc(userAddressesTable.createdAt),
+      );
+    res.json(rows.map(addressToClient));
+  },
+);
 
-router.put("/me/addresses/:id", async (req: Request, res: Response): Promise<void> => {
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id)) {
-    res.status(400).json({ error: "id inválido" });
-    return;
-  }
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const address = normalizeShippingAddress(body.address);
-  if (!address) {
-    res.status(400).json({ error: "La dirección está incompleta o es inválida" });
-    return;
-  }
-  const label = typeof body.label === "string" && body.label.trim() ? body.label.trim() : null;
-  const makeDefault = body.isDefault === true;
-
-  const updated = await db.transaction(async (tx) => {
-    if (makeDefault) {
-      await tx
-        .update(userAddressesTable)
-        .set({ isDefault: false })
-        .where(eq(userAddressesTable.userId, uid(req)));
+router.post(
+  "/me/addresses",
+  async (req: Request, res: Response): Promise<void> => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const address = normalizeShippingAddress(body.address);
+    if (!address) {
+      res
+        .status(400)
+        .json({ error: "La dirección está incompleta o es inválida" });
+      return;
     }
-    const rows = await tx
-      .update(userAddressesTable)
-      .set({ label, address, isDefault: makeDefault })
-      .where(and(eq(userAddressesTable.id, id), eq(userAddressesTable.userId, uid(req))))
-      .returning();
-    return rows[0] ?? null;
-  });
-  if (!updated) {
-    res.status(404).json({ error: "Dirección no encontrada" });
-    return;
-  }
-  res.json(addressToClient(updated));
-});
+    const label =
+      typeof body.label === "string" && body.label.trim()
+        ? body.label.trim()
+        : null;
+    const makeDefault = body.isDefault === true;
 
-router.delete("/me/addresses/:id", async (req: Request, res: Response): Promise<void> => {
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id)) {
-    res.status(400).json({ error: "id inválido" });
-    return;
-  }
-  await db
-    .delete(userAddressesTable)
-    .where(and(eq(userAddressesTable.id, id), eq(userAddressesTable.userId, uid(req))));
-  res.status(204).end();
-});
+    const created = await db.transaction(async (tx) => {
+      if (makeDefault) {
+        await tx
+          .update(userAddressesTable)
+          .set({ isDefault: false })
+          .where(eq(userAddressesTable.userId, uid(req)));
+      }
+      // First saved address is the default automatically.
+      const existing = await tx
+        .select({ id: userAddressesTable.id })
+        .from(userAddressesTable)
+        .where(eq(userAddressesTable.userId, uid(req)))
+        .limit(1);
+      const isDefault = makeDefault || existing.length === 0;
+      const inserted = await tx
+        .insert(userAddressesTable)
+        .values({ userId: uid(req), label, address, isDefault })
+        .returning();
+      return inserted[0];
+    });
+    res.status(201).json(addressToClient(created));
+  },
+);
+
+router.put(
+  "/me/addresses/:id",
+  async (req: Request, res: Response): Promise<void> => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "id inválido" });
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const address = normalizeShippingAddress(body.address);
+    if (!address) {
+      res
+        .status(400)
+        .json({ error: "La dirección está incompleta o es inválida" });
+      return;
+    }
+    const label =
+      typeof body.label === "string" && body.label.trim()
+        ? body.label.trim()
+        : null;
+    const makeDefault = body.isDefault === true;
+
+    const updated = await db.transaction(async (tx) => {
+      if (makeDefault) {
+        await tx
+          .update(userAddressesTable)
+          .set({ isDefault: false })
+          .where(eq(userAddressesTable.userId, uid(req)));
+      }
+      const rows = await tx
+        .update(userAddressesTable)
+        .set({ label, address, isDefault: makeDefault })
+        .where(
+          and(
+            eq(userAddressesTable.id, id),
+            eq(userAddressesTable.userId, uid(req)),
+          ),
+        )
+        .returning();
+      return rows[0] ?? null;
+    });
+    if (!updated) {
+      res.status(404).json({ error: "Dirección no encontrada" });
+      return;
+    }
+    res.json(addressToClient(updated));
+  },
+);
+
+router.delete(
+  "/me/addresses/:id",
+  async (req: Request, res: Response): Promise<void> => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "id inválido" });
+      return;
+    }
+    await db
+      .delete(userAddressesTable)
+      .where(
+        and(
+          eq(userAddressesTable.id, id),
+          eq(userAddressesTable.userId, uid(req)),
+        ),
+      );
+    res.status(204).end();
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Order history (orders placed while signed in)

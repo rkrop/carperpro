@@ -1,5 +1,5 @@
 import express, { type Express } from "express";
-import cors from "cors";
+import cors, { type CorsOptions } from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
@@ -17,6 +17,60 @@ import { errorHandler } from "./middlewares/errorHandler";
 import { attachPhoneAuth } from "./middlewares/phoneAuth";
 
 const app: Express = express();
+
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+function addHost(hosts: Set<string>, value: string | undefined): void {
+  const raw = value?.trim();
+  if (!raw) return;
+  try {
+    const parsed =
+      raw.startsWith("http://") || raw.startsWith("https://")
+        ? new URL(raw).hostname
+        : raw.split(":")[0];
+    if (parsed) hosts.add(parsed);
+  } catch {
+    const parsed = raw.split(":")[0];
+    if (parsed) hosts.add(parsed);
+  }
+}
+
+function firstPartyHosts(): Set<string> {
+  const hosts = new Set<string>();
+  for (const domain of process.env.REPLIT_DOMAINS?.split(",") ?? []) {
+    addHost(hosts, domain);
+  }
+  addHost(hosts, process.env.REPLIT_DEV_DOMAIN);
+  addHost(hosts, process.env.EXPO_PUBLIC_DOMAIN);
+  return hosts;
+}
+
+function isAllowedCorsOrigin(origin: string | undefined): boolean {
+  // No Origin header: same-origin browser requests, native/mobile clients, curl,
+  // Stripe/Admintotal webhooks, and server-to-server calls.
+  if (!origin) return true;
+  try {
+    const url = new URL(origin);
+    if (
+      !IS_PRODUCTION &&
+      (url.hostname === "localhost" ||
+        url.hostname === "127.0.0.1" ||
+        url.hostname === "::1")
+    ) {
+      return true;
+    }
+    return firstPartyHosts().has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+const corsOptions: CorsOptions = {
+  credentials: true,
+  origin(origin, callback) {
+    callback(null, isAllowedCorsOrigin(origin));
+  },
+};
 
 // Behind Replit's edge proxy, the real client IP arrives in X-Forwarded-For.
 // Trust exactly one proxy hop so req.ip reflects the client (used for rate
@@ -73,7 +127,7 @@ app.use(
 // before the body parsers because it streams raw bytes.
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
-app.use(cors({ credentials: true, origin: true }));
+app.use(cors(corsOptions));
 
 // Anti-abuse rate limiting. Mounted BEFORE body parsers so that abusive
 // requests are rejected before the server allocates memory to parse their

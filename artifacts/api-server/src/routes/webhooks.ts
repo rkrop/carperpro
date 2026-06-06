@@ -12,7 +12,10 @@ import { notifyBackInStock } from "../lib/push/notify";
 import { logger } from "../lib/logger";
 import { getWebhookToken } from "../lib/admintotal/config";
 import { mapProduct } from "../lib/admintotal/mapper";
-import { normalizeSkuBase, ESTIMATED_PRICE_MARKUP } from "../lib/admintotal/sku";
+import {
+  normalizeSkuBase,
+  ESTIMATED_PRICE_MARKUP,
+} from "../lib/admintotal/sku";
 
 // Inbound Admintotal webhooks. Admintotal POSTs notifications here for:
 //  - price/stock changes  -> /webhooks/admintotal/precios-existencias
@@ -127,15 +130,14 @@ router.post(
         ? ((body as Raw).productos as Raw[])
         : [];
 
-    // DIAGNOSTIC: log the raw body and the exact keys of the first item so we
-    // can confirm the real field names Admintotal sends (identifier/price/stock)
-    // against a live sync. Safe to keep on — this is catalog data, not PII.
+    // DIAGNOSTIC: log only shape/count, not the full batch. Price/stock payloads
+    // are operational data and can be large, so normal logs stay compact.
     logger.info(
       {
-        rawBody: JSON.stringify(body),
+        itemCount: items.length,
         firstItemKeys: items[0] ? Object.keys(items[0]) : [],
       },
-      "Webhook Admintotal precios/existencias: cuerpo RAW recibido (diagnóstico)",
+      "Webhook Admintotal precios/existencias: cuerpo recibido (diagnóstico)",
     );
 
     if (items.length === 0) {
@@ -166,7 +168,13 @@ router.post(
       // the identifier, existencia/existencias for stock), same as the ERP
       // mapper assumes — so read each field from a list of plausible keys.
       const sku = asSku(
-        pick(item, ["sku", "clave", "codigo", "codigo_barras", "clave_producto"]),
+        pick(item, [
+          "sku",
+          "clave",
+          "codigo",
+          "codigo_barras",
+          "clave_producto",
+        ]),
       );
       // Match on the NORMALIZED base code, so a bare "U52351" updates the stored
       // "U52351-UNIFLOW" (and any other product sharing that base). Same rule as
@@ -179,10 +187,21 @@ router.post(
         continue;
       }
 
-      const precio = asNumber(pick(item, ["precio", "precio_publico", "precio1", "price"]));
-      const costo = asNumber(pick(item, ["costo", "precio_costo", "costo_promedio"]));
+      const precio = asNumber(
+        pick(item, ["precio", "precio_publico", "precio1", "price"]),
+      );
+      const costo = asNumber(
+        pick(item, ["costo", "precio_costo", "costo_promedio"]),
+      );
       const stock = asNumber(
-        pick(item, ["stock", "existencia", "existencias", "cantidad", "inventario", "disponible"]),
+        pick(item, [
+          "stock",
+          "existencia",
+          "existencias",
+          "cantidad",
+          "inventario",
+          "disponible",
+        ]),
       );
 
       const hasPriceSignal = precio !== undefined || costo !== undefined;
@@ -238,7 +257,10 @@ router.post(
             .where(
               and(
                 eq(productsTable.skuBase, base),
-                or(eq(productsTable.erpStockQty, 0), isNull(productsTable.erpStockQty)),
+                or(
+                  eq(productsTable.erpStockQty, 0),
+                  isNull(productsTable.erpStockQty),
+                ),
               ),
             )
         ).map((r) => r.id);
@@ -269,7 +291,13 @@ router.post(
     }
 
     logger.info(
-      { received: items.length, pricesUpdated, stockUpdated, notFound, notFoundSkus },
+      {
+        received: items.length,
+        pricesUpdated,
+        stockUpdated,
+        notFound,
+        notFoundSkus,
+      },
       "Webhook Admintotal: precios/existencias procesados",
     );
     res.json({

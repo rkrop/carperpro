@@ -20,8 +20,9 @@ import {
 
 // Operaciones administrativas internas (no expuestas a la app/tienda). Hoy aloja
 // el PILOTO de extracción de atributos desde nuestros propios nombres. Reusa el
-// token de webhooks de Admintotal como secreto de acceso; en desarrollo se
-// permite sin token para poder probarlo con curl en localhost.
+// token de webhooks de Admintotal como secreto de acceso. En desarrollo solo se
+// permite sin token cuando la petición viene de localhost; los previews públicos
+// de Replit deben autenticarse igual que producción.
 
 const router: IRouter = Router();
 
@@ -32,10 +33,29 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
+function isLoopbackHost(value: string | undefined): boolean {
+  const raw = value?.trim();
+  if (raw === "::1" || raw === "[::1]") return true;
+  const host = raw?.replace(/^\[/, "").replace(/\]$/, "").split(":")[0];
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function isLocalDevRequest(req: Request): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  const ip = req.ip || req.socket.remoteAddress || "";
+  return (
+    isLoopbackHost(req.hostname) ||
+    isLoopbackHost(req.headers.host) ||
+    ip === "127.0.0.1" ||
+    ip === "::1" ||
+    ip === "::ffff:127.0.0.1"
+  );
+}
+
 function authAdmin(req: Request, res: Response, next: NextFunction): void {
-  // En desarrollo el endpoint es interno y se prueba en localhost: se permite
-  // sin token para poder correr el piloto con curl.
-  if (process.env.NODE_ENV !== "production") {
+  // En desarrollo local se permite sin token para poder correr el piloto con
+  // curl. Un preview remoto de Replit no es localhost y debe traer Api-key.
+  if (isLocalDevRequest(req)) {
     next();
     return;
   }
@@ -111,11 +131,15 @@ router.post(
       // Mismo gateo que /run: si pides escribir pero el flag está apagado,
       // 403 de inmediato (en vez de "started" y fallar en silencio dentro).
       if (!writesEnabled()) {
-        res.status(403).json({ error: new EnrichmentWritesDisabledError().message });
+        res
+          .status(403)
+          .json({ error: new EnrichmentWritesDisabledError().message });
         return;
       }
       if (isSweepRunning()) {
-        res.status(409).json({ error: "barrido ya en curso", status: getSweepStatus() });
+        res
+          .status(409)
+          .json({ error: "barrido ya en curso", status: getSweepStatus() });
         return;
       }
       void runFullEnrichmentSweep({ write });
