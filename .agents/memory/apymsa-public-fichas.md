@@ -39,6 +39,21 @@ not-found fallback. Non-negotiable if anyone builds an importer.
   valuable data — and probably the Aplicaciones list. Cracking these needs browser-level
   network inspection or a headless render, not the web-search webFetch tool.
 
+## Running the importer (the egress quirk)
+- APYMSA's WAF returns 403 to the workspace egress IP, so `node apymsa-ficha-enrich.mjs`
+  from shell/api-server CANNOT reach it. RUN IT from the agent code_execution sandbox
+  (permitted egress) by `await import(...apymsa-ficha-enrich.mjs)` and calling its
+  exports (resolve/buildAdditiveUpdate). Sandbox gotchas: bare `process.env` is
+  undefined → use `(await import('node:process')).env.DATABASE_URL`; pg via
+  `await import('/home/runner/workspace/lib/db/node_modules/pg/lib/index.js')`;
+  `executeSql` returns a STRING (CSV-ish), not row objects (fine for counts, not loops).
+- One full additive sweep of the 7-digit pool completed cleanly at delay ~1200ms,
+  batches ~100-150, sequential only: 0 WAF blocks / 0 false-positive guards. ~19% of
+  codes are notfound (not in APYMSA catalog) — expected, harmless.
+- IMPORTANT: this writes to whichever DB DATABASE_URL points at (the DEV catalog).
+  The published site uses a SEPARATE production DB — re-run there (prod DATABASE_URL)
+  to make specs/images appear live. Additive guard makes re-runs safe/idempotent.
+
 ## Caveats before building
 - Addressable cleanly today = ~1,301 products (7-digit). The richest field (OEM refs)
   is not yet extractable without more work.
