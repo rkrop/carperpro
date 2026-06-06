@@ -9,6 +9,9 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+import { usersTable } from "./users";
+import { productsTable } from "./products";
+
 // "Avísame cuando vuelva a haber": a shopper subscribes (by Expo push token) to
 // an out-of-stock product. When the product's stock transitions from 0/unknown
 // to a positive count (webhook or ERP sync), we push every active subscriber
@@ -18,9 +21,13 @@ export const backInStockSubsTable = pgTable(
   "back_in_stock_subs",
   {
     id: serial("id").primaryKey(),
-    productId: text("product_id").notNull(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => productsTable.id, { onDelete: "cascade" }),
     token: text("token").notNull(),
-    userId: text("user_id"),
+    userId: text("user_id").references(() => usersTable.id, {
+      onDelete: "cascade",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

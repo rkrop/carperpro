@@ -15,55 +15,9 @@ import { reconcilePendingStripeOrders } from "./lib/stripe/service";
 import { generalLimiter } from "./middlewares/rateLimit";
 import { errorHandler } from "./middlewares/errorHandler";
 import { attachPhoneAuth } from "./middlewares/phoneAuth";
+import { isAllowedCorsOrigin } from "./lib/cors";
 
 const app: Express = express();
-
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
-
-function addHost(hosts: Set<string>, value: string | undefined): void {
-  const raw = value?.trim();
-  if (!raw) return;
-  try {
-    const parsed =
-      raw.startsWith("http://") || raw.startsWith("https://")
-        ? new URL(raw).hostname
-        : raw.split(":")[0];
-    if (parsed) hosts.add(parsed);
-  } catch {
-    const parsed = raw.split(":")[0];
-    if (parsed) hosts.add(parsed);
-  }
-}
-
-function firstPartyHosts(): Set<string> {
-  const hosts = new Set<string>();
-  for (const domain of process.env.REPLIT_DOMAINS?.split(",") ?? []) {
-    addHost(hosts, domain);
-  }
-  addHost(hosts, process.env.REPLIT_DEV_DOMAIN);
-  addHost(hosts, process.env.EXPO_PUBLIC_DOMAIN);
-  return hosts;
-}
-
-function isAllowedCorsOrigin(origin: string | undefined): boolean {
-  // No Origin header: same-origin browser requests, native/mobile clients, curl,
-  // Stripe/Admintotal webhooks, and server-to-server calls.
-  if (!origin) return true;
-  try {
-    const url = new URL(origin);
-    if (
-      !IS_PRODUCTION &&
-      (url.hostname === "localhost" ||
-        url.hostname === "127.0.0.1" ||
-        url.hostname === "::1")
-    ) {
-      return true;
-    }
-    return firstPartyHosts().has(url.hostname);
-  } catch {
-    return false;
-  }
-}
 
 const corsOptions: CorsOptions = {
   credentials: true,

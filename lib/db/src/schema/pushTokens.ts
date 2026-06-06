@@ -7,6 +7,8 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+import { usersTable } from "./users";
+
 // Expo push tokens registered by the mobile app. The token (ExponentPushToken)
 // is the natural primary key: one row per device, re-registered (upserted) on
 // every launch so it stays fresh and re-linked to the signed-in account. Push
@@ -16,7 +18,9 @@ export const pushTokensTable = pgTable(
   "push_tokens",
   {
     token: text("token").primaryKey(),
-    userId: text("user_id"),
+    userId: text("user_id").references(() => usersTable.id, {
+      onDelete: "cascade",
+    }),
     platform: text("platform"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

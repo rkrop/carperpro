@@ -58,3 +58,4 @@ channel = "stable-25_05"
 [userenv.shared]
 TWILIO_VERIFY_SERVICE_SID = "VA18ebfb97843782323728954c8c280dd0"
 CARPER_NOTIFY_SMS_TO = "+526441225597"
+PUBLIC_SITE_URL = "https://autopartescarper.com"

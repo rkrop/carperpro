@@ -28,6 +28,11 @@ import {
   sellableProduct,
 } from "../lib/catalogSearch";
 import { aiAssistLimiter } from "../middlewares/rateLimit";
+import {
+  boundedInt,
+  optionalString,
+  MAX_PRODUCT_ID_LENGTH,
+} from "../lib/httpParams";
 
 const router: IRouter = Router();
 
@@ -35,28 +40,6 @@ const MAX_QUERY_CHARS = 160;
 const MAX_PRODUCT_LIMIT = 200;
 const MAX_OFFSET = 10_000;
 const MAX_AVAILABILITY_IDS = 100;
-const MAX_PRODUCT_ID_LENGTH = 128;
-
-function boundedInt(
-  raw: unknown,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(Math.floor(n), max));
-}
-
-function optionalString(
-  raw: unknown,
-  maxLength = MAX_PRODUCT_ID_LENGTH,
-): string | undefined {
-  if (typeof raw !== "string") return undefined;
-  const value = raw.trim();
-  if (!value || value.length > maxLength) return undefined;
-  return value;
-}
 
 router.get(
   "/categories",

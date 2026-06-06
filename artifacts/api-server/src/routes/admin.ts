@@ -17,6 +17,7 @@ import {
   writesEnabled,
   EnrichmentWritesDisabledError,
 } from "../lib/enrichment-runner";
+import { isLocalDevConnection } from "../lib/loopback";
 
 // Operaciones administrativas internas (no expuestas a la app/tienda). Hoy aloja
 // el PILOTO de extracción de atributos desde nuestros propios nombres. Reusa el
@@ -33,23 +34,17 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
-function isLoopbackHost(value: string | undefined): boolean {
-  const raw = value?.trim();
-  if (raw === "::1" || raw === "[::1]") return true;
-  const host = raw?.replace(/^\[/, "").replace(/\]$/, "").split(":")[0];
-  return host === "localhost" || host === "127.0.0.1" || host === "::1";
-}
-
 function isLocalDevRequest(req: Request): boolean {
-  if (process.env.NODE_ENV === "production") return false;
-  const ip = req.ip || req.socket.remoteAddress || "";
-  return (
-    isLoopbackHost(req.hostname) ||
-    isLoopbackHost(req.headers.host) ||
-    ip === "127.0.0.1" ||
-    ip === "::1" ||
-    ip === "::ffff:127.0.0.1"
-  );
+  // La lógica vive en isLocalDevConnection (módulo loopback, puro/testeable).
+  // Solo decide por la dirección REAL del socket; descarta peticiones proxiadas
+  // (X-Forwarded-*) e ignora Host/hostname por ser controlables por el cliente.
+  return isLocalDevConnection({
+    nodeEnv: process.env.NODE_ENV,
+    remoteAddress: req.socket.remoteAddress,
+    hasForwardedHeaders: Boolean(
+      req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"],
+    ),
+  });
 }
 
 function authAdmin(req: Request, res: Response, next: NextFunction): void {

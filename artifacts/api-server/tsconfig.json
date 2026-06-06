@@ -5,7 +5,13 @@
     "tsBuildInfoFile": ".tsbuildinfo",
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    // El build real lo hace esbuild (build.mjs); tsc solo se usa para
+    // typecheck (--noEmit). noEmit permite allowImportingTsExtensions, que a su
+    // vez deja que los *.test.ts importen con extensión .ts (requisito del
+    // runner nativo `node --test`).
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["src"],
   "references": [

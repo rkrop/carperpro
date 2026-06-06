@@ -47,8 +47,10 @@ catalog:
   '@tailwindcss/vite': ^4.1.14
   '@tanstack/react-query': ^5.90.21
   '@types/node': ^25.3.3
-  '@types/react': ^19.2.0
-  '@types/react-dom': ^19.2.0
+  # Pinned to 19.1.x to match the runtime react/react-dom 19.1.0 (Expo SDK
+  # requirement) and avoid duplicate @types/react copies that break typecheck.
+  '@types/react': ^19.1.10
+  '@types/react-dom': ^19.1.7
   '@vitejs/plugin-react': ^5.0.4
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
@@ -161,3 +163,7 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+  # Force a single @types/react(-dom) across the whole tree (web + Expo) so
+  # TypeScript never sees two unrelated copies. Matches react 19.1.0 runtime.
+  "@types/react": "19.1.17"
+  "@types/react-dom": "19.1.11"
