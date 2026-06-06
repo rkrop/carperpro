@@ -26,6 +26,7 @@ import {
   searchCatalog,
   notTestProduct,
   sellableProduct,
+  catalogVisibleProduct,
 } from "../lib/catalogSearch";
 import { aiAssistLimiter } from "../middlewares/rateLimit";
 import {
@@ -92,7 +93,7 @@ router.get(
             ? eq(subcategoriesTable.categoryId, categoryId)
             : undefined,
           notTestProduct(),
-          sellableProduct(),
+          catalogVisibleProduct(),
         ),
       )
       .groupBy(
@@ -241,7 +242,9 @@ router.get(
     const rows = await db
       .select(productColumns)
       .from(productsTable)
-      .where(and(eq(productsTable.id, id), notTestProduct(), sellableProduct()))
+      .where(
+        and(eq(productsTable.id, id), notTestProduct(), catalogVisibleProduct()),
+      )
       .limit(1);
     const row = rows[0];
     if (!row) {

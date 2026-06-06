@@ -32,7 +32,7 @@ export default function Producto() {
           title: `${product.name} | Carper Autopartes`,
           description:
             (product.descripcion?.trim() ||
-              `${product.name}${product.brand && product.brand !== "SIN MARCA" ? ` ${product.brand}` : ""}. SKU ${product.sku}. ${seoPriceFormatter.format(product.price)}. Disponible en Carper Autopartes, Ciudad Obregón. Consulta disponibilidad y pide por WhatsApp.`).slice(
+              `${product.name}${product.brand && product.brand !== "SIN MARCA" ? ` ${product.brand}` : ""}. SKU ${product.sku}. ${product.quoteOnly ? "Precio a consultar" : seoPriceFormatter.format(product.price)}. Disponible en Carper Autopartes, Ciudad Obregón. Consulta disponibilidad y pide por WhatsApp.`).slice(
               0,
               300,
             ),
@@ -45,6 +45,7 @@ export default function Producto() {
               sku: product.sku,
               brand: product.brand,
               price: product.price,
+              quoteOnly: product.quoteOnly,
               image: product.image,
               description: product.descripcion,
               inStock: product.stock !== 0,
@@ -148,28 +149,41 @@ export default function Producto() {
             </div>
 
             <div className="mb-10">
-              <div className="flex items-baseline gap-4">
-                <span className="font-mono text-4xl font-bold text-foreground">
-                  {priceFormatter.format(product.price)}
-                </span>
-                {product.originalPrice && product.originalPrice > product.price && (
-                  <span className="font-mono text-xl text-muted-foreground line-through">
-                    {priceFormatter.format(product.originalPrice)}
+              {product.quoteOnly ? (
+                <>
+                  <span className="font-mono text-3xl font-bold text-foreground uppercase tracking-tight">
+                    Precio a consultar
                   </span>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground mt-2 font-mono uppercase tracking-widest">Precios con IVA incluido. Sujetos a cambio.</p>
+                  <p className="text-xs text-muted-foreground mt-2 font-mono uppercase tracking-widest">Cotiza precio y disponibilidad por WhatsApp.</p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-baseline gap-4">
+                    <span className="font-mono text-4xl font-bold text-foreground">
+                      {priceFormatter.format(product.price)}
+                    </span>
+                    {product.originalPrice && product.originalPrice > product.price && (
+                      <span className="font-mono text-xl text-muted-foreground line-through">
+                        {priceFormatter.format(product.originalPrice)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2 font-mono uppercase tracking-widest">Precios con IVA incluido. Sujetos a cambio.</p>
+                </>
+              )}
             </div>
 
             <div className="bg-card border border-border p-6 mb-10">
-              <h3 className="font-display text-lg mb-4 uppercase">¿Necesitas esta pieza?</h3>
+              <h3 className="font-display text-lg mb-4 uppercase">{product.quoteOnly ? "¿Te cotizamos esta pieza?" : "¿Necesitas esta pieza?"}</h3>
               <p className="text-muted-foreground text-sm mb-6 leading-relaxed">
-                Contacta a un asesor de ventas por WhatsApp para confirmar compatibilidad exacta con tu vehículo, revisar métodos de pago y coordinar la entrega o recolección.
+                {product.quoteOnly
+                  ? "Esta pieza se maneja bajo cotización. Escríbele a un asesor por WhatsApp para conocer precio y disponibilidad, confirmar compatibilidad con tu vehículo y coordinar la entrega o recolección."
+                  : "Contacta a un asesor de ventas por WhatsApp para confirmar compatibilidad exacta con tu vehículo, revisar métodos de pago y coordinar la entrega o recolección."}
               </p>
               <Button size="lg" className="w-full rounded-none font-bold uppercase tracking-widest gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white border-transparent" asChild>
-                <a href={whatsappUrl({ name: product.name, sku: product.sku })} target="_blank" rel="noopener noreferrer">
+                <a href={whatsappUrl({ name: product.name, sku: product.sku, quoteOnly: product.quoteOnly })} target="_blank" rel="noopener noreferrer">
                   <MessageCircle className="w-5 h-5" />
-                  Pedir por WhatsApp
+                  {product.quoteOnly ? "Cotizar por WhatsApp" : "Pedir por WhatsApp"}
                 </a>
               </Button>
             </div>

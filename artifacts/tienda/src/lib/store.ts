@@ -39,13 +39,22 @@ export const APP_URL = "https://carperautopartes.replit.app/app";
  *
  * @param product Optional product to reference (name + SKU are included).
  */
-export function whatsappUrl(product?: { name: string; sku: string }): string {
+export function whatsappUrl(product?: {
+  name: string;
+  sku: string;
+  quoteOnly?: boolean;
+}): string {
   let message: string;
   if (product) {
+    // Productos "para consulta" (sin precio publicado) piden cotización directa;
+    // el resto pregunta disponibilidad y precio.
+    const cierre = product.quoteOnly
+      ? `¿Me pueden cotizar el precio y confirmar disponibilidad?`
+      : `¿Tienen disponibilidad y precio?`;
     message =
       `Hola, soy [tu nombre] y me interesa este producto de Carper Autopartes:\n\n` +
       `${product.name}\nSKU: ${product.sku}\n\n` +
-      `¿Tienen disponibilidad y precio?`;
+      cierre;
   } else {
     message =
       `Hola, soy [tu nombre] y quisiera información sobre sus refacciones en Carper Autopartes.`;

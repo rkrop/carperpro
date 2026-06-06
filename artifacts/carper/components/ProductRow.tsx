@@ -18,6 +18,7 @@ export const ProductRow = React.memo(function ProductRow({ product }: { product:
   const cart = useCart();
   const status = stockStatus(product.stock);
   const agotado = status === "agotado";
+  const quoteOnly = product.quoteOnly;
   const off = product.originalPrice ? discountPct(product.price, product.originalPrice) : 0;
 
   return (
@@ -97,32 +98,56 @@ export const ProductRow = React.memo(function ProductRow({ product }: { product:
 
         <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: "auto", paddingTop: 10 }}>
           <View>
-            {product.originalPrice ? (
-              <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.neutral400, textDecorationLine: "line-through" }}>
-                {formatMXN(product.originalPrice)}
+            {quoteOnly ? (
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 0.3, textTransform: "uppercase", color: c.foreground }}>
+                Precio a consultar
               </Text>
-            ) : null}
-            <Text style={{ fontFamily: Fonts.monoBold, fontSize: 16, letterSpacing: -0.5, color: c.foreground }}>
-              {formatMXN(product.price)}
-            </Text>
+            ) : (
+              <>
+                {product.originalPrice ? (
+                  <Text style={{ fontFamily: Fonts.mono, fontSize: 10, color: c.neutral400, textDecorationLine: "line-through" }}>
+                    {formatMXN(product.originalPrice)}
+                  </Text>
+                ) : null}
+                <Text style={{ fontFamily: Fonts.monoBold, fontSize: 16, letterSpacing: -0.5, color: c.foreground }}>
+                  {formatMXN(product.price)}
+                </Text>
+              </>
+            )}
           </View>
-          <Pressable
-            disabled={agotado}
-            onPress={() => {
-              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              cart.add(product);
-            }}
-            style={{
-              width: 36,
-              height: 36,
-              borderWidth: 1,
-              borderColor: agotado ? c.border : c.borderStrong,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Feather name="plus" size={16} color={agotado ? c.neutral300 : c.foreground} />
-          </Pressable>
+          {quoteOnly ? (
+            <Pressable
+              onPress={() => router.push(`/producto/${product.id}`)}
+              style={{
+                width: 36,
+                height: 36,
+                borderWidth: 1,
+                borderColor: c.borderStrong,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Feather name="message-circle" size={16} color={c.foreground} />
+            </Pressable>
+          ) : (
+            <Pressable
+              disabled={agotado}
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                cart.add(product);
+              }}
+              style={{
+                width: 36,
+                height: 36,
+                borderWidth: 1,
+                borderColor: agotado ? c.border : c.borderStrong,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Feather name="plus" size={16} color={agotado ? c.neutral300 : c.foreground} />
+            </Pressable>
+          )}
         </View>
       </View>
     </Pressable>
@@ -147,7 +172,13 @@ export function ProductCardMini({ product }: { product: Product }) {
       <Text style={{ fontFamily: Fonts.bold, fontSize: 10, textTransform: "uppercase", color: c.foreground, lineHeight: 14, marginBottom: 8 }} numberOfLines={2}>
         {product.name}
       </Text>
-      <Text style={{ fontFamily: Fonts.monoBold, fontSize: 14, letterSpacing: -0.5, color: c.foreground }}>{formatMXN(product.price)}</Text>
+      {product.quoteOnly ? (
+        <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.3, textTransform: "uppercase", color: c.foreground }}>
+          Precio a consultar
+        </Text>
+      ) : (
+        <Text style={{ fontFamily: Fonts.monoBold, fontSize: 14, letterSpacing: -0.5, color: c.foreground }}>{formatMXN(product.price)}</Text>
+      )}
     </Pressable>
   );
 }

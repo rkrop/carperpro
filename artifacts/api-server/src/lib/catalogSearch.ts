@@ -32,6 +32,16 @@ export function sellableProduct(): SQL {
   return sql`${productsTable.status} <> 'sin_precio'`;
 }
 
+// Catálogo visible: qué productos aparecen en listado, búsqueda, detalle y la
+// navegación por subcategoría. A DIFERENCIA de sellableProduct(), SÍ incluye los
+// 'sin_precio' — se muestran como ficha "para consulta" (sin precio, sin carrito,
+// con cotización por WhatsApp; el flag quoteOnly del producto lo indica). El único
+// estado oculto hoy es de prueba (inexistente), así que muestra todo. Mantener
+// separado de sellableProduct(), que gobierna la COMPRA y los trabajos de backfill.
+export function catalogVisibleProduct(): SQL {
+  return sql`true`;
+}
+
 // Serializa un producto para la API. El precio se expone exactamente como
 // está almacenado (sin transformaciones ni IVA adicional). Las reglas de
 // presentación de precio/stock se definirán con el archivo maestro.
@@ -49,6 +59,10 @@ export function serializeProduct(row: CatalogProduct): Record<string, unknown> {
     name: row.name,
     brand: row.brand,
     price: row.price ?? 0,
+    // Producto sin precio vendible → ficha "para consulta": el cliente oculta
+    // precio + carrito y ofrece cotizar por WhatsApp. La compra ya se rechaza
+    // en orders/Stripe, esto solo gobierna la presentación.
+    quoteOnly: row.status === "sin_precio",
     originalPrice:
       row.originalPrice && row.originalPrice > 0 ? row.originalPrice : null,
     stock: qty ?? null,
@@ -178,7 +192,7 @@ export async function searchCatalog(
   // Filters that apply regardless of the search terms. Kept separate from the
   // search predicate so the AI-assist path can re-run the search with rewritten
   // keywords while preserving the same category/brand scope.
-  const filterConditions: SQL[] = [notTestProduct(), sellableProduct()];
+  const filterConditions: SQL[] = [notTestProduct(), catalogVisibleProduct()];
   if (params.categoryId)
     filterConditions.push(eq(productsTable.categoryId, params.categoryId));
   if (params.subcategoryId)

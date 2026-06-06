@@ -80,6 +80,7 @@ export default function Producto() {
   const agotado = status === "agotado";
   const fav = isFavorite(product.id);
   const off = product.originalPrice ? discountPct(product.price, product.originalPrice) : 0;
+  const quoteOnly = product.quoteOnly;
   const bottomPad = (isWeb ? WEB_BOTTOM_INSET : insets.bottom) + 16;
 
   // How many of this part are already in the cart, and whether we've hit the
@@ -119,7 +120,9 @@ export default function Producto() {
   // out of stock). Prefills the WhatsApp message with the product name + SKU.
   const open = (url: string) => Linking.openURL(url).catch(() => {});
   const consultarWhatsApp = () => {
-    const msg = `Hola Carper, me interesa esta refacción: ${product.name} (SKU ${product.sku}). ¿Tienen disponibilidad?`;
+    const msg = quoteOnly
+      ? `Hola Carper, me interesa esta refacción: ${product.name} (SKU ${product.sku}). ¿Me pueden cotizar precio y disponibilidad?`
+      : `Hola Carper, me interesa esta refacción: ${product.name} (SKU ${product.sku}). ¿Tienen disponibilidad?`;
     open(`https://wa.me/${STORE.whatsapp}?text=${encodeURIComponent(msg)}`);
   };
   const llamar = () => open(`tel:${STORE.phone}`);
@@ -176,14 +179,24 @@ export default function Producto() {
             {product.name}
           </Text>
 
-          <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 6 }}>Precio Unitario</Text>
-          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 12 }}>
-            <Text style={{ fontFamily: Fonts.monoBold, fontSize: 36, letterSpacing: -2, color: c.foreground }}>{formatMXN(product.price)}</Text>
-            {product.originalPrice ? (
-              <Text style={{ fontFamily: Fonts.mono, fontSize: 15, color: c.neutral400, textDecorationLine: "line-through" }}>{formatMXN(product.originalPrice)}</Text>
-            ) : null}
-          </View>
-          <Text style={{ fontFamily: Fonts.medium, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: c.mutedForeground, marginTop: 6 }}>IVA incluido</Text>
+          {quoteOnly ? (
+            <>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 6 }}>Precio</Text>
+              <Text style={{ fontFamily: Fonts.monoBold, fontSize: 26, letterSpacing: -1, color: c.foreground }}>Precio a consultar</Text>
+              <Text style={{ fontFamily: Fonts.medium, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: c.mutedForeground, marginTop: 6 }}>Cotiza por WhatsApp</Text>
+            </>
+          ) : (
+            <>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 6 }}>Precio Unitario</Text>
+              <View style={{ flexDirection: "row", alignItems: "baseline", gap: 12 }}>
+                <Text style={{ fontFamily: Fonts.monoBold, fontSize: 36, letterSpacing: -2, color: c.foreground }}>{formatMXN(product.price)}</Text>
+                {product.originalPrice ? (
+                  <Text style={{ fontFamily: Fonts.mono, fontSize: 15, color: c.neutral400, textDecorationLine: "line-through" }}>{formatMXN(product.originalPrice)}</Text>
+                ) : null}
+              </View>
+              <Text style={{ fontFamily: Fonts.medium, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: c.mutedForeground, marginTop: 6 }}>IVA incluido</Text>
+            </>
+          )}
         </View>
 
         {/* Ask an advisor about availability via WhatsApp. Hidden when out of
@@ -282,7 +295,31 @@ export default function Producto() {
 
       {/* Sticky CTA */}
       <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: c.background, borderTopWidth: 1, borderTopColor: c.border, padding: 20, paddingBottom: bottomPad }}>
-        {added ? (
+        {quoteOnly ? (
+          // Ficha "para consulta": sin precio publicado → no se vende, se cotiza.
+          // Tiene prioridad sobre 'agotado'/carrito (estos productos nunca entran al carrito).
+          <View style={{ gap: 12 }}>
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 11, lineHeight: 15, color: c.mutedForeground, textAlign: "center" }}>
+              Producto sin precio publicado. Cotiza con un asesor por WhatsApp.
+            </Text>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <Pressable
+                onPress={consultarWhatsApp}
+                style={({ pressed }) => ({ flex: 1, height: 56, backgroundColor: pressed ? WHATSAPP_GREEN_PRESSED : WHATSAPP_GREEN, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 })}
+              >
+                <Feather name="message-circle" size={16} color="#fff" />
+                <Text style={{ color: "#fff", fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase" }}>Cotizar</Text>
+              </Pressable>
+              <Pressable
+                onPress={llamar}
+                style={({ pressed }) => ({ flex: 1, height: 56, borderWidth: 1, borderColor: c.foreground, backgroundColor: pressed ? c.neutral100 : c.background, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 })}
+              >
+                <Feather name="phone" size={16} color={c.foreground} />
+                <Text style={{ color: c.foreground, fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase" }}>Llamar</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : added ? (
           <View style={{ flexDirection: "row", gap: 12 }}>
             <View style={{ flex: 1, height: 56, borderWidth: 1, borderColor: c.success, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }}>
               <Feather name="check" size={16} color={c.success} />

@@ -51,6 +51,9 @@ export interface Product {
   brand: string;
   price: number;
   originalPrice: number | null;
+  /** No sellable price (status 'sin_precio') → consultation-only ficha: hide
+   * price + add-to-cart and offer "cotizar por WhatsApp" instead. */
+  quoteOnly: boolean;
   /** Real on-hand count, or null when the ERP hasn't reported stock yet. */
   stock: number | null;
   categoryId: string | null;
@@ -112,6 +115,7 @@ export function mapProduct(p: ApiProduct): Product {
     brand: p.brand,
     price: p.price,
     originalPrice: p.originalPrice ?? null,
+    quoteOnly: p.quoteOnly,
     stock: p.stock,
     categoryId: p.categoryId ?? null,
     image: p.image ? { uri: p.image } : null,

@@ -660,12 +660,17 @@ components:
         - compatible
         - specs
         - vehicles
+        - quoteOnly
       properties:
         id: { type: string }
         sku: { type: string }
         name: { type: string }
         brand: { type: string }
         price: { type: number }
+        # When true the product has NO sellable price (status 'sin_precio'): it is
+        # shown as a consultation-only ficha — hide price + add-to-cart and offer a
+        # "cotizar por WhatsApp" CTA instead. The checkout/order paths reject these.
+        quoteOnly: { type: boolean }
         originalPrice: { type: ["number", "null"] }
         # On-hand units. null means availability is UNKNOWN (not yet reported by
         # the ERP); a number is the real confirmed count. Use stockState to drive

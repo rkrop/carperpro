@@ -14,9 +14,12 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
   // Three availability states: confirmed in stock (>0), confirmed out of stock
   // (0 — hidden from listings server-side but handled here for safety), and
   // unknown (null — the ERP hasn't reported a count yet, still orderable).
+  const quoteOnly = product.quoteOnly;
   const agotado = product.stock === 0;
   const enExistencia = typeof product.stock === "number" && product.stock > 0;
-  const consultable = !agotado; // in stock OR unknown → can ask by WhatsApp
+  // Quote-only products always offer the WhatsApp CTA; otherwise show it unless
+  // the part is confirmed out of stock.
+  const consultable = quoteOnly || !agotado;
   
   const priceFormatter = new Intl.NumberFormat('es-MX', { 
     style: 'currency', 
@@ -40,7 +43,11 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
         
         {/* Availability Badge */}
         <div className="absolute top-4 right-4">
-          {enExistencia ? (
+          {quoteOnly ? (
+            <span className="bg-foreground text-white text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1">
+              Consulta
+            </span>
+          ) : enExistencia ? (
             <span className="bg-success text-success-foreground text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1">
               {product.stock} disp.
             </span>
@@ -77,14 +84,22 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
         
         <div className="mt-auto pt-4 border-t border-border flex flex-wrap items-end justify-between gap-3">
           <div className="space-y-1 min-w-0">
-            {product.originalPrice && product.originalPrice > product.price && (
-              <div className="text-xs font-mono text-muted-foreground line-through">
-                {priceFormatter.format(product.originalPrice)}
+            {quoteOnly ? (
+              <div className="text-sm font-mono font-bold uppercase tracking-wider text-foreground">
+                Precio a consultar
               </div>
+            ) : (
+              <>
+                {product.originalPrice && product.originalPrice > product.price && (
+                  <div className="text-xs font-mono text-muted-foreground line-through">
+                    {priceFormatter.format(product.originalPrice)}
+                  </div>
+                )}
+                <div className="text-xl font-mono font-bold text-foreground">
+                  {priceFormatter.format(product.price)}
+                </div>
+              </>
             )}
-            <div className="text-xl font-mono font-bold text-foreground">
-              {priceFormatter.format(product.price)}
-            </div>
           </div>
           
           <div className="flex gap-2 shrink-0">
@@ -94,9 +109,9 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
                 size="icon" 
                 className="rounded-none border-border hover:border-green-500 hover:text-green-600 hover:bg-green-50 shrink-0"
                 asChild
-                title="Pedir por WhatsApp"
+                title={quoteOnly ? "Cotizar por WhatsApp" : "Pedir por WhatsApp"}
               >
-                <a href={whatsappUrl(product)} target="_blank" rel="noopener noreferrer">
+                <a href={whatsappUrl({ name: product.name, sku: product.sku, quoteOnly })} target="_blank" rel="noopener noreferrer">
                   <MessageCircle className="w-4 h-4" />
                 </a>
               </Button>

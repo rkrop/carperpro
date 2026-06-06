@@ -201,6 +201,9 @@ export interface ProductJsonLdInput {
   image?: string | null;
   description?: string | null;
   inStock: boolean;
+  /** Consultation-only product (no published price). Emits an Offer without a
+   * numeric price (availability only) so we never advertise a 0/placeholder. */
+  quoteOnly?: boolean;
   oem?: string[] | null;
   path: string;
 }
@@ -208,6 +211,30 @@ export interface ProductJsonLdInput {
 /** Product + Offer structured data for a product detail page. */
 export function productJsonLd(p: ProductJsonLdInput): object {
   const url = absoluteUrl(p.path);
+  const availability = p.inStock
+    ? "https://schema.org/InStock"
+    : "https://schema.org/OutOfStock";
+  // Quote-only items have no sellable price; advertise an Offer with only
+  // availability + seller (Google accepts a priceless Offer for "request a
+  // quote" listings) so we never leak a numeric 0 price.
+  const offers: Record<string, unknown> = p.quoteOnly
+    ? {
+        "@type": "Offer",
+        url,
+        priceCurrency: "MXN",
+        itemCondition: "https://schema.org/NewCondition",
+        availability,
+        seller: { "@type": "Organization", name: SITE_NAME },
+      }
+    : {
+        "@type": "Offer",
+        url,
+        priceCurrency: "MXN",
+        price: p.price.toFixed(2),
+        itemCondition: "https://schema.org/NewCondition",
+        availability,
+        seller: { "@type": "Organization", name: SITE_NAME },
+      };
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -216,17 +243,7 @@ export function productJsonLd(p: ProductJsonLdInput): object {
     description:
       p.description?.trim() ||
       `${p.name} disponible en ${SITE_NAME}, Ciudad Obregón.`,
-    offers: {
-      "@type": "Offer",
-      url,
-      priceCurrency: "MXN",
-      price: p.price.toFixed(2),
-      itemCondition: "https://schema.org/NewCondition",
-      availability: p.inStock
-        ? "https://schema.org/InStock"
-        : "https://schema.org/OutOfStock",
-      seller: { "@type": "Organization", name: SITE_NAME },
-    },
+    offers,
   };
   if (p.brand && p.brand !== "SIN MARCA") {
     jsonLd.brand = { "@type": "Brand", name: p.brand };

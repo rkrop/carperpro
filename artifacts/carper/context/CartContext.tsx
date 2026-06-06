@@ -10,6 +10,9 @@ export interface CartItem {
   name: string;
   brand: string;
   price: number;
+  /** Consultation-only product (no sellable price). Must never enter the cart;
+   * add() rejects it defensively. */
+  quoteOnly?: boolean;
   image: ImageSourcePropType | null;
   categoryId: string | null;
   /** Known available units captured when added. null = unknown (no cap),
@@ -102,6 +105,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const add = (product: CartProduct, qty: number = 1) => {
     setItems((prev) => {
+      // Ficha "para consulta": producto sin precio publicado, no se vende.
+      if (product.quoteOnly) return prev;
       // null stock = unknown availability, so no cap; a number caps the line.
       const cap = product.stock == null ? Infinity : Math.max(0, product.stock);
       if (cap <= 0) return prev; // confirmed out of stock — nothing to add
