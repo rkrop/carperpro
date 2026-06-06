@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Codex CLI - nunca commitear la API key
+.codex/auth.json

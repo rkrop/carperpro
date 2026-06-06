@@ -1,0 +1,23 @@
+# Configuración de Codex CLI para el proyecto Carper Autopartes.
+# Se usa vía scripts/codex.sh, que exporta CODEX_HOME apuntando a este directorio
+# y la API key (OPENAI_API_KEY) desde el secreto OPENAI_REPLIT.
+
+# Autenticación por API key (no login de ChatGPT).
+preferred_auth_method = "apikey"
+
+# Provider explícito de OpenAI que lee la key de la variable OPENAI_API_KEY.
+model_provider = "openai_apikey"
+
+# Modelo por defecto. Si la cuenta no tiene acceso a gpt-5-codex, cámbielo a "gpt-5".
+model = "gpt-5-codex"
+
+# Por defecto NO se permite que Codex modifique archivos: ideal para auditorías.
+# Para que aplique mejoras de código use:  scripts/codex.sh --sandbox workspace-write ...
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+[model_providers.openai_apikey]
+name = "OpenAI (API key)"
+base_url = "https://api.openai.com/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
