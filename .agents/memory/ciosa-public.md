@@ -24,19 +24,16 @@ Each supplier differs; Ciosa is NOT like APYMSA (no public page-per-code).
 - A user-offered Admintotal Excel of "códigos + descripción" adds NOTHING: both are
   already in our catalog (código=sku_base, descripción=name).
 
-## ciosa.com is an AngularJS SPA with a B2B LOGIN WALL (photos gated)
-- Sites: www.ciosa.com, mx.ciosa.net (same app), grupociosa.mx. Brochure pages render
-  ~360 chars of shell via JS; real data via `/webservices/*`, `php/getData.php`,
-  `productos/...`. AngularJS 1.5.8.
-- Product search = **POST `lazy_list=1&limit=N` to `/productos/resultado/{query}`**
-  (the JS posts to `window.location.href`). Token from `php/getData.php?opc=1`.
-- WITHOUT a dealer session the search response is the page shell + "REGÍSTRATE" /
-  "REACTIVACIÓN" modals ("iniciar sesión / contraseña / refaccionario") — ZERO product
-  cards. It's a B2B distributor catalog (pedidoB2B, descuentos cedis/región/comercial).
-- Product photos live on `img.ciosa.com` (product images, not the public promo/logo
-  ones). Reaching them needs the gated catalog (to map código→NPC→image URL).
-- **Conclusion: photos require the USER's Ciosa dealer login.** Not publicly reachable.
-  The slug in `/productos/resultado/{x}` is the search query; results are auth-gated.
+## ciosa.com search SPA is login-gated, BUT the image CDN is PUBLIC (photos reachable)
+- Sites: www.ciosa.com, mx.ciosa.net (same app), grupociosa.mx. AngularJS 1.5.8 SPA.
+  Product SEARCH is B2B login-walled (POST `lazy_list=1` to `/productos/resultado/{q}`
+  returns only "REGÍSTRATE/REACTIVACIÓN" shell without a dealer session).
+- **CORRECTION (was: "photos require dealer login"):** the image CDN is OPEN. With the
+  supplier's **"Código XML"** (Excel col 3, NOT our código/sku_base) you fetch the photo
+  directly at `https://img.ciosa.com/api/v1/img/filter/{XML}/{XML}_b` — no auth.
+  ~78–81% of códigos return a real photo; the rest return a fixed PLACEHOLDER detectable
+  by sha256 prefix `5022e85b43813dcb` (~9KB) or body len < 2500. So you DON'T need the
+  gated search at all when you already hold the Código XML (which the supplier Excel has).
 
 ## Enrichment (specs/OEM/aplicaciones) ALREADY ran on all 532
 - All 532 have `enriched_at` set (covered by the full-catalog sweep, see

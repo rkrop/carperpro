@@ -9,6 +9,7 @@ import { autoImportIfDirty } from "./lib/auto-catalog-import";
 import { backfillEmbeddings } from "./lib/embedding-backfill";
 import { backfillDescriptions } from "./lib/description-backfill";
 import { backfillApymsaFichas } from "./lib/apymsa-ficha-backfill";
+import { backfillCiosaCatalog } from "./lib/ciosa-catalog-backfill";
 
 // Last-resort safety net. The known production crash-loop (Postgres dropping
 // idle connections → unhandled pg 'error' event → process death) is fixed at
@@ -69,6 +70,12 @@ app.listen(port, (err) => {
     // toca nada. Lleva el enriquecimiento a producción al publicar, ya que el
     // WAF de APYMSA impide scrapear desde el runtime desplegado.
     await backfillApymsaFichas();
+    // Catálogo GRUPO CIOSA versionado en src/data/ciosa-catalog.json: da de alta
+    // los códigos nuevos del Excel del proveedor (con fotos públicas de ciosa.com)
+    // y rellena huecos de los existentes (aditivo, nunca precio/stock). Corre
+    // DESPUÉS de autoImportIfDirty para que se auto-repare si un re-import maestro
+    // borró estos productos. Idempotente.
+    await backfillCiosaCatalog();
     // Semantic search (pgvector): ensure the extension/index/reset-trigger, then
     // embed any product missing an embedding. Both no-op gracefully when no
     // embedding provider (GEMINI_API_KEY) is configured — plain text search is
