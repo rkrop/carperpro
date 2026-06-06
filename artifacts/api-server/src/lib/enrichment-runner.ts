@@ -10,6 +10,7 @@ import {
   type ProductSpec,
 } from "@workspace/db";
 import { logger } from "./logger";
+import { withAdvisoryLock, JOB_LOCK } from "./advisory-lock";
 import { notTestProduct, sellableProduct } from "./catalogSearch";
 import {
   extractAttributes,
@@ -34,7 +35,15 @@ import {
 // write=true is refused at the route.
 
 const SOURCE = "descripcion-erp";
-const CONCURRENCY = 4;
+// Tier-2 OpenAI throughput. Per-row backoff (below) is the safety net for the odd
+// 429, so a transient failure retries the ONE row instead of aborting the batch.
+const CONCURRENCY = 18;
+// Per-row retry on transient (429/timeout) failures: up to 5 attempts with
+// exponential backoff + jitter. After the last attempt the row is counted as
+// failed and SKIPPED (enriched_at stays NULL → a later resume picks it up).
+const MAX_ROW_ATTEMPTS = 5;
+const RETRY_BASE_MS = 800;
+const RETRY_MAX_MS = 20_000;
 const MAX_SOURCE_CHARS = 4000;
 // Applies ONLY to the write path (applyEnrichmentWrites). Staging records every
 // proposal regardless; this gate decides what is ADDITIVELY written to
@@ -51,7 +60,7 @@ export class EnrichmentWritesDisabledError extends Error {
   }
 }
 
-function writesEnabled(): boolean {
+export function writesEnabled(): boolean {
   return process.env.ENRICHMENT_WRITES_ENABLED === "1";
 }
 
@@ -123,6 +132,9 @@ export interface EnrichmentResult {
   staged: number;
   written: { products: number; oemCodes: number; applications: number };
   aborted: boolean;
+  // Rows that exhausted MAX_ROW_ATTEMPTS on transient API failures and were
+  // skipped (NOT written). They keep enriched_at NULL so a resume re-tries them.
+  failed: number;
   sample: EnrichmentSampleRow[];
 }
 
@@ -135,8 +147,29 @@ function emptyResult(write: boolean): EnrichmentResult {
     staged: 0,
     written: { products: 0, oemCodes: 0, applications: 0 },
     aborted: false,
+    failed: 0,
     sample: [],
   };
+}
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+// Per-row extraction with exponential backoff + jitter on transient (retryable)
+// failures. Non-retryable outcomes (empty/invalid model output) return immediately.
+// Returns the last result; the caller treats a still-retryable result as "failed,
+// skip" so ONE flaky row never aborts a long full-catalog run.
+async function extractWithRetry(
+  input: { codigo: string; nombre: string; descripcion: string },
+): Promise<Awaited<ReturnType<typeof extractAttributes>>> {
+  let last = await extractAttributes(input);
+  for (let attempt = 1; !last.ok && last.retryable && attempt < MAX_ROW_ATTEMPTS; attempt++) {
+    const backoff = Math.min(RETRY_BASE_MS * 2 ** (attempt - 1), RETRY_MAX_MS);
+    const jitter = Math.floor(Math.random() * RETRY_BASE_MS);
+    await sleep(backoff + jitter);
+    last = await extractAttributes(input);
+  }
+  return last;
 }
 
 // dry-run: replace any prior PENDING proposals for this product (so re-runs are
@@ -304,6 +337,27 @@ async function applyEnrichmentWrites(
   return written;
 }
 
+// Stamp provenance columns (enriched_at) WITHOUT touching any catalog field —
+// marks a row "seen, nothing additive to apply" so a resumable full sweep does
+// not re-select it and therefore terminates. Additive-only: never alters
+// brand/specs/oem/vehicles, price, or stock. Guarded on enriched_at IS NULL so
+// it never overwrites an existing applied stamp (idempotent under overlap).
+async function markEnrichmentProcessed(
+  id: string,
+  confidence: number,
+  status: "no_data" | "no_extract",
+): Promise<void> {
+  await db
+    .update(productsTable)
+    .set({
+      enrichmentSource: SOURCE,
+      enrichmentConfidence: String(confidence),
+      enrichedAt: new Date(),
+      enrichmentReviewStatus: status,
+    })
+    .where(and(eq(productsTable.id, id), sql`${productsTable.enrichedAt} is null`));
+}
+
 export async function runEnrichmentBatch(opts: {
   limit: number;
   write: boolean;
@@ -336,6 +390,9 @@ export async function runEnrichmentBatch(opts: {
       and(
         notTestProduct(),
         sellableProduct(),
+        // RESUMABLE: skip anything already processed (enriched_at set), so batch
+        // N+1 continues where N stopped instead of reprocessing the same rows.
+        sql`${productsTable.enrichedAt} is null`,
         sql`(${productsTable.brand} = 'SIN MARCA'
               or coalesce(jsonb_array_length(case when jsonb_typeof(${productsTable.specs}) = 'array' then ${productsTable.specs} else '[]'::jsonb end), 0) = 0
               or ${productsTable.oem} is null or cardinality(${productsTable.oem}) = 0
@@ -349,26 +406,49 @@ export async function runEnrichmentBatch(opts: {
   if (rows.length === 0) return result;
 
   let next = 0;
-  let aborted = false;
   const reports: EnrichmentSampleRow[] = [];
+
+  // Progress heartbeat for long full-catalog runs: every 100 processed rows log
+  // processed / written-products / failed / remaining.
+  let lastLoggedAt = 0;
+  const logProgressMaybe = (): void => {
+    if (result.scanned - lastLoggedAt < 100) return;
+    lastLoggedAt = result.scanned;
+    logger.info(
+      {
+        procesados: result.scanned,
+        escritos_products: result.written.products,
+        oem: result.written.oemCodes,
+        aplicaciones: result.written.applications,
+        fallidos: result.failed,
+        restantes: rows.length - result.scanned,
+      },
+      "enrichment: progreso",
+    );
+  };
 
   const worker = async (): Promise<void> => {
     for (;;) {
-      if (aborted) return;
       const i = next++;
       if (i >= rows.length) return;
       const row = rows[i]!;
 
-      const ext = await extractAttributes({
+      const ext = await extractWithRetry({
         codigo: row.sku,
         nombre: row.name,
         descripcion: buildSourceDescripcion(row),
       });
       result.scanned++;
+      logProgressMaybe();
       if (!ext.ok) {
+        // Transient failure that survived all retries → SKIP this row (leave
+        // enriched_at NULL so a resume re-tries it) instead of aborting the run.
+        // A non-retryable failure means the model returned nothing extractable,
+        // so in write mode mark it processed to keep the full sweep terminating.
         if (ext.retryable) {
-          aborted = true;
-          return;
+          result.failed++;
+        } else if (opts.write) {
+          await markEnrichmentProcessed(row.id, 0, "no_extract");
         }
         continue;
       }
@@ -408,18 +488,25 @@ export async function runEnrichmentBatch(opts: {
         wouldWrite,
       };
 
-      if (hasProposal) {
-        if (opts.write) {
-          const written = await applyEnrichmentWrites(row.id, ext.attrs, wouldWrite);
+      if (opts.write) {
+        let written = { products: [] as string[], oemCodes: 0, applications: 0 };
+        if (hasProposal) {
+          written = await applyEnrichmentWrites(row.id, ext.attrs, wouldWrite);
           report.written = written;
           result.written.products += written.products.length;
           result.written.oemCodes += written.oemCodes;
           result.written.applications += written.applications;
-        } else {
-          const staged = await stageProposals(row.id, ext.attrs, wouldWrite);
-          report.staged = staged;
-          result.staged += staged.length;
         }
+        // Resumable sweep: stamp enriched_at on EVERY processed row, even when
+        // nothing was filled (no proposal / below threshold / already populated),
+        // so it is not re-selected next batch and the full run terminates.
+        if (!written.products.length && !written.oemCodes && !written.applications) {
+          await markEnrichmentProcessed(row.id, ext.attrs.confidence, "no_data");
+        }
+      } else if (hasProposal) {
+        const staged = await stageProposals(row.id, ext.attrs, wouldWrite);
+        report.staged = staged;
+        result.staged += staged.length;
       }
 
       reports.push(report);
@@ -430,12 +517,147 @@ export async function runEnrichmentBatch(opts: {
     Array.from({ length: Math.min(CONCURRENCY, rows.length) }, () => worker()),
   );
 
-  result.aborted = aborted;
-  if (aborted) {
-    logger.warn("enrichment: lote abortado por falla transitoria de la API");
+  // Per-row backoff means a long run no longer aborts wholesale; transient
+  // failures that survived all retries are counted in result.failed instead.
+  result.aborted = false;
+  if (result.failed > 0) {
+    logger.warn(
+      { fallidos: result.failed },
+      "enrichment: filas omitidas por fallas transitorias tras agotar reintentos",
+    );
   }
   const withHits = reports.filter((r) => (r.staged?.length ?? 0) > 0 || r.written);
   const withoutHits = reports.filter((r) => !((r.staged?.length ?? 0) > 0 || r.written));
   result.sample = [...withHits, ...withoutHits].slice(0, sampleSize);
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Full-catalog sweep
+// ---------------------------------------------------------------------------
+// Runs entirely inside the server process. A fire-and-forget HTTP request can
+// kick this off and the work continues even after the client socket closes
+// (Node does not cancel an in-flight async handler on disconnect), so we do not
+// depend on any external loop staying alive. Loops fixed-size batches until the
+// candidate pool is exhausted; bails out early if a pool consists only of
+// transient failures so a few un-enrichable rows cannot loop forever.
+
+export type SweepStatus = {
+  running: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  batches: number;
+  scanned: number;
+  withProposals: number;
+  written: { products: number; oemCodes: number; applications: number };
+  failed: number;
+  lastError: string | null;
+};
+
+let sweepStatus: SweepStatus = {
+  running: false,
+  startedAt: null,
+  finishedAt: null,
+  batches: 0,
+  scanned: 0,
+  withProposals: 0,
+  written: { products: 0, oemCodes: 0, applications: 0 },
+  failed: 0,
+  lastError: null,
+};
+
+export function getSweepStatus(): SweepStatus {
+  return { ...sweepStatus, written: { ...sweepStatus.written } };
+}
+
+export function isSweepRunning(): boolean {
+  return sweepStatus.running;
+}
+
+export async function runFullEnrichmentSweep(opts: {
+  write: boolean;
+  batchSize?: number;
+  maxBatches?: number;
+}): Promise<void> {
+  if (sweepStatus.running) {
+    logger.warn("enrichment sweep: ya en curso; se ignora el disparo duplicado");
+    return;
+  }
+  const batchSize = opts.batchSize ?? 1000;
+  const maxBatches = opts.maxBatches ?? 30;
+  sweepStatus = {
+    running: true,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    batches: 0,
+    scanned: 0,
+    withProposals: 0,
+    written: { products: 0, oemCodes: 0, applications: 0 },
+    failed: 0,
+    lastError: null,
+  };
+  logger.info(
+    { write: opts.write, batchSize, maxBatches },
+    "enrichment sweep: iniciando barrido completo del catálogo",
+  );
+  try {
+    // Cross-instance singleton: under Autoscale more than one instance could
+    // receive the trigger, so we take a non-blocking advisory lock and only the
+    // holder runs the loop. The in-memory `running` flag above guards repeats
+    // within a single instance; this guards across instances.
+    const ran = await withAdvisoryLock(JOB_LOCK.enrichmentSweep, async () => {
+      let stalls = 0;
+      for (let i = 0; i < maxBatches; i++) {
+        const r = await runEnrichmentBatch({
+          limit: batchSize,
+          write: opts.write,
+          sampleSize: 0,
+        });
+        sweepStatus.batches++;
+        sweepStatus.scanned += r.scanned;
+        sweepStatus.withProposals += r.withProposals;
+        sweepStatus.written.products += r.written.products;
+        sweepStatus.written.oemCodes += r.written.oemCodes;
+        sweepStatus.written.applications += r.written.applications;
+        sweepStatus.failed += r.failed;
+        logger.info(
+          {
+            lote: sweepStatus.batches,
+            scanned: r.scanned,
+            withProposals: r.withProposals,
+            written: r.written,
+            failed: r.failed,
+            acumulado: { scanned: sweepStatus.scanned, written: sweepStatus.written },
+          },
+          "enrichment sweep: lote completado",
+        );
+        if (r.scanned === 0) break;
+        // Pool is only transient failures (nothing newly markable) → don't loop
+        // forever on a handful of un-enrichable rows.
+        if (r.scanned === r.failed) {
+          stalls++;
+          if (stalls >= 2) {
+            logger.warn(
+              { lote: sweepStatus.batches },
+              "enrichment sweep: el pool sólo contiene fallas transitorias; deteniendo",
+            );
+            break;
+          }
+        } else {
+          stalls = 0;
+        }
+      }
+    });
+    if (!ran) {
+      sweepStatus.lastError = "otra instancia tiene el lock del barrido; se omite";
+      logger.warn("enrichment sweep: otra instancia tiene el lock; se omite este disparo");
+    }
+  } catch (err) {
+    sweepStatus.lastError = err instanceof Error ? err.message : String(err);
+    logger.error({ err }, "enrichment sweep: error durante el barrido");
+  } finally {
+    sweepStatus.running = false;
+    sweepStatus.finishedAt = new Date().toISOString();
+    logger.info({ resumen: getSweepStatus() }, "enrichment sweep: barrido finalizado");
+  }
 }

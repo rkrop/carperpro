@@ -92,6 +92,28 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
   — no nullsNotDistinct() in drizzle 0.45 so apps uses an EXPRESSION index; inserts use
   onConflictDoNothing(). These indexes MUST stay in enrichment.ts schema or push drops them.
 
+## Full-catalog sweep (resumable, in-process, additive)
+- The whole catalog (~13.9k) was enriched in ONE write run: applied ~8.7k,
+  no_data ~4.6k, no_extract ~0.5k; 0 vehicle-makes written as brand (safety query).
+- TERMINATION INVARIANT: a resumable sweep selects rows by `enriched_at IS NULL`,
+  so EVERY processed row must be stamped or it loops forever. Rows that produce a
+  written proposal get stamped by applyEnrichmentWrites; rows with no proposal /
+  below threshold / non-retryable extract failure are stamped by
+  `markEnrichmentProcessed` (provenance + review_status 'no_data'|'no_extract',
+  guarded on enriched_at IS NULL, touches NO catalog field). Forgetting to stamp
+  no-proposal rows was the original infinite-reselection bug.
+- **Fire-and-forget survives client disconnect**: the in-process loop
+  (`runFullEnrichmentSweep`, batches of 1000 until pool empty, stall-guard =
+  2 consecutive batches where scanned===failed) keeps running after the HTTP
+  client drops. External `nohup`/`setsid` bg scripts DON'T — they die when the
+  bash tool call ends. So drive long jobs from inside the server, not the shell.
+- Sweep is wrapped in `withAdvisoryLock(JOB_LOCK.enrichmentSweep)` so Autoscale
+  can't double-run it across instances (in-memory `running` flag only guards one
+  instance). `sweepStatus` is in-memory/per-instance — fine for a manual op.
+- `sweep=1` REQUIRES `write=1` (route returns 400 otherwise): dry-run never stamps
+  enriched_at, so a dry-run sweep would re-select the same rows until the batch cap.
+  For a dry-run sample use `/admin/enrichment/run?limit=N` instead.
+
 ## equivalents: indexing-only (OPEN product decision)
 - Added `equivalents` to the search_vector trigger (weight B, like oem) in BOTH
   ensure-search-trigger.ts AND import-maestro.mjs — so EXISTING ERP equivalents become
