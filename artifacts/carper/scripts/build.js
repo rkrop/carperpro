@@ -67,6 +67,13 @@ function getDeploymentDomain() {
     return stripProtocol(process.env.EXPO_PUBLIC_DOMAIN);
   }
 
+  if (!process.env.CI && process.env.REPLIT_DEPLOYMENT !== "1") {
+    console.warn(
+      "No deployment domain found; using localhost:3000 for local build verification.",
+    );
+    return "localhost:3000";
+  }
+
   console.error(
     "ERROR: No deployment domain found. Set REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, or EXPO_PUBLIC_DOMAIN",
   );
@@ -160,6 +167,8 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
       "--no-dev",
       "--minify",
       "--localhost",
+      "--port",
+      "8081",
     ],
     {
       stdio: ["ignore", "pipe", "pipe"],
@@ -182,7 +191,10 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
     });
   }
 
-  for (let i = 0; i < 60; i++) {
+  const readyTimeoutMs = Number(process.env.EXPO_METRO_READY_TIMEOUT_MS ?? 180_000);
+  const readyStartedAt = Date.now();
+
+  while (Date.now() - readyStartedAt < readyTimeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     const healthy = await checkMetroHealth();
@@ -192,7 +204,7 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
     }
   }
 
-  console.error("Metro timeout");
+  console.error(`Metro timeout after ${Math.round(readyTimeoutMs / 1000)}s`);
   process.exit(1);
 }
 
