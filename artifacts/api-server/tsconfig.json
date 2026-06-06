@@ -11,7 +11,8 @@
     // vez deja que los *.test.ts importen con extensión .ts (requisito del
     // runner nativo `node --test`).
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
   },
   "include": ["src"],
   "references": [

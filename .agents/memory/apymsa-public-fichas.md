@@ -50,9 +50,24 @@ not-found fallback. Non-negotiable if anyone builds an importer.
 - One full additive sweep of the 7-digit pool completed cleanly at delay ~1200ms,
   batches ~100-150, sequential only: 0 WAF blocks / 0 false-positive guards. ~19% of
   codes are notfound (not in APYMSA catalog) — expected, harmless.
-- IMPORTANT: this writes to whichever DB DATABASE_URL points at (the DEV catalog).
-  The published site uses a SEPARATE production DB — re-run there (prod DATABASE_URL)
-  to make specs/images appear live. Additive guard makes re-runs safe/idempotent.
+- IMPORTANT: scraping writes to whichever DB DATABASE_URL points at (the DEV
+  catalog). Prod is a SEPARATE DB, agent prod access is READ-ONLY, and the deployed
+  app can't reach APYMSA (same WAF). So you CANNOT re-scrape against prod.
+
+## Propagating enrichment to PRODUCTION (the only viable path)
+Scrape once in dev → version the result as a committed JSON
+(`api-server/src/data/apymsa-fichas.json`: `[{base, specs, image}]`, deduped by base,
+non-empty fields only) → a boot loader applies it ADDITIVELY to whatever DB the
+server is connected to. So a **publish** carries it to prod automatically.
+- Loader: `api-server/src/lib/apymsa-ficha-backfill.ts`, wired in `src/index.ts`
+  boot IIFE AFTER `autoImportIfDirty()` + search backfill. ONE `jsonb_to_recordset`
+  UPDATE matched by `regexp_replace(sku,'-[A-Za-z0-9]+$','')=base`, fills specs only
+  if NULL/`[]` and image only if NULL/'' → never overwrites, never touches
+  price/cost/stock/status/brand/name, idempotent (0 rows on re-run).
+- esbuild `bundle:true` inlines the JSON; tsc needs `resolveJsonModule` (added to
+  api-server tsconfig only). To refresh the data later: re-scrape dev, regenerate the
+  JSON from dev DB, republish. Guard `jsonb_array_length` behind a nested CASE on
+  `jsonb_typeof='array'` (SQL doesn't guarantee AND short-circuit).
 
 ## Caveats before building
 - Addressable cleanly today = ~1,301 products (7-digit). The richest field (OEM refs)

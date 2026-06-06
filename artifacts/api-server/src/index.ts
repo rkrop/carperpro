@@ -8,6 +8,7 @@ import { ensureEmbeddingSetup } from "./lib/ensure-embedding-setup";
 import { autoImportIfDirty } from "./lib/auto-catalog-import";
 import { backfillEmbeddings } from "./lib/embedding-backfill";
 import { backfillDescriptions } from "./lib/description-backfill";
+import { backfillApymsaFichas } from "./lib/apymsa-ficha-backfill";
 
 // Last-resort safety net. The known production crash-loop (Postgres dropping
 // idle connections → unhandled pg 'error' event → process death) is fixed at
@@ -63,6 +64,11 @@ app.listen(port, (err) => {
     await autoImportIfDirty();
     await ensureSearchTrigger();
     await backfillSearchVectors();
+    // Backfill ADITIVO de fichas técnicas + imagen (APYMSA) versionadas en
+    // src/data/apymsa-fichas.json. Idempotente: tras la primera corrida no
+    // toca nada. Lleva el enriquecimiento a producción al publicar, ya que el
+    // WAF de APYMSA impide scrapear desde el runtime desplegado.
+    await backfillApymsaFichas();
     // Semantic search (pgvector): ensure the extension/index/reset-trigger, then
     // embed any product missing an embedding. Both no-op gracefully when no
     // embedding provider (GEMINI_API_KEY) is configured — plain text search is
