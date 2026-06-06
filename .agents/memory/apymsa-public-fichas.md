@@ -5,9 +5,30 @@ description: How far the PUBLIC (no-login) APYMSA product pages can be reached f
 
 # APYMSA público — reaching a ficha from our código
 
+> **Scope note:** this file = APYMSA-specific rules only. Each future supplier gets
+> its OWN topic file with its OWN reachability/matching rules (codes, URL shape,
+> guards, what's fetchable). Do NOT assume another provider behaves like APYMSA.
+> The GENERAL, provider-agnostic technique lives in
+> `additive-enrichment-propagation.md`.
+
 **Earlier belief was wrong.** APYMSA's distributor SEARCH-by-code is login-gated
 (anonymous `/Producto/Buscar?cadena=...` returns 0 even for generic terms like
 "alternador"), BUT the product DETAIL pages are PUBLIC and reachable by código.
+
+## Which codes we work (NO external list — they're already in OUR catalog)
+The user did NOT supply an Excel/list of APYMSA codes. The targets come entirely
+from OUR OWN catalog (originally seeded from INVENTARIO_MAESTRO):
+- A subset of our product codes ARE APYMSA's native internal codes — recognizable
+  because they are **plain 7-digit numbers** (e.g. `0020403`). That 7-digit `sku_base`
+  IS the APYMSA código; nothing else needs to be looked up or matched externally.
+- Targeting filter = two predicates over our `products` table:
+  1. `regexp_replace(sku,'-[A-Za-z0-9]+$','') ~ '^[0-9]{7}$'` → APYMSA-addressable
+     (~1,301 of ~13,905 products).
+  2. missing data → `specs` empty (NULL/`[]`) OR `image` empty (NULL/'') → the ones
+     "worth working" (~1,177 at the start).
+- So the "list" is DISCOVERED inside the user's own inventory, not imported. Other
+  code formats (6-digit, codes with letters, ERP codes) are NOT APYMSA-addressable —
+  they belong to other suppliers and will need their own provider file + rules.
 
 ## The mechanism
 Detail URL = `https://www.apymsa.com.mx/Categorias/<anything>/<CODIGO>`. The route
