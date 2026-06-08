@@ -63,8 +63,27 @@ export interface Product {
   vehicles: string[];
   oem: string[];
   equivalents: string[];
+  /** Structured vehicle applications (Marca/Modelo/Años/Motor). Only populated
+   * on the detail endpoint; drives the compatibility table. */
+  applications: ProductApplication[];
+  /** Structured OEM / cross-reference codes (Código + Marca). Only populated on
+   * the detail endpoint; drives the OEM codes table. */
+  oemCodes: ProductOemCode[];
   /** Rich description: vehicle applications, OEM codes, specs from ERP/Excel. */
   descripcion: string | null;
+}
+
+export interface ProductApplication {
+  make: string;
+  model: string;
+  yearFrom: number | null;
+  yearTo: number | null;
+  motor: string | null;
+}
+
+export interface ProductOemCode {
+  code: string;
+  brand: string | null;
 }
 
 /**
@@ -124,6 +143,8 @@ export function mapProduct(p: ApiProduct): Product {
     vehicles: p.vehicles ?? [],
     oem: p.oem ?? [],
     equivalents: p.equivalents ?? [],
+    applications: p.applications ?? [],
+    oemCodes: p.oemCodes ?? [],
     descripcion: p.descripcion ?? null,
   };
 }

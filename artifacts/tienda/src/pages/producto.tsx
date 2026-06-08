@@ -9,6 +9,14 @@ import { MessageCircle, Check, Info } from "lucide-react";
 import NotFound from "./not-found";
 import { useSeo, productJsonLd, breadcrumbJsonLd } from "@/lib/seo";
 
+// "2003–2010" / "2003" / "—" from an inclusive year range.
+function formatYears(from: number | null | undefined, to: number | null | undefined): string {
+  if (from && to) return from === to ? String(from) : `${from}–${to}`;
+  if (from) return String(from);
+  if (to) return String(to);
+  return "—";
+}
+
 export default function Producto() {
   const [, params] = useRoute("/producto/:id");
   const id = params?.id;
@@ -214,7 +222,35 @@ export default function Producto() {
                 </div>
               )}
 
-              {product.vehicles && product.vehicles.length > 0 && (
+              {/* Compatibilidad — tabla estructurada (Marca/Modelo/Años/Motor)
+                  cuando el enriquecimiento la provee; si no, lista plana. */}
+              {product.applications && product.applications.length > 0 ? (
+                <div>
+                  <h3 className="font-display text-lg mb-4 uppercase border-l-4 border-primary pl-3">Compatibilidad</h3>
+                  <div className="border border-border max-h-72 overflow-y-auto custom-scrollbar">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-card">
+                        <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground border-b border-border">
+                          <th className="px-3 py-2 font-bold">Marca</th>
+                          <th className="px-3 py-2 font-bold">Modelo</th>
+                          <th className="px-3 py-2 font-bold">Años</th>
+                          <th className="px-3 py-2 font-bold">Motor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {product.applications.map((a, i) => (
+                          <tr key={i} className="border-b border-border last:border-0 odd:bg-card/50">
+                            <td className="px-3 py-2 font-bold text-foreground">{a.make}</td>
+                            <td className="px-3 py-2 text-foreground">{a.model}</td>
+                            <td className="px-3 py-2 font-mono text-muted-foreground">{formatYears(a.yearFrom, a.yearTo)}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{a.motor ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : product.vehicles && product.vehicles.length > 0 ? (
                 <div>
                   <h3 className="font-display text-lg mb-4 uppercase border-l-4 border-primary pl-3">Vehículos Compatibles</h3>
                   <div className="bg-card border border-border p-4 max-h-48 overflow-y-auto custom-scrollbar">
@@ -227,9 +263,33 @@ export default function Producto() {
                     </ul>
                   </div>
                 </div>
-              )}
+              ) : null}
 
-              {(product.oem?.length || product.equivalents?.length) ? (
+              {/* Códigos de referencia / OEM — tabla estructurada (Código/Marca)
+                  cuando el enriquecimiento la provee; si no, chips planos. */}
+              {product.oemCodes && product.oemCodes.length > 0 ? (
+                <div>
+                  <h3 className="font-display text-lg mb-4 uppercase border-l-4 border-primary pl-3">Códigos de Referencia</h3>
+                  <div className="border border-border max-h-72 overflow-y-auto custom-scrollbar">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-card">
+                        <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground border-b border-border">
+                          <th className="px-3 py-2 font-bold">Código</th>
+                          <th className="px-3 py-2 font-bold">Marca</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {product.oemCodes.map((o, i) => (
+                          <tr key={i} className="border-b border-border last:border-0 odd:bg-card/50">
+                            <td className="px-3 py-2 font-mono text-foreground">{o.code}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{o.brand ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (product.oem?.length || product.equivalents?.length) ? (
                 <div>
                   <h3 className="font-display text-lg mb-4 uppercase border-l-4 border-primary pl-3">Referencias Cruzadas</h3>
                   <div className="flex flex-wrap gap-2">

@@ -21,6 +21,14 @@ import { STORE } from "@/lib/store";
 const WHATSAPP_GREEN = "#25D366";
 const WHATSAPP_GREEN_PRESSED = "#1DA851";
 
+// "2003–2010" / "2003" / "—" from an inclusive year range.
+function formatYears(from: number | null, to: number | null): string {
+  if (from && to) return from === to ? String(from) : `${from}–${to}`;
+  if (from) return String(from);
+  if (to) return String(to);
+  return "—";
+}
+
 export default function Producto() {
   const c = useColors();
   const router = useRouter();
@@ -227,8 +235,55 @@ export default function Producto() {
           </Pressable>
         ) : null}
 
-        {/* OEM / equivalents (optional — disappears when absent) */}
-        {product.oem?.length || product.equivalents?.length ? (
+        {/* Compatibilidad — tabla estructurada (Marca/Modelo/Años/Motor) cuando
+            el enriquecimiento la provee; si no, lista plana de vehicles. */}
+        {product.applications?.length ? (
+          <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 14 }}>Compatibilidad</Text>
+            {/* Encabezado */}
+            <View style={{ flexDirection: "row", borderBottomWidth: 1, borderBottomColor: c.border, paddingBottom: 8 }}>
+              <Text style={{ flex: 1.1, fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground }}>Marca</Text>
+              <Text style={{ flex: 1.4, fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground }}>Modelo</Text>
+              <Text style={{ flex: 1, fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground }}>Años</Text>
+              <Text style={{ flex: 0.9, fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground }}>Motor</Text>
+            </View>
+            {product.applications.map((a, i) => (
+              <View key={`${a.make}-${a.model}-${a.yearFrom}-${a.yearTo}-${a.motor}-${i}`} style={{ flexDirection: "row", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>
+                <Text style={{ flex: 1.1, fontFamily: Fonts.bold, fontSize: 11, color: c.foreground }}>{a.make}</Text>
+                <Text style={{ flex: 1.4, fontFamily: Fonts.medium, fontSize: 11, color: c.foreground }}>{a.model}</Text>
+                <Text style={{ flex: 1, fontFamily: Fonts.mono, fontSize: 11, color: c.mutedForeground }}>{formatYears(a.yearFrom, a.yearTo)}</Text>
+                <Text style={{ flex: 0.9, fontFamily: Fonts.medium, fontSize: 11, color: c.mutedForeground }}>{a.motor ?? "—"}</Text>
+              </View>
+            ))}
+          </View>
+        ) : product.vehicles?.length ? (
+          <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 14 }}>Vehículos Compatibles</Text>
+            {product.vehicles.map((v, i) => (
+              <View key={`${v}-${i}`} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.border }}>
+                <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: c.foreground }}>{v}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Códigos de referencia / OEM — tabla estructurada (Código/Marca) cuando
+            el enriquecimiento la provee; si no, chips planos de oem/equivalents. */}
+        {product.oemCodes?.length ? (
+          <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 14 }}>Códigos de Referencia</Text>
+            <View style={{ flexDirection: "row", borderBottomWidth: 1, borderBottomColor: c.border, paddingBottom: 8 }}>
+              <Text style={{ flex: 1.6, fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground }}>Código</Text>
+              <Text style={{ flex: 1, fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: c.mutedForeground }}>Marca</Text>
+            </View>
+            {product.oemCodes.map((o, i) => (
+              <View key={`${o.code}-${i}`} style={{ flexDirection: "row", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>
+                <Text style={{ flex: 1.6, fontFamily: Fonts.mono, fontSize: 12, color: c.foreground }}>{o.code}</Text>
+                <Text style={{ flex: 1, fontFamily: Fonts.medium, fontSize: 11, color: c.mutedForeground }}>{o.brand ?? "—"}</Text>
+              </View>
+            ))}
+          </View>
+        ) : product.oem?.length || product.equivalents?.length ? (
           <View style={{ backgroundColor: c.background, paddingHorizontal: 24, paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: c.border }}>
             <Text style={{ fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: c.neutral400, marginBottom: 14 }}>Equivalencias</Text>
             {product.oem?.length ? (

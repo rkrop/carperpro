@@ -45,7 +45,29 @@ export function catalogVisibleProduct(): SQL {
 // Serializa un producto para la API. El precio se expone exactamente como
 // está almacenado (sin transformaciones ni IVA adicional). Las reglas de
 // presentación de precio/stock se definirán con el archivo maestro.
-export function serializeProduct(row: CatalogProduct): Record<string, unknown> {
+// Datos estructurados opcionales (códigos OEM + aplicaciones de vehículo) que
+// SOLO el endpoint de detalle adjunta: el listado los deja vacíos para no incurrir
+// en un N+1 contra las tablas product_oem_codes / product_applications.
+export interface ProductApplicationOut {
+  make: string;
+  model: string;
+  yearFrom: number | null;
+  yearTo: number | null;
+  motor: string | null;
+}
+export interface ProductOemCodeOut {
+  code: string;
+  brand: string | null;
+}
+export interface SerializeExtras {
+  applications?: ProductApplicationOut[];
+  oemCodes?: ProductOemCodeOut[];
+}
+
+export function serializeProduct(
+  row: CatalogProduct,
+  extras?: SerializeExtras,
+): Record<string, unknown> {
   const qty = row.erpStockQty;
   const stockState =
     qty === null || qty === undefined
@@ -75,6 +97,8 @@ export function serializeProduct(row: CatalogProduct): Record<string, unknown> {
     vehicles: row.vehicles ?? [],
     oem: row.oem ?? null,
     equivalents: row.equivalents ?? null,
+    applications: extras?.applications ?? [],
+    oemCodes: extras?.oemCodes ?? [],
     descripcion:
       (row.descripcion && row.descripcion.trim()) ||
       row.descripcionGenerada ||

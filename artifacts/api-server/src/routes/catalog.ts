@@ -8,6 +8,8 @@ import {
   brandsTable,
   sucursalesTable,
   syncStateTable,
+  productOemCodesTable,
+  productApplicationsTable,
 } from "@workspace/db";
 import {
   ListCategoriesResponse,
@@ -251,7 +253,33 @@ router.get(
       res.status(404).json({ error: "Producto no encontrado" });
       return;
     }
-    const data = GetProductResponse.parse(serializeProduct(row));
+    // Datos estructurados para las tablas de Compatibilidad y Códigos OEM. Se
+    // consultan SOLO aquí (detalle), nunca en listados, para evitar un N+1.
+    const [appRows, oemRows] = await Promise.all([
+      db
+        .select({
+          make: productApplicationsTable.make,
+          model: productApplicationsTable.model,
+          yearFrom: productApplicationsTable.yearFrom,
+          yearTo: productApplicationsTable.yearTo,
+          motor: productApplicationsTable.motor,
+        })
+        .from(productApplicationsTable)
+        .where(eq(productApplicationsTable.productId, id))
+        .orderBy(productApplicationsTable.make, productApplicationsTable.model),
+      db
+        .select({
+          code: productOemCodesTable.codeRaw,
+          brand: productOemCodesTable.brand,
+        })
+        .from(productOemCodesTable)
+        .where(eq(productOemCodesTable.productId, id))
+        .orderBy(productOemCodesTable.brand, productOemCodesTable.codeRaw),
+    ]);
+
+    const data = GetProductResponse.parse(
+      serializeProduct(row, { applications: appRows, oemCodes: oemRows }),
+    );
     res.json(data);
   },
 );

@@ -107,6 +107,17 @@ export const ListProductsResponse = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 })),
   "total": zod.number()
@@ -162,6 +173,17 @@ export const GetProductResponse = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 })
 
@@ -195,6 +217,17 @@ export const GetDealsResponse = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 }),zod.null()]).optional(),
   "ofertas": zod.array(zod.object({
@@ -218,6 +251,17 @@ export const GetDealsResponse = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 }))
 })
@@ -353,6 +397,17 @@ export const CreateAssistantChatResponse = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 }))
 })
@@ -391,6 +446,17 @@ export const ScanIdentifyResponse = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 }))
 })
@@ -431,6 +497,17 @@ export const ListFavoritesResponseItem = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 })
 export const ListFavoritesResponse = zod.array(ListFavoritesResponseItem)
@@ -464,6 +541,17 @@ export const AddFavoriteBody = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 })
 
@@ -501,6 +589,17 @@ export const SyncFavoritesBody = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 }))
 })
@@ -526,6 +625,17 @@ export const SyncFavoritesResponseItem = zod.object({
   "vehicles": zod.array(zod.string()),
   "oem": zod.array(zod.string()).nullish(),
   "equivalents": zod.array(zod.string()).nullish(),
+  "applications": zod.array(zod.object({
+  "make": zod.string(),
+  "model": zod.string(),
+  "yearFrom": zod.number().nullable(),
+  "yearTo": zod.number().nullable(),
+  "motor": zod.string().nullable()
+})).optional(),
+  "oemCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "brand": zod.string().nullable()
+})).optional(),
   "descripcion": zod.string().nullish()
 })
 export const SyncFavoritesResponse = zod.array(SyncFavoritesResponseItem)

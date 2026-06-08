@@ -5,6 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductApplication } from './productApplication';
+import type { ProductOemCode } from './productOemCode';
 import type { ProductStockState } from './productStockState';
 import type { Spec } from './spec';
 
@@ -33,6 +35,8 @@ export interface Product {
   oem?: string[] | null;
   /** @nullable */
   equivalents?: string[] | null;
+  applications?: ProductApplication[];
+  oemCodes?: ProductOemCode[];
   /** @nullable */
   descripcion?: string | null;
 }

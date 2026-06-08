@@ -701,7 +701,43 @@ components:
           type: ["array", "null"]
           items:
             type: string
+        # Structured vehicle applications (Marca/Modelo/Años/Motor). Populated
+        # ONLY on the detail endpoint; listings return []. Drives the
+        # compatibility table; the flat `vehicles` array remains a fallback.
+        applications:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductApplication"
+        # Structured OEM / cross-reference codes (Código + Marca). Populated ONLY
+        # on the detail endpoint; listings return []. Drives the OEM codes table;
+        # the flat `oem`/`equivalents` arrays remain a fallback.
+        oemCodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductOemCode"
         descripcion: { type: ["string", "null"] }
+    ProductApplication:
+      type: object
+      required:
+        - make
+        - model
+        - yearFrom
+        - yearTo
+        - motor
+      properties:
+        make: { type: string }
+        model: { type: string }
+        yearFrom: { type: ["integer", "null"] }
+        yearTo: { type: ["integer", "null"] }
+        motor: { type: ["string", "null"] }
+    ProductOemCode:
+      type: object
+      required:
+        - code
+        - brand
+      properties:
+        code: { type: string }
+        brand: { type: ["string", "null"] }
     AssistantChatMessage:
       type: object
       required: [role, content]

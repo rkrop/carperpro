@@ -57,6 +57,23 @@ export const ProductStockState = {
   unknown: 'unknown',
 } as const;
 
+export interface ProductApplication {
+  make: string;
+  model: string;
+  /** @nullable */
+  yearFrom: number | null;
+  /** @nullable */
+  yearTo: number | null;
+  /** @nullable */
+  motor: string | null;
+}
+
+export interface ProductOemCode {
+  code: string;
+  /** @nullable */
+  brand: string | null;
+}
+
 export interface Product {
   id: string;
   sku: string;
@@ -82,6 +99,8 @@ export interface Product {
   oem?: string[] | null;
   /** @nullable */
   equivalents?: string[] | null;
+  applications?: ProductApplication[];
+  oemCodes?: ProductOemCode[];
   /** @nullable */
   descripcion?: string | null;
 }
