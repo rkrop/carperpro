@@ -47,3 +47,12 @@ dev/Expo Go just returns no token. If a real iOS build gets a null token, pin
 only. **Android / Google Play publishing is NOT supported on Replit** — the
 Android config here just keeps a future external build valid. Never run EAS CLI;
 never create app.config.ts/js (Expo Launch needs static app.json).
+
+**Runtime deps MUST live in `dependencies`, not `devDependencies`.** Dev/Expo Go
+installs everything so a wrong split is invisible locally, but the Expo Launch
+production build can prune devDependencies → `expo`/`react`/`react-native`/
+`expo-router` missing → "Failed to publish". Keep ONLY true build tooling
+(@babel/core, @expo/cli, @expo/ngrok, babel-plugin-react-compiler, typescript,
+@types/*) in devDependencies; every `expo-*`, `react-native-*`, react, expo,
+expo-router, fonts, query, etc. go in `dependencies`.
+**Why:** publishing failed once because all runtime libs were in devDependencies.
