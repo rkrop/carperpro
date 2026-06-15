@@ -1,0 +1,58 @@
+ramirocaro@Ramiros-MacBook-Pro carper % pnpm install
+zsh: command not found: ramirocaro@Ramiros-MacBook-Pro
+zsh: no such file or directory: @babel/core
+zsh: no such file or directory: @expo-google-fonts/inter
+zsh: no such file or directory: @expo/ngrok
+zsh: no such file or directory: @react-native-async-storage/async-storage
+zsh: no such file or directory: @tanstack/react-query
+zsh: no such file or directory: @types/react
+zsh: no such file or directory: @types/react-dom
+zsh: no such file or directory: @expo/vector-icons
+zsh: no such file or directory: @stardazed/streams-text-encoding
+zsh: no such file or directory: @expo/cli
+zsh: no such file or directory: @ungap/structured-clone
+zsh: command not found: expo
+zsh: command not found: expo-constants
+zsh: command not found: expo-blur
+zsh: command not found: babel-plugin-react-compiler
+zsh: command not found: expo-glass-effect
+zsh: command not found: expo-font
+zsh: command not found: expo-haptics
+zsh: command not found: expo-image-picker
+zsh: command not found: expo-linear-gradient
+zsh: command not found: expo-linking
+zsh: command not found: expo-location
+zsh: command not found: expo-image
+zsh: command not found: expo-router
+zsh: command not found: expo-status-bar
+zsh: command not found: expo-splash-screen
+zsh: command not found: expo-symbols
+zsh: command not found: expo-system-ui
+zsh: command not found: expo-web-browser
+zsh: command not found: react
+zsh: command not found: react-dom
+zsh: command not found: react-native-reanimated
+zsh: command not found: react-native-keyboard-controller
+zsh: command not found: react-native
+zsh: command not found: react-native-screens
+zsh: command not found: react-native-gesture-handler
+zsh: command not found: react-native-safe-area-context
+zsh: command not found: react-native-svg
+zsh: command not found: react-native-web
+zsh: command not found: typescript
+zsh: command not found: react-native-worklets
+zsh: command not found: zod-validation-error
+zsh: command not found: zod
+zsh: no such file or directory: @clerk/expo
+zsh: no such file or directory: @expo-google-fonts/space-mono
+zsh: command not found: expo-camera
+zsh: command not found: expo-auth-session
+zsh: command not found: expo-build-properties
+zsh: command not found: expo-device
+zsh: command not found: expo-crypto
+zsh: command not found: expo-secure-store
+zsh: command not found: expo-clipboard
+zsh: command not found: expo-notifications
+zsh: command not found: expo-speech-recognition
+zsh: no matches found: [ERR_PNPM_CATALOG_ENTRY_NOT_FOUND_FOR_SPEC]
+ramirocaro@Ramiros-MacBook-Pro carper % 
