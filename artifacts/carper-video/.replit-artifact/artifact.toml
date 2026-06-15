@@ -1,0 +1,31 @@
+kind = "video"
+previewPath = "/video/"
+title = "Carper Autopartes — Video"
+version = "1.0.0"
+id = "artifacts/carper-video"
+router = "path"
+
+[[integratedSkills]]
+name = "video-js"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/video/" ]
+localPort = 18238
+
+[services.development]
+run = "pnpm --filter @workspace/carper-video run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/carper-video", "run", "build" ]
+publicDir = "artifacts/carper-video/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18238"
+BASE_PATH = "/video/"

@@ -197,3 +197,9 @@ id = "rP3aKg9cEvDP-Uhn5Bdje"
 uri = "file://dist/carper-proyecto.tar.gz"
 type = "unspecified"
 title = "Proyecto Carper Autopartes (código fuente completo)"
+
+[[outputs]]
+id = "_h-fPHTgODbnLSlSObXYw"
+uri = "file://artifacts/carper-video/public/audio/bg_music.mp3"
+type = "audio"
+title = "background music"
