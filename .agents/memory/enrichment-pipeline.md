@@ -186,3 +186,18 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
   year) AND coalesce(year_to, year) so NULL bounds are open.
 - D1 index: GIN on products.search_vector (products_search_vector_idx) added to
   the Drizzle schema + pushed; code_norm + (make,model) indexes already existed.
+
+## Dev→prod enrichment carry has TWO halves (don't ship only one)
+- AI enrichment runs ONLY against the DEV db; prod is a separate db. Carry-over =
+  versioned JSON in src/data/ + additive boot backfill (publish fills prod).
+- HALF 1 (structured tables): enrichment-data.json → backfillEnrichmentData()
+  fills product_oem_codes + product_applications.
+- HALF 2 (products table, easy to FORGET): the same AI run also wrote
+  products.brand / specs / vehicles / oem DIRECTLY on the row. Those need their
+  OWN carry: enrichment-products.json → backfillEnrichmentProducts(). Shipping
+  only HALF 1 leaves prod with structured tables but missing marca/ficha (prod
+  showed 774 brands vs 4530 dev). Re-export both whenever you re-enrich.
+- backfillEnrichmentProducts rules: fill EMPTY-only with the SAME guards as
+  applyEnrichmentWrites (brand='SIN MARCA'; specs len 0; vehicles/oem cardinality
+  0/NULL); never price/costo/status/stock; idempotent via pending-count guard +
+  change-only WHERE. jsonb→text[] via ARRAY(SELECT jsonb_array_elements_text(x)).

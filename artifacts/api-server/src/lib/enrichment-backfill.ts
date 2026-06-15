@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { logger } from "./logger";
 import enrichmentData from "../data/enrichment-data.json";
+import enrichmentProducts from "../data/enrichment-products.json";
 
 /**
  * Carga ADITIVA del enriquecimiento estructurado (códigos OEM + aplicaciones de
@@ -132,5 +133,105 @@ export async function backfillEnrichmentData(): Promise<void> {
     }
   } catch (err) {
     logger.error({ err }, "enrichment-backfill: falló (no fatal)");
+  }
+}
+
+/**
+ * Carga ADITIVA del enriquecimiento que vive en la propia tabla `products`
+ * (marca, ficha técnica/specs, compatibilidad/vehicles y equivalencias/oem),
+ * versionado en `src/data/enrichment-products.json`.
+ *
+ * Por qué: el enriquecimiento por IA se corrió contra la base de DESARROLLO y
+ * escribió estos campos directo en products. Producción es una base SEPARADA y
+ * la IA no se recorre ahí, así que — igual que el enriquecimiento estructurado —
+ * los valores ya revisados se versionan en código y este cargador los aplica en
+ * CUALQUIER base a la que el servidor se conecte, de modo que un `publish` los
+ * lleve a producción al arrancar.
+ *
+ * REGLAS (no negociables):
+ *   - Rellena SOLO campos VACÍOS, con las MISMAS guardas que el pipeline de
+ *     escritura (applyEnrichmentWrites): brand solo si = 'SIN MARCA'; specs solo
+ *     si el arreglo está vacío; vehicles/oem solo si la cardinalidad es 0/NULL.
+ *   - NUNCA toca precio, costo, status, stock ni descripción. Es puramente
+ *     aditivo y no sobre-escribe un dato existente.
+ *   - IDEMPOTENTE: el UPDATE solo afecta filas con algún campo todavía vacío, así
+ *     que un segundo arranque actualiza 0 filas. Una guarda previa evita incluso
+ *     recorrer el join cuando ya no queda nada pendiente.
+ */
+type ProductEnrich = {
+  id: string;
+  brand?: string;
+  specs?: unknown[];
+  vehicles?: string[];
+  oem?: string[];
+};
+
+export async function backfillEnrichmentProducts(): Promise<void> {
+  const data = enrichmentProducts as { products?: ProductEnrich[] };
+  const prods = Array.isArray(data?.products) ? data.products : [];
+  if (prods.length === 0) return;
+
+  try {
+    const payload = JSON.stringify(prods);
+
+    // Guarda barata: ¿queda algún producto del JSON con un campo todavía vacío
+    // que este cargador llenaría? Si no, los datos ya se aplicaron y se omite.
+    const pending = await db.execute<{ pending: number }>(sql`
+      WITH x AS (
+        SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS t(
+          id text, brand text, specs jsonb, vehicles jsonb, oem jsonb
+        )
+      )
+      SELECT count(*)::int AS pending
+      FROM x JOIN products p ON p.id = x.id
+      WHERE (x.brand IS NOT NULL AND p.brand = 'SIN MARCA')
+         OR (x.specs IS NOT NULL AND coalesce(jsonb_array_length(
+              case when jsonb_typeof(p.specs) = 'array' then p.specs else '[]'::jsonb end), 0) = 0)
+         OR (x.vehicles IS NOT NULL AND cardinality(p.vehicles) = 0)
+         OR (x.oem IS NOT NULL AND (p.oem IS NULL OR cardinality(p.oem) = 0))
+    `);
+    const pendingN = pending.rows[0]?.pending ?? 0;
+    if (pendingN === 0) {
+      logger.info({ total: prods.length }, "enrichment-products: datos ya aplicados, omitido");
+      return;
+    }
+
+    // UPDATE aditivo: cada campo se llena SOLO si está vacío; el WHERE final
+    // limita a filas que realmente cambian (idempotencia + conteo significativo).
+    const res = await db.execute<{ n: number }>(sql`
+      WITH x AS (
+        SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS t(
+          id text, brand text, specs jsonb, vehicles jsonb, oem jsonb
+        )
+      ),
+      upd AS (
+        UPDATE products p SET
+          brand = CASE WHEN p.brand = 'SIN MARCA' AND x.brand IS NOT NULL
+                       THEN x.brand ELSE p.brand END,
+          specs = CASE WHEN coalesce(jsonb_array_length(
+                            case when jsonb_typeof(p.specs) = 'array' then p.specs else '[]'::jsonb end), 0) = 0
+                        AND x.specs IS NOT NULL
+                       THEN x.specs ELSE p.specs END,
+          vehicles = CASE WHEN cardinality(p.vehicles) = 0 AND x.vehicles IS NOT NULL
+                          THEN ARRAY(SELECT jsonb_array_elements_text(x.vehicles)) ELSE p.vehicles END,
+          oem = CASE WHEN (p.oem IS NULL OR cardinality(p.oem) = 0) AND x.oem IS NOT NULL
+                     THEN ARRAY(SELECT jsonb_array_elements_text(x.oem)) ELSE p.oem END
+        FROM x
+        WHERE p.id = x.id
+          AND (
+            (x.brand IS NOT NULL AND p.brand = 'SIN MARCA')
+            OR (x.specs IS NOT NULL AND coalesce(jsonb_array_length(
+                 case when jsonb_typeof(p.specs) = 'array' then p.specs else '[]'::jsonb end), 0) = 0)
+            OR (x.vehicles IS NOT NULL AND cardinality(p.vehicles) = 0)
+            OR (x.oem IS NOT NULL AND (p.oem IS NULL OR cardinality(p.oem) = 0))
+          )
+        RETURNING 1
+      )
+      SELECT count(*)::int AS n FROM upd
+    `);
+    const n = (res as unknown as { rows: { n: number }[] }).rows[0]?.n ?? 0;
+    logger.info({ updated: n, total: prods.length }, "enrichment-products: campos rellenados");
+  } catch (err) {
+    logger.error({ err }, "enrichment-products: falló (no fatal)");
   }
 }

@@ -10,7 +10,7 @@ import { backfillEmbeddings } from "./lib/embedding-backfill";
 import { backfillDescriptions } from "./lib/description-backfill";
 import { backfillApymsaFichas } from "./lib/apymsa-ficha-backfill";
 import { backfillCiosaCatalog } from "./lib/ciosa-catalog-backfill";
-import { backfillEnrichmentData } from "./lib/enrichment-backfill";
+import { backfillEnrichmentData, backfillEnrichmentProducts } from "./lib/enrichment-backfill";
 
 // Last-resort safety net. The known production crash-loop (Postgres dropping
 // idle connections → unhandled pg 'error' event → process death) is fixed at
@@ -82,6 +82,12 @@ app.listen(port, (err) => {
     // tablas product_oem_codes / product_applications. Lleva a producción los
     // datos ya revisados en dev sin correr IA en el runtime desplegado.
     await backfillEnrichmentData();
+    // Enriquecimiento en la tabla products (marca, ficha técnica/specs,
+    // compatibilidad/vehicles, equivalencias/oem) versionado en
+    // src/data/enrichment-products.json: aditivo, idempotente, SOLO campos vacíos,
+    // nunca toca precio/stock/status. Lleva a producción la marca y ficha que la
+    // IA escribió solo en la base de desarrollo.
+    await backfillEnrichmentProducts();
     // Semantic search (pgvector): ensure the extension/index/reset-trigger, then
     // embed any product missing an embedding. Both no-op gracefully when no
     // embedding provider (GEMINI_API_KEY) is configured — plain text search is
