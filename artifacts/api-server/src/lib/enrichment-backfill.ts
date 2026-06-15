@@ -92,6 +92,14 @@ export async function backfillEnrichmentData(): Promise<void> {
     }
 
     // ── Aplicaciones de vehículo ───────────────────────────────────────────────
+    // OJO idempotencia: el índice de deduplicación incluye columnas nullable
+    // (year_from, year_to, motor) con NULLS DISTINCT (a propósito; ver schema),
+    // así que ON CONFLICT NO atrapa filas con NULL. Si el guard de conteo no se
+    // cumple (p. ej. algún producto del JSON no existe en el destino y se filtra
+    // por EXISTS, dejando el conteo por debajo del esperado), este insert podría
+    // re-correr en cada arranque y DUPLICAR filas con motor/año NULL. Por eso
+    // anteponemos un NOT EXISTS null-safe (IS NOT DISTINCT FROM) que hace el
+    // insert idempotente sin depender del guard; ON CONFLICT queda de respaldo.
     if (apps.length > 0) {
       const insApp = await db.execute<{ n: number }>(sql`
         WITH x AS (
@@ -105,6 +113,15 @@ export async function backfillEnrichmentData(): Promise<void> {
           SELECT x."productId", x.make, x.model, x."yearFrom", x."yearTo", x.motor, 'backfill'
           FROM x
           WHERE EXISTS (SELECT 1 FROM products p WHERE p.id = x."productId")
+            AND NOT EXISTS (
+              SELECT 1 FROM product_applications pa
+              WHERE pa.product_id = x."productId"
+                AND pa.make = x.make
+                AND pa.model = x.model
+                AND pa.year_from IS NOT DISTINCT FROM x."yearFrom"
+                AND pa.year_to IS NOT DISTINCT FROM x."yearTo"
+                AND pa.motor IS NOT DISTINCT FROM x.motor
+            )
           ON CONFLICT ON CONSTRAINT product_applications_dedupe_idx DO NOTHING
           RETURNING 1
         )

@@ -139,6 +139,36 @@ works. ADDITIVE only — never touches price or stock; only fills empty fields.
   list with no grounded signal to split OEM vs cross-reference/equivalent. Left as a
   decision for the user (classify in extraction, or keep equivalents indexing-only).
 
+## Carry enrichment to PROD — versioned JSON + boot backfill (no AI in prod)
+- Prod is a SEPARATE read-only DB and the extraction uses a DIRECT OpenAI key not
+  guaranteed in the deployed runtime, so prod enrichment is NOT an AI run. Instead
+  reviewed dev rows are dumped to `artifacts/api-server/src/data/enrichment-data.json`
+  and `backfillEnrichmentData()` (wired in index.ts after backfillCiosaCatalog)
+  applies them additively on boot to whatever DB the server connects to. A `publish`
+  carries code+JSON → prod fills on first boot. Mirrors ciosa/apymsa backfills.
+- IDEMPOTENCY TRAP (cost 1 review round): the apps dedupe constraint is NULLS
+  DISTINCT (see schema opclass note), so `ON CONFLICT DO NOTHING` does NOT dedupe
+  rows with NULL year/motor. The count-guard (`count(*) >= json length` → skip)
+  CANNOT be trusted as the idempotency guarantee: if ANY productId in the JSON is
+  absent in the destination it's filtered by EXISTS, the count never reaches the
+  expected length, the guard never trips, and the insert re-runs EVERY boot —
+  duplicating all NULL-field application rows. **Fix:** the apps INSERT must carry a
+  null-safe `NOT EXISTS (... IS NOT DISTINCT FROM ...)` on all dedupe columns so it
+  is idempotent independent of the guard; ON CONFLICT stays as backstop. OEM is safe
+  (dedupe = product_id+code_norm, both NOT NULL). Verified: re-running the apps
+  insert against already-applied data inserts 0.
+
+## Product-detail structured tables (tienda web + carper app)
+- Detail endpoint `/products/:id` queries product_applications + product_oem_codes
+  (Promise.all) and passes them to serializeProduct; list/deals/assistant/scan keep
+  `serializeProduct(row)` with `applications:[]`/`oemCodes:[]` DEFAULTS → no N+1 on
+  listings. openapi Product gained `applications[]` (ProductApplication
+  make/model/yearFrom/yearTo/motor) + `oemCodes[]` (ProductOemCode code/brand).
+- Both frontends render two tables ONLY when the structured arrays are non-empty,
+  else fall back to the pre-existing flat display (vehicles list / oem+equivalents
+  chips) — no data loss. Carper had NO compatibility section before; it was added.
+  `formatYears(from,to)` → "2003–2010"/"2003"/"—" lives in each frontend.
+
 ## Fase D — search by OEM code + vehicle/year (catalogSearch/productSearch)
 - INVARIANT: one shared normalizeCode() (codes.ts = upper + strip [^A-Z0-9]) is
   used on BOTH the write side (product_oem_codes.code_norm) and the search side
