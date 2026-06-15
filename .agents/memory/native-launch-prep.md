@@ -56,3 +56,15 @@ production build can prune devDependencies → `expo`/`react`/`react-native`/
 @types/*) in devDependencies; every `expo-*`, `react-native-*`, react, expo,
 expo-router, fonts, query, etc. go in `dependencies`.
 **Why:** publishing failed once because all runtime libs were in devDependencies.
+
+**Clerk pulls Google Sign-In pods → CocoaPods modular-headers failure.**
+`@clerk/expo` brings in `ClerkGoogleSignIn → GoogleSignIn → AppCheckCore`, and
+the iOS build dies at `pod install` with: "The Swift pod `AppCheckCore` depends
+upon `GoogleUtilities` and `RecaptchaInterop`, which do not define modules ...
+set `use_modular_headers!`". Fix in the managed app (no hand-edited Podfile) via
+the `expo-build-properties` plugin in app.json:
+`ios.extraPods` = [{name:"GoogleUtilities",modular_headers:true},
+{name:"RecaptchaInterop",modular_headers:true}].
+**Why:** the Podfile is generated at build time, so the only supported lever is
+the config plugin; targeting just those two pods is lower-risk than flipping
+useFrameworks:"static" under New Architecture. Dev/Expo Go is unaffected.

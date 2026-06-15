@@ -68,6 +68,23 @@
           "microphonePermission": "Carper usa el micrófono para buscar refacciones por voz.",
           "speechRecognitionPermission": "Carper usa el reconocimiento de voz para encontrar la refacción que dices."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "GoogleUtilities",
+                "modular_headers": true
+              },
+              {
+                "name": "RecaptchaInterop",
+                "modular_headers": true
+              }
+            ]
+          }
+        }
       ]
     ],
     "experiments": {
