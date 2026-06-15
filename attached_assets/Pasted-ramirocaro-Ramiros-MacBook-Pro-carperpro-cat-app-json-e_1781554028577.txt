@@ -1,0 +1,95 @@
+ramirocaro@Ramiros-MacBook-Pro carperpro % cat app.json && echo "---" && ls artifacts/carper
+{
+  "expo": {
+    "name": "Carper",
+    "slug": "carper",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "carper",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0055FF"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.autopartescarper.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.autopartescarper.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#0055FF"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Carper usa la cámara para tomar una foto de tu refacción e identificarla buscando piezas que coincidan en el catálogo."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Carper accede a tus fotos para que puedas elegir una imagen de la refacción e identificarla en el catálogo."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Carper usa tu ubicación para compartir un mapa exacto de tu domicilio con el repartidor."
+        }
+      ],
+      "expo-notifications",
+      "@clerk/expo",
+      "expo-secure-store",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Carper usa el micrófono para buscar refacciones por voz.",
+          "speechRecognitionPermission": "Carper usa el reconocimiento de voz para encontrar la refacción que dices."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              { "name": "GoogleUtilities", "modular_headers": true },
+              { "name": "RecaptchaInterop", "modular_headers": true }
+            ]
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}---
+app		components	DESIGN.md	lib		server
+app.json	constants	eas.json	metro.config.js	tsconfig.json
+assets		context		expo-env.d.ts	package.json
+babel.config.js	data		hooks		scripts
+ramirocaro@Ramiros-MacBook-Pro carperpro % 
