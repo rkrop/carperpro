@@ -203,3 +203,9 @@ id = "_h-fPHTgODbnLSlSObXYw"
 uri = "file://artifacts/carper-video/public/audio/bg_music.mp3"
 type = "audio"
 title = "background music"
+
+[[outputs]]
+id = "ETr_4CjQlFUrp8K93t1Zi"
+uri = "file://.local/apymsa-enrich-prompt.md"
+type = "text"
+title = "APYMSA — Guía de enriquecimiento de fichas técnicas"
