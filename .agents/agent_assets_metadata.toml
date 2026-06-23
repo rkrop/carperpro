@@ -174,6 +174,36 @@ uri = "file://artifacts/carper/assets/images/onboarding/ai-search.png"
 type = "image"
 title = "ai smart search"
 
+[[generated]]
+id = "NEdTxRx1GTLMANUd5X-Kd"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-hero.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "_isqDOujefvd11vlVG1zG"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-battery.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "fL-RcMKxYW27gpmw5ea0f"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-headlight.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "mBb3KJZWxGZDmapZmtSGQ"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-filter.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "NGijXUsJBbAKNVPrDaqC8"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-brake.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "hG-qDlAXGY5g_S3Ui0J5K"
 uri = "file://exports/inventario_carper.xlsx"
