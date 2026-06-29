@@ -1,14 +1,16 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X, ArrowRight } from "lucide-react";
+import { Menu, X, ArrowRight, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchBar } from "./SearchBar";
 import { APP_URL } from "@/lib/store";
+import { useCart } from "@/lib/cart-context";
 
 export function Header() {
   const [location] = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { itemCount, openCart } = useCart();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -68,6 +70,20 @@ export function Header() {
                 </Link>
               ))}
             </nav>
+
+            {/* Cart Button */}
+            <button
+              onClick={openCart}
+              className="relative p-2 hover:bg-muted transition-colors shrink-0"
+              aria-label={`Carrito${itemCount > 0 ? ` (${itemCount} artículos)` : ""}`}
+            >
+              <ShoppingCart className="w-5 h-5 text-foreground" />
+              {itemCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-primary text-primary-foreground text-[10px] font-mono font-bold flex items-center justify-center rounded-none">
+                  {itemCount > 9 ? "9+" : itemCount}
+                </span>
+              )}
+            </button>
 
             {/* Mobile Menu Toggle */}
             <Button

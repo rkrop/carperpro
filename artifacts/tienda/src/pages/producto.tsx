@@ -5,11 +5,12 @@ import { ProductPlaceholder } from "@/components/product/ProductPlaceholder";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { whatsappUrl } from "@/lib/store";
-import { MessageCircle, Check, Info, ShoppingCart, Loader2 } from "lucide-react";
+import { MessageCircle, Check, Info, ShoppingCart, Loader2, Minus, Plus } from "lucide-react";
 import { createShopifyCheckout } from "@/lib/shopify-cart";
 import { useState } from "react";
 import NotFound from "./not-found";
 import { useSeo, productJsonLd, breadcrumbJsonLd } from "@/lib/seo";
+import { useCart } from "@/lib/cart-context";
 
 // "2003–2010" / "2003" / "—" from an inclusive year range.
 function formatYears(from: number | null | undefined, to: number | null | undefined): string {
@@ -25,6 +26,8 @@ export default function Producto() {
   const [, params] = useRoute("/producto/:id");
   const id = params?.id;
   const [checkoutState, setCheckoutState] = useState<CheckoutState>("idle");
+  const [qty, setQty] = useState(1);
+  const { addItem } = useCart();
 
   const { data: product, isLoading, error } = useGetProduct(id!, undefined, {
     query: {
@@ -191,24 +194,70 @@ export default function Producto() {
                 {product.quoteOnly ? "¿Te cotizamos esta pieza?" : "¿Necesitas esta pieza?"}
               </h3>
 
-              {/* Shopify checkout — primary CTA for non-quote products */}
-              {!product.quoteOnly && (
+              {/* Qty selector + cart/checkout — for non-quote sellable products */}
+              {!product.quoteOnly && !agotado && (
                 <>
+                  {/* Qty row */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center border border-border">
+                      <button
+                        onClick={() => setQty((q) => Math.max(1, q - 1))}
+                        className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                        aria-label="Reducir cantidad"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="w-10 h-10 flex items-center justify-center font-mono font-bold text-sm select-none">
+                        {qty}
+                      </span>
+                      <button
+                        onClick={() => setQty((q) => q + 1)}
+                        className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                        aria-label="Aumentar cantidad"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">
+                      unidades
+                    </span>
+                  </div>
+
+                  {/* Add to cart */}
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="w-full rounded-none font-bold uppercase tracking-widest gap-2"
+                    onClick={() => {
+                      addItem({
+                        sku: product.sku,
+                        id: product.id,
+                        name: product.name,
+                        price: product.price,
+                        image: product.image ?? null,
+                        qty,
+                      });
+                    }}
+                  >
+                    <ShoppingCart className="w-5 h-5" />
+                    Agregar al carrito
+                  </Button>
+
+                  {/* Buy now (single-product Shopify redirect) */}
                   {checkoutState === "fallback" ? (
-                    <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide">
-                      Esta pieza aún no está disponible en la tienda en línea.
-                      Use WhatsApp para pedirla.
+                    <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide text-center">
+                      Pieza aún no disponible en línea — use WhatsApp.
                     </p>
                   ) : (
                     <Button
                       size="lg"
                       className="w-full rounded-none font-bold uppercase tracking-widest gap-2"
-                      disabled={agotado || checkoutState === "loading"}
+                      disabled={checkoutState === "loading"}
                       onClick={async () => {
                         if (checkoutState === "loading") return;
                         setCheckoutState("loading");
                         try {
-                          const result = await createShopifyCheckout(product.sku, 1);
+                          const result = await createShopifyCheckout(product.sku, qty);
                           if (result.available) {
                             window.open(result.checkoutUrl, "_blank", "noopener,noreferrer");
                             setCheckoutState("idle");
@@ -222,23 +271,23 @@ export default function Producto() {
                     >
                       {checkoutState === "loading" ? (
                         <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <ShoppingCart className="w-5 h-5" />
-                      )}
-                      {agotado
-                        ? "Sin existencia"
-                        : checkoutState === "loading"
-                          ? "Un momento…"
-                          : "Comprar ahora"}
+                      ) : null}
+                      {checkoutState === "loading" ? "Un momento…" : "Comprar ahora"}
                     </Button>
                   )}
                 </>
               )}
 
+              {agotado && !product.quoteOnly && (
+                <p className="text-sm font-mono text-muted-foreground uppercase tracking-wider">
+                  Sin existencia — consulte disponibilidad por WhatsApp.
+                </p>
+              )}
+
               {/* WhatsApp — always available */}
               <p className="text-muted-foreground text-xs mb-1 leading-relaxed">
                 {product.quoteOnly
-                  ? "Esta pieza se maneja bajo cotización. Escríbele a un asesor por WhatsApp para conocer precio y disponibilidad."
+                  ? "Esta pieza se maneja bajo cotización. Escríbale a un asesor por WhatsApp para conocer precio y disponibilidad."
                   : "¿Prefiere hablar con un asesor? Escríbanos por WhatsApp."}
               </p>
               <Button

@@ -23,3 +23,15 @@ export async function createShopifyCheckout(
   if (!resp.ok) throw new Error(`Checkout error: ${resp.status}`);
   return resp.json() as Promise<CheckoutResult>;
 }
+
+export async function createShopifyCartCheckout(
+  items: Array<{ sku: string; quantity: number }>,
+): Promise<CheckoutResult> {
+  const resp = await fetch("/api/shopify/cart-checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  if (!resp.ok) throw new Error(`Cart checkout error: ${resp.status}`);
+  return resp.json() as Promise<CheckoutResult>;
+}

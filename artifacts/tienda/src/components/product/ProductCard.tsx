@@ -2,8 +2,9 @@ import { Link } from "wouter";
 import type { Product } from "@workspace/api-client-react";
 import { ProductPlaceholder } from "./ProductPlaceholder";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, MessageCircle } from "lucide-react";
+import { MessageCircle, ShoppingCart } from "lucide-react";
 import { whatsappUrl } from "@/lib/store";
+import { useCart } from "@/lib/cart-context";
 
 interface ProductCardProps {
   product: Product;
@@ -11,16 +12,12 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, featured = false }: ProductCardProps) {
-  // Three availability states: confirmed in stock (>0), confirmed out of stock
-  // (0 — hidden from listings server-side but handled here for safety), and
-  // unknown (null — the ERP hasn't reported a count yet, still orderable).
   const quoteOnly = product.quoteOnly;
   const agotado = product.stock === 0;
   const enExistencia = typeof product.stock === "number" && product.stock > 0;
-  // Quote-only products always offer the WhatsApp CTA; otherwise show it unless
-  // the part is confirmed out of stock.
   const consultable = quoteOnly || !agotado;
-  
+  const { addItem } = useCart();
+
   const priceFormatter = new Intl.NumberFormat('es-MX', { 
     style: 'currency', 
     currency: 'MXN' 
@@ -116,9 +113,28 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
                 </a>
               </Button>
             )}
+            {!quoteOnly && !agotado && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-none border-border hover:border-primary hover:text-primary shrink-0"
+                title="Agregar al carrito"
+                onClick={() =>
+                  addItem({
+                    sku: product.sku,
+                    id: product.id,
+                    name: product.name,
+                    price: product.price,
+                    image: product.image ?? null,
+                  })
+                }
+              >
+                <ShoppingCart className="w-4 h-4" />
+              </Button>
+            )}
             <Button className="rounded-none font-bold uppercase tracking-wider text-xs px-4 shrink-0" asChild>
               <Link href={`/producto/${product.id}`}>
-                Ver Detalles
+                Ver
               </Link>
             </Button>
           </div>

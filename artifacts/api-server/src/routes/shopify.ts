@@ -40,6 +40,97 @@ const CART_CREATE_QUERY = `#graphql
   }
 `;
 
+const CART_CREATE_MULTI_QUERY = `#graphql
+  mutation CartCreateMulti($lines: [CartLineInput!]!) {
+    cartCreate(input: { lines: $lines }) {
+      cart { id checkoutUrl }
+      userErrors { field message }
+    }
+  }
+`;
+
+/**
+ * POST /shopify/cart-checkout
+ * Body: { items: Array<{ sku: string; quantity: number }> }
+ * Creates a Shopify cart with multiple line items and returns { checkoutUrl }.
+ * Items not yet synced to Shopify are skipped; if ALL are unavailable returns { available: false }.
+ */
+router.post("/shopify/cart-checkout", async (req, res, next) => {
+  try {
+    const raw: unknown = req.body?.items;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      res.status(400).json({ error: "Se requiere 'items' (array no vacío)" });
+      return;
+    }
+
+    type RawItem = { sku?: unknown; quantity?: unknown };
+    const lines = raw as RawItem[];
+    const validItems = lines
+      .map((l) => ({
+        sku: typeof l.sku === "string" ? l.sku.trim() : "",
+        quantity: Number.isInteger(l.quantity) && (l.quantity as number) > 0 ? (l.quantity as number) : 1,
+      }))
+      .filter((l) => l.sku.length > 0);
+
+    if (validItems.length === 0) {
+      res.status(400).json({ error: "Ningún ítem válido" });
+      return;
+    }
+
+    // Resolve variant IDs for all SKUs in parallel.
+    const resolved = await Promise.all(
+      validItems.map(async (item) => {
+        try {
+          const data = await shopifyStorefrontRequest<{
+            productByHandle: {
+              availableForSale: boolean;
+              variants: { nodes: Array<{ id: string; availableForSale: boolean }> };
+            } | null;
+          }>(PRODUCT_BY_HANDLE_QUERY, { handle: productHandle(item.sku) });
+
+          const product = data.productByHandle;
+          const variant = product?.variants.nodes[0];
+          if (!product || !variant) return null;
+          return { merchandiseId: variant.id, quantity: item.quantity };
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const cartLines = resolved.filter(Boolean) as Array<{ merchandiseId: string; quantity: number }>;
+
+    if (cartLines.length === 0) {
+      res.json({ available: false });
+      return;
+    }
+
+    const cartData = await shopifyStorefrontRequest<{
+      cartCreate: {
+        cart: { id: string; checkoutUrl: string } | null;
+        userErrors: Array<{ field: string; message: string }>;
+      };
+    }>(CART_CREATE_MULTI_QUERY, { lines: cartLines });
+
+    const userError = cartData.cartCreate.userErrors[0];
+    if (userError) {
+      throw new Error(`Shopify cart error: ${userError.message}`);
+    }
+
+    const cart = cartData.cartCreate.cart;
+    if (!cart?.checkoutUrl) {
+      throw new Error("Shopify did not return a checkout URL");
+    }
+
+    const checkoutUrl = new URL(cart.checkoutUrl);
+    checkoutUrl.searchParams.set("channel", "online_store");
+
+    res.json({ available: true, checkoutUrl: checkoutUrl.toString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /**
  * POST /shopify/checkout
  * Body: { sku: string, quantity?: number }
