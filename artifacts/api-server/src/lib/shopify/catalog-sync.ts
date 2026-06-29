@@ -18,7 +18,7 @@
 //  triggerFullCatalogSync()      — syncs ALL sellable products; admin-only;
 //                                   runs in background, returns immediately.
 
-import { and, eq, gte, not } from "drizzle-orm";
+import { and, asc, eq, gt, gte, not } from "drizzle-orm";
 import { db, productsTable } from "@workspace/db";
 import { effectivePrice } from "../pricing";
 import { logger } from "../logger";
@@ -346,7 +346,9 @@ let deltaSyncRunning = false;
 
 /**
  * Push products modified in the last `sinceMs` milliseconds to Shopify.
- * Guarded so only one instance runs at a time.
+ * Uses keyset pagination (id > lastId, orderBy id asc) to exhaust all
+ * matching rows regardless of how many products changed — never silently
+ * truncates.  Guarded so only one instance runs at a time.
  */
 export async function syncDeltaToShopify(
   sinceMs: number = 30 * 60 * 1_000,
@@ -356,52 +358,68 @@ export async function syncDeltaToShopify(
     return { synced: 0, errors: 0, skipped: 0 };
   }
   deltaSyncRunning = true;
+  const PAGE_SIZE = 100;
   try {
     const since = new Date(Date.now() - sinceMs);
-    const products = await db
-      .select({
-        id: productsTable.id,
-        sku: productsTable.sku,
-        name: productsTable.name,
-        brand: productsTable.brand,
-        price: productsTable.price,
-        costo: productsTable.costo,
-        image: productsTable.image,
-        erpStockQty: productsTable.erpStockQty,
-        status: productsTable.status,
-      })
-      .from(productsTable)
-      .where(
-        and(
-          not(eq(productsTable.status, "sin_precio")),
-          gte(productsTable.updatedAt, since),
-        ),
-      )
-      .limit(500);
-
-    if (products.length === 0) return { synced: 0, errors: 0, skipped: 0 };
-
-    logger.info(
-      { count: products.length, since: since.toISOString() },
-      "Shopify delta sync: iniciando",
-    );
-
+    let lastId = "";
+    let totalFetched = 0;
     let synced = 0;
     let errors = 0;
     let skipped = 0;
+    let firstPage = true;
 
-    for (const product of products) {
-      const result = await upsertProductToShopify(product);
-      if (result.action === "created" || result.action === "updated") synced++;
-      else if (result.action === "error") {
-        errors++;
-        logger.warn({ sku: result.sku, error: result.error }, "Shopify sync: error en producto");
-      } else skipped++;
+    while (true) {
+      const page = await db
+        .select({
+          id: productsTable.id,
+          sku: productsTable.sku,
+          name: productsTable.name,
+          brand: productsTable.brand,
+          price: productsTable.price,
+          costo: productsTable.costo,
+          image: productsTable.image,
+          erpStockQty: productsTable.erpStockQty,
+          status: productsTable.status,
+        })
+        .from(productsTable)
+        .where(
+          and(
+            not(eq(productsTable.status, "sin_precio")),
+            gte(productsTable.updatedAt, since),
+            lastId ? gt(productsTable.id, lastId) : undefined,
+          ),
+        )
+        .orderBy(asc(productsTable.id))
+        .limit(PAGE_SIZE);
 
-      await new Promise((r) => setTimeout(r, SYNC_BATCH_DELAY_MS));
+      if (page.length === 0) break;
+      if (firstPage) {
+        logger.info(
+          { since: since.toISOString() },
+          "Shopify delta sync: iniciando",
+        );
+        firstPage = false;
+      }
+
+      totalFetched += page.length;
+      for (const product of page) {
+        const result = await upsertProductToShopify(product);
+        if (result.action === "created" || result.action === "updated") synced++;
+        else if (result.action === "error") {
+          errors++;
+          logger.warn({ sku: result.sku, error: result.error }, "Shopify sync: error en producto");
+        } else skipped++;
+
+        await new Promise((r) => setTimeout(r, SYNC_BATCH_DELAY_MS));
+      }
+
+      lastId = page[page.length - 1]!.id;
+      if (page.length < PAGE_SIZE) break;
     }
 
-    logger.info({ synced, errors, skipped }, "Shopify delta sync: completado");
+    if (totalFetched > 0) {
+      logger.info({ totalFetched, synced, errors, skipped }, "Shopify delta sync: completado");
+    }
     return { synced, errors, skipped };
   } finally {
     deltaSyncRunning = false;
@@ -425,12 +443,15 @@ export function triggerFullCatalogSync(): { started: boolean; message: string } 
   void (async () => {
     try {
       logger.info("Shopify full sync: iniciando sincronización completa del catálogo");
-      let offset = 0;
       const PAGE_SIZE = 100;
       let totalSynced = 0;
       let totalErrors = 0;
       let totalSkipped = 0;
 
+      // Keyset pagination: orderBy id asc + id > lastId ensures deterministic,
+      // complete traversal even as rows are concurrently updated (offset would
+      // skip/duplicate rows when products are updated mid-sync).
+      let lastId = "";
       while (true) {
         const products = await db
           .select({
@@ -445,9 +466,14 @@ export function triggerFullCatalogSync(): { started: boolean; message: string } 
             status: productsTable.status,
           })
           .from(productsTable)
-          .where(not(eq(productsTable.status, "sin_precio")))
-          .limit(PAGE_SIZE)
-          .offset(offset);
+          .where(
+            and(
+              not(eq(productsTable.status, "sin_precio")),
+              lastId ? gt(productsTable.id, lastId) : undefined,
+            ),
+          )
+          .orderBy(asc(productsTable.id))
+          .limit(PAGE_SIZE);
 
         if (products.length === 0) break;
 
@@ -465,11 +491,12 @@ export function triggerFullCatalogSync(): { started: boolean; message: string } 
           await new Promise((r) => setTimeout(r, SYNC_BATCH_DELAY_MS));
         }
 
+        lastId = products[products.length - 1]!.id;
         logger.info(
-          { offset, batchSize: products.length, totalSynced, totalErrors },
+          { lastId, batchSize: products.length, totalSynced, totalErrors },
           "Shopify full sync: lote completado",
         );
-        offset += PAGE_SIZE;
+        if (products.length < PAGE_SIZE) break;
       }
 
       logger.info(

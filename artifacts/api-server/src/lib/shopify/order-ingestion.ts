@@ -64,7 +64,7 @@ const ORDERS_QUERY = `
           createdAt
           displayFinancialStatus
           customer { displayName phone email }
-          lineItems(first: 20) {
+          lineItems(first: 250) {
             edges {
               node {
                 quantity
