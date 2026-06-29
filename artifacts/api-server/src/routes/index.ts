@@ -13,6 +13,7 @@ import authRouter from "./auth";
 import pushRouter from "./push";
 import restockRouter from "./restock";
 import adminRouter from "./admin";
+import shopifyRouter from "./shopify";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(authRouter);
 router.use(pushRouter);
 router.use(restockRouter);
 router.use(adminRouter);
+router.use(shopifyRouter);
 
 export default router;

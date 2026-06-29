@@ -5,7 +5,9 @@ import { ProductPlaceholder } from "@/components/product/ProductPlaceholder";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { whatsappUrl } from "@/lib/store";
-import { MessageCircle, Check, Info } from "lucide-react";
+import { MessageCircle, Check, Info, ShoppingCart, Loader2 } from "lucide-react";
+import { createShopifyCheckout } from "@/lib/shopify-cart";
+import { useState } from "react";
 import NotFound from "./not-found";
 import { useSeo, productJsonLd, breadcrumbJsonLd } from "@/lib/seo";
 
@@ -17,9 +19,12 @@ function formatYears(from: number | null | undefined, to: number | null | undefi
   return "—";
 }
 
+type CheckoutState = "idle" | "loading" | "fallback";
+
 export default function Producto() {
   const [, params] = useRoute("/producto/:id");
   const id = params?.id;
+  const [checkoutState, setCheckoutState] = useState<CheckoutState>("idle");
 
   const { data: product, isLoading, error } = useGetProduct(id!, undefined, {
     query: {
@@ -181,15 +186,71 @@ export default function Producto() {
               )}
             </div>
 
-            <div className="bg-card border border-border p-6 mb-10">
-              <h3 className="font-display text-lg mb-4 uppercase">{product.quoteOnly ? "¿Te cotizamos esta pieza?" : "¿Necesitas esta pieza?"}</h3>
-              <p className="text-muted-foreground text-sm mb-6 leading-relaxed">
+            <div className="bg-card border border-border p-6 mb-10 space-y-3">
+              <h3 className="font-display text-lg mb-1 uppercase">
+                {product.quoteOnly ? "¿Te cotizamos esta pieza?" : "¿Necesitas esta pieza?"}
+              </h3>
+
+              {/* Shopify checkout — primary CTA for non-quote products */}
+              {!product.quoteOnly && (
+                <>
+                  {checkoutState === "fallback" ? (
+                    <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide">
+                      Esta pieza aún no está disponible en la tienda en línea.
+                      Use WhatsApp para pedirla.
+                    </p>
+                  ) : (
+                    <Button
+                      size="lg"
+                      className="w-full rounded-none font-bold uppercase tracking-widest gap-2"
+                      disabled={agotado || checkoutState === "loading"}
+                      onClick={async () => {
+                        if (checkoutState === "loading") return;
+                        setCheckoutState("loading");
+                        try {
+                          const result = await createShopifyCheckout(product.sku, 1);
+                          if (result.available) {
+                            window.open(result.checkoutUrl, "_blank", "noopener,noreferrer");
+                            setCheckoutState("idle");
+                          } else {
+                            setCheckoutState("fallback");
+                          }
+                        } catch {
+                          setCheckoutState("fallback");
+                        }
+                      }}
+                    >
+                      {checkoutState === "loading" ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <ShoppingCart className="w-5 h-5" />
+                      )}
+                      {agotado
+                        ? "Sin existencia"
+                        : checkoutState === "loading"
+                          ? "Un momento…"
+                          : "Comprar ahora"}
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {/* WhatsApp — always available */}
+              <p className="text-muted-foreground text-xs mb-1 leading-relaxed">
                 {product.quoteOnly
-                  ? "Esta pieza se maneja bajo cotización. Escríbele a un asesor por WhatsApp para conocer precio y disponibilidad, confirmar compatibilidad con tu vehículo y coordinar la entrega o recolección."
-                  : "Contacta a un asesor de ventas por WhatsApp para confirmar compatibilidad exacta con tu vehículo, revisar métodos de pago y coordinar la entrega o recolección."}
+                  ? "Esta pieza se maneja bajo cotización. Escríbele a un asesor por WhatsApp para conocer precio y disponibilidad."
+                  : "¿Prefiere hablar con un asesor? Escríbanos por WhatsApp."}
               </p>
-              <Button size="lg" className="w-full rounded-none font-bold uppercase tracking-widest gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white border-transparent" asChild>
-                <a href={whatsappUrl({ name: product.name, sku: product.sku, quoteOnly: product.quoteOnly })} target="_blank" rel="noopener noreferrer">
+              <Button
+                size="lg"
+                className={`w-full rounded-none font-bold uppercase tracking-widest gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white border-transparent ${!product.quoteOnly ? "!text-sm !h-10" : ""}`}
+                asChild
+              >
+                <a
+                  href={whatsappUrl({ name: product.name, sku: product.sku, quoteOnly: product.quoteOnly })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <MessageCircle className="w-5 h-5" />
                   {product.quoteOnly ? "Cotizar por WhatsApp" : "Pedir por WhatsApp"}
                 </a>
