@@ -13,6 +13,8 @@ import { reconcilePendingStripeOrders } from "../stripe/service";
 import { backfillEmbeddings } from "../embedding-backfill";
 import { backfillDescriptions } from "../description-backfill";
 import { withAdvisoryLock, JOB_LOCK } from "../advisory-lock";
+import { syncDeltaToShopify } from "../shopify/catalog-sync";
+import { ingestShopifyOrders } from "../shopify/order-ingestion";
 
 let started = false;
 let timer: NodeJS.Timeout | null = null;
@@ -69,6 +71,35 @@ async function tick(): Promise<void> {
     await reconcilePendingStripeOrders();
   } catch (err) {
     logger.error({ err }, "Stripe: error inesperado al reconciliar pedidos");
+  }
+  // Push products whose price/stock changed in the last 30 minutes to Shopify.
+  // This keeps the Shopify storefront current without a full re-sync.
+  // Advisory lock: only one instance runs this across Autoscale replicas.
+  try {
+    const ran = await withAdvisoryLock(JOB_LOCK.shopifyDeltaSync, async () => {
+      await syncDeltaToShopify(30 * 60 * 1_000);
+    });
+    if (!ran) {
+      logger.debug(
+        "Shopify delta sync: otra instancia ejecutando, se omite en esta",
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "Shopify: error inesperado en delta sync programado");
+  }
+  // Ingest paid Shopify orders into the Admintotal outbound queue.
+  // No-ops gracefully when read_orders scope is not available (v1 connector).
+  try {
+    const ran = await withAdvisoryLock(JOB_LOCK.shopifyOrderIngestion, async () => {
+      await ingestShopifyOrders();
+    });
+    if (!ran) {
+      logger.debug(
+        "Shopify order ingestion: otra instancia ejecutando, se omite en esta",
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "Shopify: error inesperado en ingesta de órdenes");
   }
 }
 

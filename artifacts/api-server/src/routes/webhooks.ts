@@ -12,6 +12,7 @@ import { notifyBackInStock } from "../lib/push/notify";
 import { logger } from "../lib/logger";
 import { getWebhookToken } from "../lib/admintotal/config";
 import { mapProduct } from "../lib/admintotal/mapper";
+import { syncDeltaToShopify } from "../lib/shopify/catalog-sync";
 import {
   normalizeSkuBase,
   ESTIMATED_PRICE_MARKUP,
@@ -288,6 +289,18 @@ router.post(
     // Fire-and-forget back-in-stock pushes; never block the webhook response.
     if (restockIds.length > 0) {
       void notifyBackInStock(restockIds);
+    }
+
+    // Fire-and-forget: propagate just-updated prices/stock to the Shopify
+    // storefront. Window = 2 min to capture this batch's `updated_at` stamps.
+    // Silently skipped if another sync is already running (scheduler covers it).
+    if (pricesUpdated > 0 || stockUpdated > 0) {
+      void syncDeltaToShopify(2 * 60 * 1_000).catch((err) =>
+        logger.warn(
+          { err },
+          "Shopify: no se pudo sincronizar precios/stock tras webhook Admintotal",
+        ),
+      );
     }
 
     logger.info(

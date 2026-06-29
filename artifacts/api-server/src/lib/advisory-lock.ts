@@ -13,6 +13,8 @@ export const JOB_LOCK = {
   descriptionBackfill: 4,
   inboundSync: 5,
   enrichmentSweep: 6,
+  shopifyDeltaSync: 7,
+  shopifyOrderIngestion: 8,
 } as const;
 
 // First key of the two-int form of pg_advisory_lock. Namespacing the job ids

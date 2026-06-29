@@ -1,5 +1,14 @@
 import { Router } from "express";
 import { shopifyStorefrontRequest, getShopifyStorefrontConfig } from "../lib/shopify/client";
+import { productHandle } from "../lib/shopify/handle";
+import {
+  triggerFullCatalogSync,
+  syncDeltaToShopify,
+  isFullSyncRunning,
+} from "../lib/shopify/catalog-sync";
+import { ingestShopifyOrders } from "../lib/shopify/order-ingestion";
+import { isLocalDevConnection } from "../lib/loopback";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -47,7 +56,7 @@ router.post("/shopify/checkout", async (req, res, next) => {
       res.status(400).json({ error: "Parámetro 'sku' requerido" });
       return;
     }
-    const handle = `sku-${sku.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+    const handle = productHandle(sku);
 
     // 1. Look up the product in Shopify by handle.
     const productData = await shopifyStorefrontRequest<{
@@ -111,6 +120,75 @@ router.get("/shopify/status", async (_req, res, next) => {
   } catch {
     res.json({ connected: false });
   }
+});
+
+// ─── Admin-only catalog sync routes ──────────────────────────────────────────
+// Protected by API key header OR local dev connection (same as other admin routes).
+
+function requireAdmin(req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) {
+  const apiKey = process.env["ADMIN_API_KEY"];
+  const headerKey = req.headers["x-admin-api-key"];
+  const isLocal = isLocalDevConnection({
+    nodeEnv: process.env["NODE_ENV"],
+    remoteAddress: req.socket.remoteAddress,
+    hasForwardedHeaders: Boolean(
+      req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"],
+    ),
+  });
+  if (isLocal || (apiKey && headerKey === apiKey)) {
+    next();
+    return;
+  }
+  res.status(401).json({ error: "Acceso no autorizado" });
+}
+
+/**
+ * POST /shopify/admin/sync/full
+ * Triggers a full catalog sync (Admintotal DB → Shopify) in the background.
+ * Can take many minutes for 14k+ products.
+ */
+router.post("/shopify/admin/sync/full", requireAdmin, (_req, res) => {
+  const result = triggerFullCatalogSync();
+  logger.info(result, "Shopify full catalog sync solicitada por admin");
+  res.json(result);
+});
+
+/**
+ * POST /shopify/admin/sync/delta
+ * Pushes products modified in the last N minutes (default 30) to Shopify.
+ * Body: { sinceMinutes?: number }
+ */
+router.post("/shopify/admin/sync/delta", requireAdmin, async (req, res, next) => {
+  try {
+    const sinceMinutes = typeof req.body?.sinceMinutes === "number" ? req.body.sinceMinutes : 30;
+    const result = await syncDeltaToShopify(sinceMinutes * 60 * 1_000);
+    logger.info(result, "Shopify delta sync completado por admin");
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /shopify/admin/orders/ingest
+ * Manually triggers Shopify → Admintotal order ingestion.
+ * In production this also runs automatically every scheduler tick.
+ */
+router.post("/shopify/admin/orders/ingest", requireAdmin, async (_req, res, next) => {
+  try {
+    const result = await ingestShopifyOrders();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /shopify/admin/sync/status
+ * Returns the current sync status (full sync running, etc.)
+ */
+router.get("/shopify/admin/sync/status", requireAdmin, (_req, res) => {
+  res.json({ fullSyncRunning: isFullSyncRunning() });
 });
 
 export default router;
