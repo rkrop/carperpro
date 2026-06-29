@@ -1,49 +1,51 @@
 ---
 name: Shopify integration
-description: Shopify as additional sales channel wired into Carper Tienda website; infrastructure, routes, and product handle convention.
+description: Architectural decisions and operational constraints for the Shopify sales channel layered on top of Carper's Admintotal ERP.
 ---
 
-# Shopify Integration
+# Shopify integration
 
-**Store:** sunny-kite-tjjx5c.myshopify.com (Replit-provisioned dev store; user must claim via Integrations tab → Shopify → Manage)
+## Product handle convention (CRITICAL — must stay in sync)
 
-**Connection ID:** conn_shopify-store_01KWA9EK44XZZ7X6ZKYMRJYMPT (assigned to this Repl)
+All Shopify code uses `productHandle(sku)` from `lib/shopify/handle.ts`:
+```
+"sku-" + sku.toLowerCase().replace(/[^a-z0-9]/g, "-")
+```
+If this ever diverges between sync and checkout routes, checkout returns `{ available: false }` for products that DO exist in Shopify.
 
-## Files
+**Why:** Handle is the lookup key for Storefront API (`productByHandle`); Admin and Storefront must agree.
 
-- `shopify-admin-api.mjs` — root-level Admin GraphQL helper via OpenInt proxy (for catalog sync scripts, shell only)
-- `artifacts/api-server/src/lib/shopify/client.ts` — Storefront API client; fetches shop_domain + storefront_access_token from connector; 60s TTL cache; auto-retry on 401/403
-- `artifacts/api-server/src/routes/shopify.ts` — registered in routes/index.ts:
-  - `POST /api/shopify/checkout` — body `{ sku, quantity }` → `{ checkoutUrl }` or `{ available: false }`
-  - `GET /api/shopify/status` — `{ connected, shopDomain }`
-- `artifacts/tienda/src/lib/shopify-cart.ts` — browser fetch helper for the checkout route
-- Seed reference: `.local/skills/shopify/references/seed-products.mjs` (golden script, copy + replace PRODUCTS array)
+## Inventory update requires InventoryItem GID, NOT Variant GID
 
-## Product handle convention
+`inventorySetOnHandQuantities` expects `inventoryItemId = variant.inventoryItem.id`, not `variant.id`.
+Query must fetch `inventoryItem { id }` alongside the variant.
 
-Shopify products are stored with handle `sku-{sku.toLowerCase().replace(/[^a-z0-9]/g, "-")}`.
+**Why:** Shopify separates Product/Variant from Inventory concerns — different GID types. Passing variant GID to the inventory mutation silently returns `userErrors` and stock never syncs.
 
-Example: SKU "BOBTIDA" → handle "sku-bobtida"
+## Auth header for connector connection lookup
 
-**Why:** Storefront API lookup by handle is O(1) and stable. The seed script uses `productByHandle` before `productCreate` for idempotency.
+`fetch(connectionUrl, { headers: { "X-Replit-Token": token } })` — hyphenated, NOT underscore (`X_REPLIT_TOKEN`). The underscore form is silently ignored and the request returns 401/empty, breaking all credential lookups.
 
-## Tienda checkout flow
+## v1 connector scopes (Replit-managed Shopify)
 
-1. User clicks "Comprar ahora" (blue button, ShoppingCart icon) on `producto.tsx`
-2. Calls `POST /api/shopify/checkout` with SKU
-3. If product exists in Shopify → opens `checkoutUrl` in new tab (Shopify-hosted checkout, `channel=online_store` for dev-store preview)
-4. If `available: false` → shows "no disponible en línea" message + WhatsApp fallback remains visible
+Available: `write_products`, `write_inventory`, `read_locations`, `read_publications`, `write_publications`
+NOT available: `read_orders` (order ingestion via polling fails with PERMISSION_DENIED)
 
-## Catalog sync (next step)
+**How to apply:** Order ingestion in `lib/shopify/order-ingestion.ts` catches the PERMISSION_DENIED error and logs a guidance message once, never crashing. Full order ingestion requires merchant to add `read_orders` via Integrations → Shopify → Manage.
 
-Admintotal products are NOT yet in Shopify. To add products:
-1. Adapt `seed-products.mjs` (from skill references) with real catalog data
-2. Run `node shopify-admin-api.mjs` for Admin GraphQL via proxy
-3. Handle convention must match above or checkout route returns `available: false`
+## Sync architecture
 
-## Go Live
+- **Delta sync (scheduler, every ~15 min):** `syncDeltaToShopify(30min)` picks up products where `updated_at > now - 30min`. Advisory lock prevents double-run across Autoscale replicas.
+- **Immediate push (Admintotal webhook):** After price/stock webhook updates DB, fires `syncDeltaToShopify(2min)` fire-and-forget. Skips silently if another sync is running.
+- **Full sync (admin-triggered only):** `POST /api/shopify/admin/sync/full` — runs in background, takes minutes for 14k+ products.
+- **Never-price-0:** Products with `effectivePrice = 0` are skipped entirely (same rule as the rest of the catalog).
 
-When merchant is ready: Integrations tab → Shopify → Manage → initiate transfer.
-After transfer: turn OFF `channel=online_store` param in checkout URL (currently hardcoded in shopify.ts route — change to env-driven flag).
+## dev-store checkout URL
 
-**Why keep `channel=online_store` now:** Dev stores are password-protected; without this param the buyer lands on the password page instead of checkout.
+Append `?channel=online_store` to checkout URL from Storefront cart API. Dev stores are password-gated; without this param the buyer lands on the password page, not checkout.
+
+**Remove this parameter** when the merchant claims the store and goes live (Integrations → Shopify → Manage → initiate transfer).
+
+## productCreate vs productUpdate mutation shape
+
+On **create**, `productCreate` returns `variants.edges[0].node.inventoryItem.id` which is needed immediately for inventory init. On **update**, you must pass `variant.id` in the `variants` input to target the right variant; passing no id creates a second variant.

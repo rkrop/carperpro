@@ -30,13 +30,13 @@ import { productHandle } from "./handle";
 type ProductByHandleResponse = {
   productByHandle: null | {
     id: string;
-    variants: { edges: Array<{ node: { id: string } }> };
+    variants: { edges: Array<{ node: { id: string; inventoryItem: { id: string } } }> };
   };
 };
 
 type ProductCreateResponse = {
   productCreate: {
-    product: { id: string; variants: { edges: Array<{ node: { id: string } }> } } | null;
+    product: { id: string; variants: { edges: Array<{ node: { id: string; inventoryItem: { id: string } } }> } } | null;
     userErrors: Array<{ field: string[]; message: string }>;
   };
 };
@@ -115,11 +115,15 @@ async function getOnlineStorePublicationId(): Promise<string | null> {
   return onlineStorePublicationId;
 }
 
-async function publishProduct(productGid: string): Promise<void> {
+/**
+ * Publish a product to the Online Store channel.
+ * Returns an error string on failure (so callers can surface it), null on success.
+ */
+async function publishProduct(productGid: string): Promise<string | null> {
   const publicationId = await getOnlineStorePublicationId();
-  if (!publicationId) return;
+  if (!publicationId) return "No se pudo obtener el ID de publicación Online Store";
   try {
-    await shopifyAdminRequest<PublishResponse>(
+    const resp = await shopifyAdminRequest<PublishResponse>(
       `mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) {
         publishablePublish(id: $id, input: $input) {
           userErrors { field message }
@@ -127,17 +131,31 @@ async function publishProduct(productGid: string): Promise<void> {
       }`,
       { id: productGid, input: [{ publicationId }] },
     );
+    const errs = resp.data.publishablePublish.userErrors;
+    if (errs.length) {
+      const msg = errs.map((e) => e.message).join("; ");
+      logger.warn({ productGid, errs }, `Shopify: userErrors al publicar producto: ${msg}`);
+      return msg;
+    }
+    return null;
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     logger.warn({ err, productGid }, "Shopify: no se pudo publicar producto");
+    return msg;
   }
 }
 
+/**
+ * Set on-hand inventory for a product variant using its InventoryItem GID.
+ * NOTE: `inventoryItemId` is variant.inventoryItem.id — NOT the variant GID.
+ * Returns an error string on failure, null on success.
+ */
 async function setInventory(
-  variantGid: string,
+  inventoryItemId: string,
   qty: number,
-): Promise<void> {
+): Promise<string | null> {
   const locationId = await getDefaultLocationId();
-  if (!locationId) return;
+  if (!locationId) return "Ubicación por defecto no disponible";
   try {
     const resp = await shopifyAdminRequest<InventorySetResponse>(
       `mutation inventorySetOnHandQuantities($input: InventorySetOnHandQuantitiesInput!) {
@@ -150,7 +168,7 @@ async function setInventory(
           reason: "correction",
           setQuantities: [
             {
-              inventoryItemId: variantGid,
+              inventoryItemId,
               locationId,
               quantity: qty,
             },
@@ -160,10 +178,15 @@ async function setInventory(
     );
     const errs = resp.data.inventorySetOnHandQuantities.userErrors;
     if (errs.length) {
-      logger.warn({ errs }, "Shopify: userErrors al actualizar inventario");
+      const msg = errs.map((e) => e.message).join("; ");
+      logger.warn({ errs, inventoryItemId }, `Shopify: userErrors al actualizar inventario: ${msg}`);
+      return msg;
     }
+    return null;
   } catch (err) {
-    logger.warn({ err }, "Shopify: error al actualizar inventario");
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn({ err, inventoryItemId }, "Shopify: error al actualizar inventario");
+    return msg;
   }
 }
 
@@ -204,7 +227,9 @@ export async function upsertProductToShopify(product: {
       `query ($handle: String!) {
         productByHandle(handle: $handle) {
           id
-          variants(first: 1) { edges { node { id } } }
+          variants(first: 1) {
+            edges { node { id inventoryItem { id } } }
+          }
         }
       }`,
       { handle },
@@ -214,7 +239,9 @@ export async function upsertProductToShopify(product: {
 
     if (existingProduct) {
       // Update price and title
-      const variantGid = existingProduct.variants.edges[0]?.node.id;
+      const variantNode = existingProduct.variants.edges[0]?.node;
+      const variantGid = variantNode?.id;
+      const inventoryItemId = variantNode?.inventoryItem.id;
       const updateResp = await shopifyAdminRequest<ProductUpdateResponse>(
         `mutation productUpdate($input: ProductInput!) {
           productUpdate(input: $input) {
@@ -238,9 +265,12 @@ export async function upsertProductToShopify(product: {
         return { sku, action: "error", error: errs.map((e) => e.message).join("; ") };
       }
 
-      // Update inventory if we know the stock
-      if (product.erpStockQty !== null && variantGid) {
-        await setInventory(variantGid, product.erpStockQty);
+      // Update inventory using InventoryItem GID (NOT variant GID)
+      if (product.erpStockQty !== null && inventoryItemId) {
+        const invErr = await setInventory(inventoryItemId, product.erpStockQty);
+        if (invErr) {
+          return { sku, action: "error", error: `inventory: ${invErr}` };
+        }
       }
 
       await throttleIfNeeded(updateResp.extensions);
@@ -257,7 +287,9 @@ export async function upsertProductToShopify(product: {
           productCreate(input: $input) {
             product {
               id
-              variants(first: 1) { edges { node { id } } }
+              variants(first: 1) {
+                edges { node { id inventoryItem { id } } }
+              }
             }
             userErrors { field message }
           }
@@ -282,11 +314,21 @@ export async function upsertProductToShopify(product: {
 
       const newProduct = createResp.data.productCreate.product;
       if (newProduct) {
-        const variantGid = newProduct.variants.edges[0]?.node.id;
-        if (product.erpStockQty !== null && variantGid) {
-          await setInventory(variantGid, product.erpStockQty);
+        const variantNode = newProduct.variants.edges[0]?.node;
+        const inventoryItemId = variantNode?.inventoryItem.id;
+        // Set inventory using InventoryItem GID (NOT variant GID)
+        if (product.erpStockQty !== null && inventoryItemId) {
+          const invErr = await setInventory(inventoryItemId, product.erpStockQty);
+          if (invErr) {
+            // Inventory failure: log but don't fail the create — product is in Shopify
+            logger.warn({ sku, invErr }, "Shopify: producto creado pero inventario no actualizado");
+          }
         }
-        await publishProduct(newProduct.id);
+        // Publish to Online Store — failure is returned and logged as a warning
+        const pubErr = await publishProduct(newProduct.id);
+        if (pubErr) {
+          logger.warn({ sku, pubErr }, "Shopify: producto creado pero no publicado en Online Store");
+        }
       }
 
       await throttleIfNeeded(createResp.extensions);

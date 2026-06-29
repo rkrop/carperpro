@@ -37,7 +37,7 @@ export async function getShopifyStorefrontConfig(
   }
   const { connectionUrl, token } = getOpenIntConnectionConfig();
   const resp = await fetch(connectionUrl, {
-    headers: { Accept: "application/json", X_REPLIT_TOKEN: token },
+    headers: { Accept: "application/json", "X-Replit-Token": token },
     cache: "no-store",
     signal: AbortSignal.timeout(10_000),
   });
