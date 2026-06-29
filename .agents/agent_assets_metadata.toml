@@ -204,6 +204,66 @@ uri = "file://artifacts/mockup-sandbox/public/images/shop-brake.png"
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "-EQuLmWSogKE0ydkvJbbc"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-sparkplugs.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "jX6I0ZTtNgx47NUvSjG00"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-brakepads.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "AvOGHicqF5KTm6xtUuWOP"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-shock.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "_o_pxzlAq2k6xDhN6uZwD"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-radiator.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "nnB3R9VV_bTbhdSe-EyDK"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-wipers.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "88FiuLvocCGjeBL8u-pun"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-oil.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "gq1VB3Xif9ZhhP0zJx6NK"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-timingbelt.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "4IF0ZgI60FDmULT5NgkuZ"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-airfilter.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "fPlqdvOHJX7RcbgeiBdeL"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-clutch.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "lC54WNc8LPTV3NpLTCnre"
+uri = "file://artifacts/mockup-sandbox/public/images/shop-promo-wide.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "hG-qDlAXGY5g_S3Ui0J5K"
 uri = "file://exports/inventario_carper.xlsx"

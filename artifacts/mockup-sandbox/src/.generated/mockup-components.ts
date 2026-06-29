@@ -9,5 +9,6 @@ export const modules: ModuleMap = {
   "./components/mockups/carper-b/Resultados.tsx": () => import("../components/mockups/carper-b/Resultados.tsx"),
   "./components/mockups/carper-shopify/Checkout.tsx": () => import("../components/mockups/carper-shopify/Checkout.tsx"),
   "./components/mockups/carper-shopify/Inicio.tsx": () => import("../components/mockups/carper-shopify/Inicio.tsx"),
-  "./components/mockups/carper-shopify/Producto.tsx": () => import("../components/mockups/carper-shopify/Producto.tsx")
+  "./components/mockups/carper-shopify/Producto.tsx": () => import("../components/mockups/carper-shopify/Producto.tsx"),
+  "./components/mockups/carper-shopify-v2/Inicio.tsx": () => import("../components/mockups/carper-shopify-v2/Inicio.tsx")
 };
