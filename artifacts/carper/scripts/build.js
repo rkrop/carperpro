@@ -44,38 +44,30 @@ function setupSignalHandlers() {
   process.on("SIGHUP", cleanup);
 }
 
-function stripProtocol(domain) {
-  let urlString = domain.trim();
-
+function normalizePublicUrl(value) {
+  if (!value) return null;
+  let urlString = value.trim();
   if (!/^https?:\/\//i.test(urlString)) {
     urlString = `https://${urlString}`;
   }
-
-  return new URL(urlString).host;
+  return new URL(urlString).origin;
 }
 
-function getDeploymentDomain() {
-  if (process.env.REPLIT_INTERNAL_APP_DOMAIN) {
-    return stripProtocol(process.env.REPLIT_INTERNAL_APP_DOMAIN);
-  }
+function getPublicApiUrl() {
+  const configured =
+    normalizePublicUrl(process.env.EXPO_PUBLIC_API_URL) ||
+    normalizePublicUrl(process.env.PUBLIC_API_URL);
+  if (configured) return configured;
 
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    return stripProtocol(process.env.REPLIT_DEV_DOMAIN);
-  }
-
-  if (process.env.EXPO_PUBLIC_DOMAIN) {
-    return stripProtocol(process.env.EXPO_PUBLIC_DOMAIN);
-  }
-
-  if (!process.env.CI && process.env.REPLIT_DEPLOYMENT !== "1") {
+  if (!process.env.CI) {
     console.warn(
-      "No deployment domain found; using localhost:3000 for local build verification.",
+      "No public API URL found; using http://localhost:5000 for local build verification.",
     );
-    return "localhost:3000";
+    return "http://localhost:5000";
   }
 
   console.error(
-    "ERROR: No deployment domain found. Set REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, or EXPO_PUBLIC_DOMAIN",
+    "ERROR: No public API URL found. Set EXPO_PUBLIC_API_URL or PUBLIC_API_URL.",
   );
   process.exit(1);
 }
@@ -130,11 +122,7 @@ async function checkMetroHealth() {
   }
 }
 
-function getExpoPublicReplId() {
-  return process.env.REPL_ID || process.env.EXPO_PUBLIC_REPL_ID;
-}
-
-async function startMetro(expoPublicDomain, expoPublicReplId) {
+async function startMetro(expoPublicApiUrl) {
   const isRunning = await checkMetroHealth();
   if (isRunning) {
     console.log("Metro already running");
@@ -142,22 +130,17 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
   }
 
   console.log("Starting Metro...");
-  console.log(`Setting EXPO_PUBLIC_DOMAIN=${expoPublicDomain}`);
+  console.log(`Setting EXPO_PUBLIC_API_URL=${expoPublicApiUrl}`);
   const env = {
     ...process.env,
-    EXPO_PUBLIC_DOMAIN: expoPublicDomain,
-    EXPO_PUBLIC_REPL_ID: expoPublicReplId,
+    EXPO_PUBLIC_API_URL: expoPublicApiUrl,
     // Clerk publishable key is inlined into the production bundle. The Frontend
-    // API is reached through the api-server proxy on this same domain (the proxy
-    // only runs in production — in dev the app talks to Clerk directly).
-    EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.CLERK_PUBLISHABLE_KEY,
-    EXPO_PUBLIC_CLERK_PROXY_URL: `https://${expoPublicDomain}/api/__clerk`,
+    // API can be reached through the api-server proxy when Clerk proxying is enabled.
+    EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY:
+      process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || process.env.CLERK_PUBLISHABLE_KEY,
+    EXPO_PUBLIC_CLERK_PROXY_URL:
+      process.env.EXPO_PUBLIC_CLERK_PROXY_URL || `${expoPublicApiUrl}/api/__clerk`,
   };
-
-  if (expoPublicReplId) {
-    console.log(`Setting EXPO_PUBLIC_REPL_ID=${expoPublicReplId}`);
-  }
-
   metroProcess = spawn(
     "pnpm",
     [
@@ -527,15 +510,14 @@ async function main() {
 
   setupSignalHandlers();
 
-  const domain = getDeploymentDomain();
-  const expoPublicReplId = getExpoPublicReplId();
-  const baseUrl = `https://${domain}`;
+  const publicApiUrl = getPublicApiUrl();
+  const baseUrl = normalizePublicUrl(process.env.PUBLIC_SITE_URL) || publicApiUrl;
   const timestamp = `${Date.now()}-${process.pid}`;
 
   prepareDirectories(timestamp);
   clearMetroCache();
 
-  await startMetro(domain, expoPublicReplId);
+  await startMetro(publicApiUrl);
 
   const downloadTimeout = 600000;
   const downloadPromise = downloadBundlesAndManifests(timestamp);

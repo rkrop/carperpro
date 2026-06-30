@@ -11,9 +11,7 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { getAuthToken } from "@workspace/api-client-react";
 
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 // Show alerts/badges while the app is foregrounded.
 Notifications.setNotificationHandler({

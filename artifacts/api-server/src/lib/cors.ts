@@ -2,9 +2,15 @@
 // aislada (sin levantar el servidor ni la base de datos).
 //
 // Una petición se considera "first-party" cuando su Origin pertenece a uno de
-// nuestros dominios conocidos (deploy de Replit, dominio de desarrollo, dominio
-// de Expo o el sitio público canónico). En desarrollo también se permite
-// localhost para poder probar desde la máquina local.
+// nuestros dominios configurados. En desarrollo también se permite localhost
+// para poder probar desde la máquina local.
+
+const FIRST_PARTY_ENV_KEYS = [
+  "PUBLIC_SITE_URL",
+  "PUBLIC_API_URL",
+  "APP_PUBLIC_URL",
+  "EXPO_PUBLIC_API_URL",
+] as const;
 
 export function addHost(hosts: Set<string>, value: string | undefined): void {
   const raw = value?.trim();
@@ -23,15 +29,12 @@ export function addHost(hosts: Set<string>, value: string | undefined): void {
 
 export function firstPartyHosts(): Set<string> {
   const hosts = new Set<string>();
-  for (const domain of process.env.REPLIT_DOMAINS?.split(",") ?? []) {
-    addHost(hosts, domain);
+  for (const key of FIRST_PARTY_ENV_KEYS) {
+    addHost(hosts, process.env[key]);
   }
-  addHost(hosts, process.env.REPLIT_DEV_DOMAIN);
-  addHost(hosts, process.env.EXPO_PUBLIC_DOMAIN);
-  // Dominio público canónico (p. ej. autopartescarper.com). En producción con
-  // dominio propio, REPLIT_DOMAINS puede no incluirlo, así que lo agregamos
-  // explícitamente para que la tienda/app puedan llamar al API.
-  addHost(hosts, process.env.PUBLIC_SITE_URL);
+  for (const origin of process.env.ALLOWED_ORIGINS?.split(",") ?? []) {
+    addHost(hosts, origin);
+  }
   return hosts;
 }
 

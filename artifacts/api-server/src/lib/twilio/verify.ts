@@ -1,8 +1,3 @@
-// Twilio Verify (SMS OTP) over plain HTTPS. We do NOT use the connector proxy
-// (it is locked to api.twilio.com, so verify.twilio.com is unreachable) nor the
-// SDK client (it never exposes raw credentials). Instead we read the connection
-// credentials from the Replit connectors REST API — the same pattern the Stripe
-// client uses — and call the Verify REST API directly.
 import { logger } from "../logger";
 import { getTwilioCredentials, twilioBasicAuth } from "./credentials";
 

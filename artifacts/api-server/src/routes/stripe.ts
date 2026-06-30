@@ -14,6 +14,7 @@ import { normalizeShippingAddress } from "../lib/shippingAddress";
 import { getOptionalUserId, ensureUser } from "../middlewares/requireAuth";
 import { writeLimiter } from "../middlewares/rateLimit";
 import { logger } from "../lib/logger";
+import { firstPartyHosts } from "../lib/cors";
 
 const router: IRouter = Router();
 
@@ -145,25 +146,6 @@ if (!IS_PRODUCTION) {
   ALLOWED_APP_SCHEMES.add("exp");
 }
 
-/**
- * Collect the set of bare hostnames (no port) that belong to this deployment.
- * We read REPLIT_DOMAINS (comma-separated list of all public domains) and
- * REPLIT_DEV_DOMAIN (the preview tunnel host). Only these exact hosts are
- * treated as first-party — we do NOT allow arbitrary *.replit.* subdomains
- * because those could be attacker-controlled Replit deployments.
- */
-function getFirstPartyHosts(): Set<string> {
-  const hosts = new Set<string>();
-  const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
-  for (const d of domains) {
-    const bare = d.trim().split(":")[0];
-    if (bare) hosts.add(bare);
-  }
-  const dev = process.env.REPLIT_DEV_DOMAIN?.trim().split(":")[0];
-  if (dev) hosts.add(dev);
-  return hosts;
-}
-
 function isAllowedDest(dest: string): boolean {
   const lower = dest.toLowerCase();
 
@@ -174,15 +156,13 @@ function isAllowedDest(dest: string): boolean {
   }
 
   // Web: only our own domains or localhost (dev-only). We do not accept
-  // arbitrary *.replit.* domains — those may belong to attacker-controlled
-  // deployments. The localhost exception is intentionally disabled in
+  // arbitrary external domains. The localhost exception is intentionally disabled in
   // production to prevent open-redirect-to-loopback attacks.
   try {
     const bare = new URL(dest).host.split(":")[0];
     if (bare === "localhost" && process.env.NODE_ENV !== "production")
       return true;
-    const firstParty = getFirstPartyHosts();
-    return firstParty.has(bare);
+    return firstPartyHosts().has(bare);
   } catch {
     return false;
   }

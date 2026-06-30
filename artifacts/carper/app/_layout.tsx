@@ -28,10 +28,10 @@ import { registerPushToken } from "@/lib/push";
 import { AppProvider } from "@/context/AppContext";
 import { CartProvider } from "@/context/CartContext";
 
-// Point the generated API client at the api-server. EXPO_PUBLIC_DOMAIN is the
-// Replit dev domain (no scheme); requests use relative `/api/...` paths.
-const apiDomain = process.env.EXPO_PUBLIC_DOMAIN;
-if (apiDomain) setBaseUrl(`https://${apiDomain}`);
+// Point the generated API client at the api-server. Native builds use an
+// explicit full URL so the backend can live on Render, a custom domain, or localhost.
+const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+if (apiUrl) setBaseUrl(apiUrl.replace(/\/+$/, ""));
 
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 const clerkProxyUrl = process.env.EXPO_PUBLIC_CLERK_PROXY_URL || undefined;

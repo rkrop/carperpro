@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://carperautopartes.replit.app/api/sitemap.xml
+Sitemap: https://carperautopartes.com/api/sitemap.xml

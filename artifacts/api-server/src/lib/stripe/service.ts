@@ -88,18 +88,34 @@ function makeFolio(): string {
   return `APP-${stamp}-${rand}`;
 }
 
+function normalizePublicUrl(value: string | undefined): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
 /** Public base URL where /api/stripe/* is reachable (for Stripe redirect URLs). */
 export function getPublicBaseUrl(): string {
-  const domain =
-    process.env.REPLIT_DOMAINS?.split(",")[0]?.trim() ||
-    process.env.REPLIT_DEV_DOMAIN?.trim();
-  if (!domain) {
-    throw new CheckoutError(
-      500,
-      "No se pudo determinar el dominio público para el pago.",
-    );
+  const configured =
+    normalizePublicUrl(process.env.PUBLIC_API_URL) ??
+    normalizePublicUrl(process.env.EXPO_PUBLIC_API_URL) ??
+    normalizePublicUrl(process.env.PUBLIC_SITE_URL);
+  if (configured) return configured;
+
+  if (process.env.NODE_ENV !== "production") {
+    return `http://localhost:${process.env.PORT || "5000"}`;
   }
-  return `https://${domain}`;
+
+  throw new CheckoutError(
+    500,
+    "No se pudo determinar el dominio público para el pago. Configura PUBLIC_API_URL.",
+  );
 }
 
 export function orderToClient(order: OutboundOrder): ClientOrder {

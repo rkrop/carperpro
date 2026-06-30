@@ -13,7 +13,7 @@ const TIENDA_BASE = "";
 // that, but we cap defensively so a runaway catalog can't produce an invalid
 // (oversized) sitemap.
 const MAX_PRODUCT_URLS = 45000;
-const DEFAULT_PUBLIC_SITE_URL = "https://carperautopartes.replit.app";
+const DEFAULT_PUBLIC_SITE_URL = "https://carperautopartes.com";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 function normalizeSiteUrl(value: string | undefined): string | null {
@@ -45,14 +45,7 @@ function normalizeHost(value: string | undefined): string | null {
 }
 
 function configuredSiteOrigin(): string | null {
-  const explicit = normalizeSiteUrl(process.env.PUBLIC_SITE_URL);
-  if (explicit) return explicit;
-  for (const domain of process.env.REPLIT_DOMAINS?.split(",") ?? []) {
-    const host = normalizeHost(domain);
-    if (host) return `https://${host}`;
-  }
-  const devHost = normalizeHost(process.env.REPLIT_DEV_DOMAIN);
-  return devHost ? `https://${devHost}` : null;
+  return normalizeSiteUrl(process.env.PUBLIC_SITE_URL);
 }
 
 // Absolute origin (scheme + host) the sitemap URLs should use. Prefer an

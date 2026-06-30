@@ -13,9 +13,5 @@
     "@openai/codex": "^0.137.0",
     "prettier": "^3.8.3",
     "typescript": "~5.9.3"
-  },
-  "dependencies": {
-    "stripe": "20.0.0",
-    "stripe-replit-sync": "1.0.0"
   }
 }

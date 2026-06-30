@@ -13,12 +13,8 @@ import React, {
 // API helpers (phone OTP flow)
 // ---------------------------------------------------------------------------
 
-// Same domain the generated client points at (EXPO_PUBLIC_DOMAIN is the Replit
-// dev domain, no scheme). Requests use absolute URLs so the raw fetch here and
-// the generated client both reach the api-server.
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+// Same backend URL used by the generated client.
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 async function postJson<T = unknown>(
   path: string,

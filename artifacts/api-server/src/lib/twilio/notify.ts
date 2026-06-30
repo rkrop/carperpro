@@ -17,8 +17,8 @@ import { getTwilioCredentials, twilioBasicAuth } from "./credentials";
 
 const API_BASE = "https://api.twilio.com/2010-04-01";
 
-// The connector exposes only the API Key SID, so the AC account SID (required in
-// the Messages API path) is resolved once via the API and cached in-process.
+// The AC account SID (required in the Messages API path) is resolved once via
+// env hint or the API and cached in-process.
 let cachedAccountSid: string | null = null;
 
 function moneyMx(n: number): string {
@@ -98,7 +98,7 @@ async function resolveAccountSid(
 ): Promise<string> {
   if (cachedAccountSid) return cachedAccountSid;
 
-  // The connector's `api_key` field occasionally holds the AC account SID.
+  // Prefer the explicitly configured AC account SID when available.
   if (hint && /^AC[0-9a-fA-F]{32}$/.test(hint)) {
     cachedAccountSid = hint;
     return hint;
@@ -135,12 +135,12 @@ export async function sendOrderPaidSms(
 
   const creds = await getTwilioCredentials();
 
-  // From defaults to the Twilio connection's own number when not overridden.
+  // From defaults to TWILIO_PHONE_NUMBER when not overridden.
   const from = process.env.CARPER_NOTIFY_SMS_FROM || creds.phoneNumber;
   if (!from) {
     logger.warn(
       "Notificación SMS omitida: no hay remitente (configura CARPER_NOTIFY_SMS_FROM " +
-        "o un número en la conexión de Twilio).",
+        "o TWILIO_PHONE_NUMBER).",
     );
     return null;
   }

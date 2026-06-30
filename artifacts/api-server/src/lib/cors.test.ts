@@ -4,10 +4,11 @@ import { addHost, firstPartyHosts, isAllowedCorsOrigin } from "./cors.ts";
 
 const ENV_KEYS = [
   "NODE_ENV",
-  "REPLIT_DOMAINS",
-  "REPLIT_DEV_DOMAIN",
-  "EXPO_PUBLIC_DOMAIN",
   "PUBLIC_SITE_URL",
+  "PUBLIC_API_URL",
+  "APP_PUBLIC_URL",
+  "EXPO_PUBLIC_API_URL",
+  "ALLOWED_ORIGINS",
 ] as const;
 
 let saved: Record<string, string | undefined>;
@@ -30,23 +31,23 @@ afterEach(() => {
 test("addHost extrae hostname de URLs y de host:puerto", () => {
   const hosts = new Set<string>();
   addHost(hosts, "https://autopartescarper.com");
-  addHost(hosts, "ejemplo.replit.dev:443");
+  addHost(hosts, "api.carper.test:443");
   addHost(hosts, "  ");
   addHost(hosts, undefined);
   assert.ok(hosts.has("autopartescarper.com"));
-  assert.ok(hosts.has("ejemplo.replit.dev"));
+  assert.ok(hosts.has("api.carper.test"));
   assert.equal(hosts.size, 2);
 });
 
-test("firstPartyHosts incluye PUBLIC_SITE_URL y REPLIT_DOMAINS", () => {
+test("firstPartyHosts incluye dominios propios y ALLOWED_ORIGINS", () => {
   process.env.PUBLIC_SITE_URL = "https://autopartescarper.com";
-  process.env.REPLIT_DOMAINS = "a.replit.app,b.replit.app";
-  process.env.REPLIT_DEV_DOMAIN = "dev.replit.dev";
+  process.env.PUBLIC_API_URL = "https://api.autopartescarper.com";
+  process.env.ALLOWED_ORIGINS = "https://admin.autopartescarper.com,https://tienda.autopartescarper.com";
   const hosts = firstPartyHosts();
   assert.ok(hosts.has("autopartescarper.com"));
-  assert.ok(hosts.has("a.replit.app"));
-  assert.ok(hosts.has("b.replit.app"));
-  assert.ok(hosts.has("dev.replit.dev"));
+  assert.ok(hosts.has("api.autopartescarper.com"));
+  assert.ok(hosts.has("admin.autopartescarper.com"));
+  assert.ok(hosts.has("tienda.autopartescarper.com"));
 });
 
 test("sin Origin se permite (same-origin, móvil, curl, webhooks)", () => {

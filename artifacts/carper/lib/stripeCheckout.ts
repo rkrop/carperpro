@@ -4,11 +4,8 @@ import * as WebBrowser from "expo-web-browser";
 import { getAuthToken } from "@workspace/api-client-react";
 import { getExpoPushToken } from "./push";
 
-// API base — same domain the generated client points at (EXPO_PUBLIC_DOMAIN is
-// the api-server's public host in dev/prod).
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+// API base for the deployed api-server.
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 export interface CheckoutLine {
   productId: string;

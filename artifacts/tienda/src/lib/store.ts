@@ -31,7 +31,7 @@ export const STORE = {
 } as const;
 
 /** URL of the published mobile app, used by the "Descarga la app" QR + button. */
-export const APP_URL = "https://carperautopartes.replit.app/app";
+export const APP_URL = import.meta.env.VITE_APP_URL || "https://carperautopartes.com/app";
 
 /**
  * Build a wa.me link with a prefilled Spanish message asking about a specific

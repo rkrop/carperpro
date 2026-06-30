@@ -1,9 +1,10 @@
-import { getStripeSync } from "./client";
+import { getUncachableStripeClient, getStripeWebhookSecret } from "./client";
+import { reconcileStripeOrder } from "./service";
+import { logger } from "../logger";
 
 /**
- * Verifies + processes a Stripe webhook via stripe-replit-sync, which keeps the
- * `stripe` schema in sync. Order payment status is reconciled separately
- * (verify-on-return + scheduler backstop) using the Stripe API directly.
+ * Verifies Stripe's signature with STRIPE_WEBHOOK_SECRET and reconciles checkout
+ * sessions using the local order id stored in session metadata.
  */
 export class WebhookHandlers {
   static async processWebhook(payload: Buffer, signature: string): Promise<void> {
@@ -15,7 +16,32 @@ export class WebhookHandlers {
           "Registra la ruta del webhook ANTES de app.use(express.json()).",
       );
     }
-    const sync = await getStripeSync();
-    await sync.processWebhook(payload, signature);
+
+    const stripe = await getUncachableStripeClient();
+    const event = stripe.webhooks.constructEvent(
+      payload,
+      signature,
+      getStripeWebhookSecret(),
+    );
+
+    if (
+      event.type !== "checkout.session.completed" &&
+      event.type !== "checkout.session.async_payment_succeeded"
+    ) {
+      return;
+    }
+
+    const session = event.data.object;
+    const rawOrderId = session.metadata?.orderId ?? session.client_reference_id;
+    const orderId = rawOrderId ? Number(rawOrderId) : NaN;
+    if (!Number.isFinite(orderId)) {
+      logger.warn(
+        { eventId: event.id, sessionId: session.id },
+        "Stripe: webhook sin orderId reconciliable",
+      );
+      return;
+    }
+
+    await reconcileStripeOrder(orderId);
   }
 }
