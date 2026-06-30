@@ -19,6 +19,10 @@ assist?: string;
  * When set, stock is reported for this sucursal only.
  */
 sucursalId?: string;
+/**
+ * When "1"/"true", only return products that have an image. When "0"/"false", only return products without an image. Omit to return all products regardless of image status.
+ */
+hasImage?: string;
 limit?: number;
 offset?: number;
 };

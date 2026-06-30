@@ -136,6 +136,15 @@ paths:
           description: When set, stock is reported for this sucursal only.
           schema:
             type: string
+        - name: hasImage
+          in: query
+          required: false
+          description: >-
+            When "1"/"true", only return products that have an image.
+            When "0"/"false", only return products without an image.
+            Omit to return all products regardless of image status.
+          schema:
+            type: string
         - name: limit
           in: query
           required: false

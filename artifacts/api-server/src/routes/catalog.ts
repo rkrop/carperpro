@@ -158,6 +158,13 @@ router.get(
     const assist = req.query.assist === "1" || req.query.assist === "true";
     const limit = boundedInt(req.query.limit, 50, 1, MAX_PRODUCT_LIMIT);
     const offset = boundedInt(req.query.offset, 0, 0, MAX_OFFSET);
+    const hasImageRaw = req.query.hasImage;
+    const hasImage =
+      hasImageRaw === "1" || hasImageRaw === "true"
+        ? true
+        : hasImageRaw === "0" || hasImageRaw === "false"
+          ? false
+          : undefined;
 
     const { rows, total } = await searchCatalog({
       q,
@@ -165,6 +172,7 @@ router.get(
       categoryId,
       subcategoryId,
       brand,
+      hasImage,
       limit,
       offset,
     });

@@ -141,6 +141,12 @@ export interface SearchCatalogParams {
    * typed is exempt, so a search for "conector" is never demoted.
    */
   deprioritizeAccessories?: boolean;
+  /**
+   * When true, only products with a non-empty image are returned.
+   * When false, only products without an image are returned.
+   * When undefined, no image filter is applied.
+   */
+  hasImage?: boolean;
 }
 
 export interface SearchCatalogResult {
@@ -222,6 +228,10 @@ export async function searchCatalog(
   if (params.subcategoryId)
     filterConditions.push(eq(productsTable.subcategoryId, params.subcategoryId));
   if (params.brand) filterConditions.push(eq(productsTable.brand, params.brand));
+  if (params.hasImage === true)
+    filterConditions.push(sql`${productsTable.image} is not null and ${productsTable.image} <> ''`);
+  else if (params.hasImage === false)
+    filterConditions.push(sql`(${productsTable.image} is null or ${productsTable.image} = '')`);
 
   // Run the catalog query for a given search predicate (may be empty for a
   // pure browse/filter request) and relevance order. Returns the page rows plus

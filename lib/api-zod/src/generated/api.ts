@@ -81,6 +81,7 @@ export const ListProductsQueryParams = zod.object({
   "brand": zod.coerce.string().optional(),
   "assist": zod.coerce.string().optional().describe('When \"1\"\/\"true\", apply the natural-language search assist: if a free-text query yields few results, an AI layer rewrites the phrase into catalog keywords and re-runs the search. Falls back to plain search on any failure. Off by default (used by full result screens, not type-ahead).'),
   "sucursalId": zod.coerce.string().optional().describe('When set, stock is reported for this sucursal only.'),
+  "hasImage": zod.coerce.string().optional().describe('When \"1\"\/\"true\", only return products that have an image. When \"0\"\/\"false\", only return products without an image. Omit to return all products regardless of image status.'),
   "limit": zod.coerce.number().optional(),
   "offset": zod.coerce.number().optional()
 })

@@ -226,7 +226,7 @@ export function CartDrawer() {
                   asChild
                 >
                   <a
-                    href={whatsappUrl({ name: `${itemCount} piezas`, sku: "", quoteOnly: false })}
+                    href={whatsappHref}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

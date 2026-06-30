@@ -18,6 +18,8 @@ export default function Catalogo() {
   const [categoryId, setCategoryId] = useState(searchParams.get("categoryId") || "");
   const [subcategoryId, setSubcategoryId] = useState(searchParams.get("subcategoryId") || "");
   const [brand, setBrand] = useState(searchParams.get("brand") || "");
+  // "" = todos, "1" = con imagen, "0" = sin imagen
+  const [hasImage, setHasImage] = useState<"" | "1" | "0">("");
   
   const [page, setPage] = useState(1);
   const limit = 24;
@@ -26,7 +28,7 @@ export default function Catalogo() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [q, categoryId, subcategoryId, brand]);
+  }, [q, categoryId, subcategoryId, brand, hasImage]);
 
   // Switch línea and drop any selected sublínea (a sublínea only belongs to its
   // línea). Done in the click handler — NOT a useEffect on categoryId — so an
@@ -41,6 +43,7 @@ export default function Catalogo() {
     categoryId: categoryId || undefined,
     subcategoryId: subcategoryId || undefined,
     brand: brand || undefined,
+    hasImage: hasImage || undefined,
     // Natural-language assist: when a free-text query yields few results, the API
     // rewrites the phrase into catalog keywords via AI. The interpretation is
     // cached server-side so pagination stays consistent across pages.
@@ -168,6 +171,24 @@ export default function Catalogo() {
           </div>
         </div>
       )}
+
+      <div>
+        <h3 className="font-display text-lg tracking-tight mb-4 uppercase border-b pb-2">Imagen</h3>
+        <div className="space-y-2">
+          {(["", "1", "0"] as const).map((val) => {
+            const label = val === "" ? "Todos" : val === "1" ? "Con imagen" : "Sin imagen";
+            return (
+              <button
+                key={val}
+                onClick={() => setHasImage(val)}
+                className={`block w-full text-left text-sm font-mono uppercase tracking-widest py-1 transition-colors ${hasImage === val ? "text-primary font-bold" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div>
         <h3 className="font-display text-lg tracking-tight mb-4 uppercase border-b pb-2">Marcas</h3>
