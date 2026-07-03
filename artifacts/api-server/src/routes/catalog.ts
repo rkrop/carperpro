@@ -96,6 +96,9 @@ router.get(
             : undefined,
           notTestProduct(),
           catalogVisibleProduct(),
+          // Pure browse navigation (never a search query): only count products
+          // that actually appear in the visible grid, i.e. those with an image.
+          sql`${productsTable.image} is not null and ${productsTable.image} <> ''`,
         ),
       )
       .groupBy(
@@ -302,6 +305,9 @@ router.get("/deals", async (_req: Request, res: Response): Promise<void> => {
         sql`${productsTable.originalPrice} > coalesce(${productsTable.price}, 0)`,
         notTestProduct(),
         sellableProduct(),
+        // Featured deal cards are browse surfaces, not search results — hold
+        // them to the same "must have a photo" bar as the catalog grid.
+        sql`${productsTable.image} is not null and ${productsTable.image} <> ''`,
       ),
     )
     .orderBy(

@@ -18,7 +18,6 @@ export default function Resultados() {
   const [brand, setBrand] = useState<string | null>(null);
   const [availOnly, setAvailOnly] = useState(false);
   const [priceSort, setPriceSort] = useState<"asc" | "desc" | null>(null);
-  const [imageFilter, setImageFilter] = useState<"con" | "sin" | null>(null);
 
   const { data: categories } = useCategories();
   const { data: subcategories } = useSubcategories(params.category);
@@ -48,11 +47,9 @@ export default function Resultados() {
   const filtered = useMemo(() => {
     let list = brand ? base.filter((p) => p.brand === brand) : base;
     if (availOnly) list = list.filter((p) => p.stock == null || p.stock > 0);
-    if (imageFilter === "con") list = list.filter((p) => p.image != null);
-    if (imageFilter === "sin") list = list.filter((p) => p.image == null);
     if (priceSort) list = [...list].sort((a, b) => (priceSort === "asc" ? a.price - b.price : b.price - a.price));
     return list;
-  }, [base, brand, availOnly, imageFilter, priceSort]);
+  }, [base, brand, availOnly, priceSort]);
 
   const availableBrands = useMemo(() => (allBrands ?? []).filter((b) => base.some((p) => p.brand === b)), [allBrands, base]);
 
@@ -88,8 +85,6 @@ export default function Resultados() {
               <Feather name="sliders" size={15} color={c.foreground} />
             </IconBox>
             <Chip label="En existencia" active={availOnly} onPress={() => setAvailOnly((v) => !v)} />
-            <Chip label="Con imagen" active={imageFilter === "con"} onPress={() => setImageFilter(imageFilter === "con" ? null : "con")} />
-            <Chip label="Sin imagen" active={imageFilter === "sin"} onPress={() => setImageFilter(imageFilter === "sin" ? null : "sin")} />
             <Chip label="Precio: menor" active={priceSort === "asc"} onPress={() => setPriceSort(priceSort === "asc" ? null : "asc")} />
             <Chip label="Precio: mayor" active={priceSort === "desc"} onPress={() => setPriceSort(priceSort === "desc" ? null : "desc")} />
             {availableBrands.map((b) => (

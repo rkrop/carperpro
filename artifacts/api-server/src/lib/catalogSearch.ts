@@ -228,10 +228,20 @@ export async function searchCatalog(
   if (params.subcategoryId)
     filterConditions.push(eq(productsTable.subcategoryId, params.subcategoryId));
   if (params.brand) filterConditions.push(eq(productsTable.brand, params.brand));
+  // Image visibility rule: browsing (no typed query) only shows products that
+  // HAVE an image — the catalog/lines/subcategories grids should never surface
+  // a photo-less placeholder card. Products without a photo stay in the
+  // database and are still fully searchable: the moment the shopper types a
+  // query (q non-empty) this default lifts and every match is shown regardless
+  // of image, so a real part number/name search never comes up empty just
+  // because the product lacks a photo. An explicit hasImage param (e.g. an
+  // internal admin tool) always wins over this default in either direction.
   if (params.hasImage === true)
     filterConditions.push(sql`${productsTable.image} is not null and ${productsTable.image} <> ''`);
   else if (params.hasImage === false)
     filterConditions.push(sql`(${productsTable.image} is null or ${productsTable.image} = '')`);
+  else if (!q)
+    filterConditions.push(sql`${productsTable.image} is not null and ${productsTable.image} <> ''`);
 
   // Run the catalog query for a given search predicate (may be empty for a
   // pure browse/filter request) and relevance order. Returns the page rows plus
