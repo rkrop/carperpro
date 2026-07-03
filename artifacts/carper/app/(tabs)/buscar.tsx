@@ -77,6 +77,7 @@ export default function Buscar() {
   }, [params.voice, startVoice]);
 
   const entries = [
+    { icon: "grid" as const, title: "Ver todos los productos", sub: "Explora el catálogo completo", action: () => router.push("/resultados") },
     { icon: "message-circle" as const, title: "Asistente de piezas", sub: "Describe tu auto y la falla", action: () => router.push("/asistente") },
     { icon: "hash" as const, title: "Por número de parte", sub: "Busca por SKU u OEM", action: () => submit(query || "sku") },
     { icon: "truck" as const, title: "Por vehículo", sub: "Marca · Modelo · Año · Motor", action: () => router.push("/buscar-vehiculo") },

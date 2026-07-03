@@ -68,6 +68,36 @@ export default function Categorias() {
 
           {/* Full list */}
           <SectionLabel style={{ paddingHorizontal: 24, marginTop: 24, marginBottom: 8 }}>Todas las categorías</SectionLabel>
+
+          {/* Todas las líneas — always available, browses the full catalog with no category filter */}
+          <Pressable
+            onPress={() => router.push("/resultados")}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 16,
+              paddingHorizontal: 24,
+              paddingVertical: 26,
+              borderBottomWidth: 1,
+              borderBottomColor: c.border,
+              backgroundColor: pressed ? c.primary : c.background,
+            })}
+          >
+            {({ pressed }) => (
+              <>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 22, letterSpacing: -0.6, textTransform: "uppercase", color: pressed ? c.primaryForeground : c.foreground }}>
+                    Todas las líneas
+                  </Text>
+                  <Text style={{ fontFamily: Fonts.mono, fontSize: 11, color: pressed ? c.primaryForeground : c.mutedForeground, marginTop: 5, opacity: pressed ? 0.85 : 1 }}>
+                    Ver todo el catálogo
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={pressed ? c.primaryForeground : c.neutral400} />
+              </>
+            )}
+          </Pressable>
+
           {categories.map((cat) => (
             <Pressable
               key={cat.id}
